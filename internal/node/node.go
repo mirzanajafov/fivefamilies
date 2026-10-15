@@ -31,6 +31,7 @@ type Env interface {
 
 type StateMachine interface {
 	Apply(e raft.Entry) kv.Result
+	Get(key string) kv.Result
 	Snapshot() []byte
 	Restore(index uint64, data []byte) error
 }
@@ -40,7 +41,12 @@ type Config struct {
 	Retain        uint64
 }
 
-var ErrLost = errors.New("node: the entry was replaced before it committed")
+var (
+	ErrLost     = errors.New("node: the entry was replaced before it committed")
+	ErrNotReady = errors.New("node: the read could not be confirmed, try again")
+)
+
+const readExpiry = 64
 
 type NotLeaderError struct {
 	Leader raft.NodeID
@@ -63,6 +69,19 @@ type waiter struct {
 	done Done
 }
 
+type readWaiter struct {
+	key  string
+	done Done
+	term uint64
+	tick uint64
+}
+
+type confirmedRead struct {
+	index uint64
+	key   string
+	done  Done
+}
+
 type Node struct {
 	r        *raft.Raft
 	env      Env
@@ -73,10 +92,14 @@ type Node struct {
 	waiters  map[uint64]waiter
 	lastSnap uint64
 	taking   bool
+	ticks    uint64
+	nextCtx  uint64
+	reads    map[uint64]readWaiter
+	ready    []confirmedRead
 }
 
 func New(r *raft.Raft, env Env, sm StateMachine, cfg Config) *Node {
-	n := &Node{r: r, env: env, sm: sm, cfg: cfg, waiters: map[uint64]waiter{}}
+	n := &Node{r: r, env: env, sm: sm, cfg: cfg, waiters: map[uint64]waiter{}, reads: map[uint64]readWaiter{}}
 	if s := r.LatestSnapshot(); s != nil {
 		n.lastSnap = s.Index
 	}
@@ -88,7 +111,45 @@ func (n *Node) Raft() *raft.Raft {
 }
 
 func (n *Node) Tick() {
+	n.ticks++
 	n.r.Tick()
+	if n.ticks%16 == 0 {
+		n.expireReads(func(w readWaiter) bool { return w.tick+readExpiry < n.ticks })
+	}
+}
+
+func (n *Node) Read(key string, lease bool, done Done) {
+	n.nextCtx++
+	n.reads[n.nextCtx] = readWaiter{key: key, done: done, term: n.r.Term(), tick: n.ticks}
+	n.r.ReadIndex(n.nextCtx, lease)
+}
+
+func (n *Node) expireReads(expired func(readWaiter) bool) {
+	var ctxs []uint64
+	for ctx, w := range n.reads {
+		if expired(w) {
+			ctxs = append(ctxs, ctx)
+		}
+	}
+	slices.Sort(ctxs)
+	for _, ctx := range ctxs {
+		w := n.reads[ctx]
+		delete(n.reads, ctx)
+		w.done(kv.Result{}, ErrNotReady)
+	}
+}
+
+func (n *Node) serveReads() {
+	applied := n.r.Applied()
+	kept := n.ready[:0]
+	for _, q := range n.ready {
+		if q.index <= applied {
+			q.done(n.sm.Get(q.key), nil)
+		} else {
+			kept = append(kept, q)
+		}
+	}
+	n.ready = kept
 }
 
 func (n *Node) Receive(m raft.Message) {
@@ -171,6 +232,18 @@ func (n *Node) Process() {
 		for _, m := range rd.Messages {
 			n.env.Send(m)
 		}
+		for _, rs := range rd.ReadStates {
+			w, ok := n.reads[rs.Ctx]
+			if !ok {
+				continue
+			}
+			delete(n.reads, rs.Ctx)
+			if rs.Ok {
+				n.ready = append(n.ready, confirmedRead{index: rs.Index, key: w.key, done: w.done})
+			} else {
+				w.done(kv.Result{}, ErrNotReady)
+			}
+		}
 		for _, e := range rd.Committed {
 			res := n.sm.Apply(e)
 			w, ok := n.waiters[e.Index]
@@ -184,7 +257,11 @@ func (n *Node) Process() {
 				w.done(kv.Result{}, ErrLost)
 			}
 		}
+		n.serveReads()
 		n.maybeSnapshot()
+	}
+	if term := n.r.Term(); len(n.reads) > 0 {
+		n.expireReads(func(w readWaiter) bool { return w.term != term })
 	}
 }
 

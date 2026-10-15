@@ -29,6 +29,7 @@ type progress struct {
 
 	pendingSnapshot uint64
 	snapWait        int
+	ackRound        uint64
 }
 
 func (pr *progress) reset(next uint64) {
@@ -40,6 +41,7 @@ func (pr *progress) reset(next uint64) {
 	pr.active = false
 	pr.pendingSnapshot = 0
 	pr.snapWait = 0
+	pr.ackRound = 0
 }
 
 func (pr *progress) becomeProbe() {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,6 +27,9 @@ func main() {
 	chaos := flag.Duration("chaos", 0, "simulated time with faults (default from the simulator)")
 	heal := flag.Duration("heal", 0, "simulated time after every fault stops")
 	nodes := flag.Int("nodes", 0, "cluster size")
+	noCatchUp := flag.Bool("no-catchup", false, "do not replay the ticks a paused node missed, to show what a lease measured in ticks does under pauses")
+	reads := flag.String("reads", "", "force one read path for every seed: log, index, lease or follower")
+	skew := flag.Float64("clock-skew", 0, "make one node's clock run this much faster (0.5 = 50%), to break the lease assumption")
 	checkTimeout := flag.Duration("check-timeout", 0, "time limit for one linearizability check")
 	bugs := flag.String("bug", "", "planted bugs to switch on, comma separated: figure8, staleterm, prevterm, anyvote, nofsync")
 	mute := flag.Bool("mute-safety", false, "record protocol invariant violations without stopping, to see what the other checks catch")
@@ -43,6 +47,9 @@ func main() {
 	if *nodes > 0 {
 		opts.Nodes = *nodes
 	}
+	opts.ClockSkew = *skew
+	opts.Reads = *reads
+	opts.NoCatchUp = *noCatchUp
 	if *checkTimeout > 0 {
 		opts.CheckTimeout = *checkTimeout
 	}
@@ -80,7 +87,8 @@ func main() {
 	var failed []sim.Result
 	var total sim.Stats
 	var checkTotal, checkMax time.Duration
-	unknown, ran := 0, 0
+	var unknown []uint64
+	ran := 0
 	categories := map[sim.Category]int{}
 	detected := map[sim.Category]int{}
 	var lowest uint64
@@ -103,7 +111,7 @@ func main() {
 				checkTotal += res.CheckTook
 				checkMax = max(checkMax, res.CheckTook)
 				if res.Check == porcupine.Unknown {
-					unknown++
+					unknown = append(unknown, res.Seed)
 				}
 				failing := !res.OK()
 				if *catch != "" {
@@ -130,7 +138,11 @@ func main() {
 	fmt.Printf("%d seeds from %d in %v (%.1f ms per seed per core), %d failed\n",
 		ran, *from, elapsed.Round(time.Millisecond), float64(elapsed.Milliseconds())*float64(*parallel)/float64(max(ran, 1)), len(failed))
 	fmt.Printf("totals: %+v\n", total)
-	fmt.Printf("linearizability checks: %v in total, %v at most, %d timed out\n", checkTotal.Round(time.Millisecond), checkMax.Round(time.Millisecond), unknown)
+	fmt.Printf("linearizability checks: %v in total, %v at most, %d timed out\n", checkTotal.Round(time.Millisecond), checkMax.Round(time.Millisecond), len(unknown))
+	if len(unknown) > 0 {
+		slices.Sort(unknown)
+		fmt.Printf("seeds whose check timed out: %v\n", unknown)
+	}
 	if len(detected) > 0 {
 		fmt.Printf("seeds where each check fired: %v\n", detected)
 	}
@@ -184,6 +196,7 @@ func addStats(a, b sim.Stats) sim.Stats {
 	a.Fsyncs += b.Fsyncs
 	a.TornTails += b.TornTails
 	a.Snapshots += b.Snapshots
+	a.LocalReads += b.LocalReads
 	a.SnapshotsSent += b.SnapshotsSent
 	a.Installs += b.Installs
 	a.Compactions += b.Compactions

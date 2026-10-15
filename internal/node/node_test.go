@@ -34,6 +34,10 @@ func (a *recApp) Apply(e raft.Entry) kv.Result {
 	return kv.Result{Rev: e.Index, Ok: true}
 }
 
+func (a *recApp) Get(key string) kv.Result {
+	return kv.Result{Rev: a.at, Ok: true}
+}
+
 func (a *recApp) Snapshot() []byte {
 	return []byte(fmt.Sprintf("at %d", a.at))
 }
@@ -255,5 +259,59 @@ func TestAnInstalledSnapshotRestoresTheStateMachine(t *testing.T) {
 	n.settle(env)
 	if len(env.sent) != 1 || env.sent[0].Index != 30 {
 		t.Fatalf("sent %v", env.sent)
+	}
+}
+
+func TestAReadSeesEverythingCommittedBeforeIt(t *testing.T) {
+	n, env, _ := newTestNode(t, 1, []raft.NodeID{1})
+	n.Raft().Campaign()
+	n.settle(env)
+	var revs []uint64
+	read := func() {
+		n.Read("k", false, func(r kv.Result, err error) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			revs = append(revs, r.Rev)
+		})
+	}
+	n.Submit(kv.Command{Op: kv.OpPut, Key: "k"}, nil)
+	read()
+	n.Process()
+	n.settle(env)
+	read()
+	n.settle(env)
+	if len(revs) != 2 || revs[0] != 1 || revs[1] != 2 {
+		t.Fatalf("revisions seen %v: a read concurrent with the put may miss it, a read after it may not", revs)
+	}
+}
+
+func TestAReadThatCannotBeConfirmedFails(t *testing.T) {
+	n, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	var gotErr error
+	n.Read("k", false, func(_ kv.Result, err error) { gotErr = err })
+	n.Process()
+	if !errors.Is(gotErr, ErrNotReady) {
+		t.Fatalf("a read on a node with no leader: %v", gotErr)
+	}
+}
+
+func TestAForwardedReadExpires(t *testing.T) {
+	n, env, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	n.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 1, To: 2, Term: 1})
+	n.Process()
+	var gotErr error
+	n.Read("k", false, func(_ kv.Result, err error) { gotErr = err })
+	n.Process()
+	if gotErr != nil || len(env.sent) == 0 {
+		t.Fatalf("the read should wait for the leader: %v", gotErr)
+	}
+	for range readExpiry + 32 {
+		n.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 1, To: 2, Term: 1})
+		n.Tick()
+		n.Process()
+	}
+	if !errors.Is(gotErr, ErrNotReady) {
+		t.Fatalf("a read the leader never answered: %v", gotErr)
 	}
 }

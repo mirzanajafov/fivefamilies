@@ -21,6 +21,7 @@ type Config struct {
 	CheckQuorum   bool
 	MaxMsgBytes   int
 	MaxInflight   int
+	LeaseTicks    int
 	Rand          Source
 	Bugs          Bug
 }
@@ -39,6 +40,8 @@ func (c *Config) validate() error {
 		return errors.New("raft: election tick must be greater than heartbeat tick")
 	case c.Rand == nil:
 		return errors.New("raft: no random source")
+	case c.LeaseTicks > 0 && (!c.CheckQuorum || c.LeaseTicks >= c.ElectionTick):
+		return errors.New("raft: lease reads need CheckQuorum and a lease shorter than the election timeout")
 	}
 	if c.MaxMsgBytes <= 0 {
 		c.MaxMsgBytes = 1 << 20
@@ -74,6 +77,15 @@ type Raft struct {
 
 	snapshot        *Snapshot
 	pendingSnapshot *Snapshot
+
+	ticks            uint64
+	hbRound          uint64
+	roundTicks       [roundRing]uint64
+	reads            []readRequest
+	readStates       []ReadState
+	pendingHeartbeat bool
+	leaseStart       uint64
+	leaseOK          bool
 
 	pendingBcast bool
 	msgs         []Message
@@ -158,6 +170,7 @@ func (r *Raft) EntryAt(i uint64) (Entry, bool) {
 }
 
 func (r *Raft) Tick() {
+	r.ticks++
 	if r.state == StateLeader {
 		r.tickHeartbeat()
 	} else {
@@ -227,6 +240,8 @@ func (r *Raft) Step(m Message) {
 
 func (r *Raft) HasReady() bool {
 	return r.pendingBcast ||
+		r.pendingHeartbeat ||
+		len(r.readStates) > 0 ||
 		r.pendingSnapshot != nil ||
 		len(r.msgs) > 0 ||
 		len(r.afterPersist) > 0 ||
@@ -245,6 +260,11 @@ func (r *Raft) Ready() Ready {
 	if r.pendingBcast {
 		r.pendingBcast = false
 		r.bcastAppend()
+	}
+	if r.pendingHeartbeat {
+		r.pendingHeartbeat = false
+		r.heartbeatElapsed = 0
+		r.bcastHeartbeat()
 	}
 	var rd Ready
 	hs := r.hardState()
@@ -277,8 +297,10 @@ func (r *Raft) Ready() Ready {
 	}
 	rd.Messages = r.msgs
 	rd.AfterPersist = r.afterPersist
+	rd.ReadStates = r.readStates
 	r.msgs = nil
 	r.afterPersist = nil
+	r.readStates = nil
 	return rd
 }
 
@@ -318,7 +340,13 @@ func (r *Raft) progress(id NodeID) *progress {
 }
 
 func (r *Raft) inLease() bool {
-	return r.cfg.CheckQuorum && r.lead != None && r.electionElapsed < r.cfg.ElectionTick
+	if !r.cfg.CheckQuorum {
+		return false
+	}
+	if r.cfg.LeaseTicks > 0 && r.ticks < uint64(r.cfg.ElectionTick) {
+		return true
+	}
+	return r.lead != None && r.electionElapsed < r.cfg.ElectionTick
 }
 
 func (r *Raft) tickElection() {
@@ -417,6 +445,8 @@ func (r *Raft) recordVote(id NodeID, granted bool) {
 }
 
 func (r *Raft) reset(term uint64) {
+	r.dropReads()
+	r.pendingHeartbeat = false
 	if r.term != term {
 		r.term = term
 		r.vote = None
@@ -499,6 +529,8 @@ func (r *Raft) stepFollower(m Message) {
 		r.electionElapsed = 0
 		r.lead = m.From
 		r.handleSnapshot(m)
+	case MsgReadIndexResp:
+		r.readStates = append(r.readStates, ReadState{Index: m.Index, Ctx: m.Context, Ok: !m.Reject})
 	}
 }
 
@@ -517,6 +549,8 @@ func (r *Raft) stepCandidate(m Message) {
 	case MsgSnap:
 		r.becomeFollower(m.Term, m.From)
 		r.handleSnapshot(m)
+	case MsgReadIndexResp:
+		r.readStates = append(r.readStates, ReadState{Index: m.Index, Ctx: m.Context, Ok: !m.Reject})
 	case want:
 		r.recordVote(m.From, !m.Reject)
 	}
@@ -531,8 +565,13 @@ func (r *Raft) stepLeader(m Message) {
 	case MsgAppResp:
 		pr.active = true
 		r.handleAppendResp(pr, m)
+	case MsgReadIndex:
+		r.handleReadIndex(m.From, m.Context, false)
+		return
 	case MsgHeartbeatResp:
 		pr.active = true
+		pr.ackRound = max(pr.ackRound, m.Context)
+		r.releaseReads()
 		r.handleHeartbeatResp(pr)
 	}
 }
@@ -581,7 +620,7 @@ func (r *Raft) handleSnapshot(m Message) {
 
 func (r *Raft) handleHeartbeat(m Message) {
 	r.log.commitTo(m.Commit)
-	r.send(Message{Type: MsgHeartbeatResp, To: m.From, Term: r.term})
+	r.send(Message{Type: MsgHeartbeatResp, To: m.From, Term: r.term, Context: m.Context})
 }
 
 func (r *Raft) handleAppendResp(pr *progress, m Message) {
@@ -677,10 +716,15 @@ func (r *Raft) bcastAppend() {
 }
 
 func (r *Raft) bcastHeartbeat() {
+	r.hbRound++
+	r.roundTicks[r.hbRound%roundRing] = r.ticks
 	for _, pr := range r.prs {
 		if pr.id != r.id {
-			r.send(Message{Type: MsgHeartbeat, To: pr.id, Term: r.term, Commit: min(pr.match, r.log.committed)})
+			r.send(Message{Type: MsgHeartbeat, To: pr.id, Term: r.term, Commit: min(pr.match, r.log.committed), Context: r.hbRound})
 		}
+	}
+	if len(r.reads) > 0 {
+		r.releaseReads()
 	}
 }
 

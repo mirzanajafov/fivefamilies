@@ -29,6 +29,10 @@ type Options struct {
 	CheckQuorum   bool
 	Bugs          raft.Bug
 	MuteSafety    bool
+	LeaseTicks    int
+	ClockSkew     float64
+	Reads         string
+	NoCatchUp     bool
 	Trace         io.Writer
 }
 
@@ -44,6 +48,7 @@ func DefaultOptions() Options {
 		HeartbeatTick: 3,
 		PreVote:       true,
 		CheckQuorum:   true,
+		LeaseTicks:    12,
 	}
 }
 
@@ -70,6 +75,7 @@ type Stats struct {
 	Fsyncs         int
 	TornTails      int
 	Snapshots      int
+	LocalReads     int
 	SnapshotsSent  int
 	Installs       int
 	Compactions    int
@@ -102,6 +108,7 @@ type simNode struct {
 	incarnation uint64
 	tickGen     uint64
 	paused      bool
+	pausedAt    time.Duration
 	backlog     []event
 	disk        *disk
 	rate        float64
@@ -170,6 +177,11 @@ func newSim(seed uint64, opts Options) *Sim {
 	rng := rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15))
 	s := &Sim{opts: opts, seed: seed, rng: rng, hash: fnvOffset}
 	s.sw = newSwarm(rng)
+	for m := readLog; m <= readFollower; m++ {
+		if opts.Reads == m.String() {
+			s.sw.readMode = m
+		}
+	}
 	s.net = newNetwork(opts.Nodes)
 	s.net.loss, s.net.dup, s.net.base, s.net.jitter = s.sw.loss, s.sw.dup, s.sw.base, s.sw.jitter
 	s.chk = newChecker(opts.Nodes)
@@ -177,8 +189,15 @@ func newSim(seed uint64, opts Options) *Sim {
 	for i := range opts.Nodes {
 		s.voters = append(s.voters, raft.NodeID(i+1))
 	}
+	skewed := -1
+	if opts.ClockSkew != 0 {
+		skewed = rng.IntN(opts.Nodes)
+	}
 	for i := range opts.Nodes {
 		rate := 1 + s.sw.clockSpread*(2*rng.Float64()-1)
+		if i == skewed {
+			rate += opts.ClockSkew
+		}
 		sn := &simNode{idx: i, id: raft.NodeID(i + 1), disk: newDisk(s.sw.segBytes, s.rng.Uint64), rate: rate}
 		s.nodes = append(s.nodes, sn)
 		s.chk.disks = append(s.chk.disks, sn.disk)
@@ -259,6 +278,7 @@ func (s *Sim) boot(sn *simNode) {
 		PreVote:       s.opts.PreVote,
 		CheckQuorum:   s.opts.CheckQuorum,
 		MaxMsgBytes:   s.sw.maxMsgBytes,
+		LeaseTicks:    s.leaseTicks(),
 		Rand:          rand.NewPCG(s.rng.Uint64(), s.rng.Uint64()),
 		Bugs:          s.opts.Bugs,
 	}
@@ -287,6 +307,13 @@ func (s *Sim) boot(sn *simNode) {
 	sn.n.Process()
 	s.observe(sn)
 	s.scheduleTick(sn, time.Duration(s.rng.Int64N(int64(s.opts.Tick))))
+}
+
+func (s *Sim) leaseTicks() int {
+	if s.sw.readMode != readLease {
+		return 0
+	}
+	return s.opts.LeaseTicks
 }
 
 func (s *Sim) scheduleTick(sn *simNode, d time.Duration) {
@@ -535,12 +562,20 @@ func (s *Sim) pause(sn *simNode) {
 	s.tracef("fault: pause node %d", sn.id)
 	s.stats.Pauses++
 	sn.paused = true
+	sn.pausedAt = s.now
 	sn.tickGen++
 }
 
 func (s *Sim) resume(sn *simNode) {
 	s.tracef("fault: resume node %d", sn.id)
 	sn.paused = false
+	if missed := int((s.now - sn.pausedAt) / s.tickInterval(sn)); missed > 0 && sn.n != nil && !s.opts.NoCatchUp {
+		for range min(missed, 10000) {
+			sn.n.Tick()
+		}
+		sn.n.Process()
+		s.observe(sn)
+	}
 	backlog := sn.backlog
 	sn.backlog = nil
 	for _, e := range backlog {

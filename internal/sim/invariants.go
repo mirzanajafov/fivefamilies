@@ -233,6 +233,11 @@ func (r *recorder) Apply(e raft.Entry) kv.Result {
 	return r.store.Apply(e)
 }
 
+func (r *recorder) Get(key string) kv.Result {
+	kvp, found := r.store.Get(key)
+	return kv.Result{Rev: r.store.Rev(), Found: found, KV: kvp, Ok: true}
+}
+
 func (r *recorder) Snapshot() []byte {
 	return r.store.Snapshot()
 }

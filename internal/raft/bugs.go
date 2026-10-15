@@ -13,6 +13,7 @@ const (
 	BugPrevTerm
 	BugAnyVote
 	BugNoFsync
+	BugFollowerRead
 )
 
 var bugNames = []struct {
@@ -24,6 +25,7 @@ var bugNames = []struct {
 	{BugPrevTerm, "prevterm"},
 	{BugAnyVote, "anyvote"},
 	{BugNoFsync, "nofsync"},
+	{BugFollowerRead, "followerread"},
 }
 
 func (b Bug) Has(x Bug) bool {
