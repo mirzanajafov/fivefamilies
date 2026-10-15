@@ -3,3 +3,4 @@ coverage.out
 .env
 .env.*
 !.env.example
+/bench/results/**/raw/
