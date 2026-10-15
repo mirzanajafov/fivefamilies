@@ -5,11 +5,15 @@ type progressState uint8
 const (
 	stateProbe progressState = iota
 	stateReplicate
+	stateSnapshot
 )
 
 func (s progressState) String() string {
-	if s == stateReplicate {
+	switch s {
+	case stateReplicate:
 		return "replicate"
+	case stateSnapshot:
+		return "snapshot"
 	}
 	return "probe"
 }
@@ -22,6 +26,9 @@ type progress struct {
 	paused   bool
 	inflight []uint64
 	active   bool
+
+	pendingSnapshot uint64
+	snapWait        int
 }
 
 func (pr *progress) reset(next uint64) {
@@ -31,13 +38,36 @@ func (pr *progress) reset(next uint64) {
 	pr.paused = false
 	pr.inflight = pr.inflight[:0]
 	pr.active = false
+	pr.pendingSnapshot = 0
+	pr.snapWait = 0
 }
 
 func (pr *progress) becomeProbe() {
+	if pr.state == stateSnapshot {
+		pr.next = max(pr.match+1, pr.pendingSnapshot+1)
+	} else {
+		pr.next = pr.match + 1
+	}
+	pr.state = stateProbe
+	pr.paused = false
+	pr.inflight = pr.inflight[:0]
+	pr.pendingSnapshot = 0
+}
+
+func (pr *progress) becomeSnapshot(index uint64) {
+	pr.state = stateSnapshot
+	pr.pendingSnapshot = index
+	pr.snapWait = 0
+	pr.paused = false
+	pr.inflight = pr.inflight[:0]
+}
+
+func (pr *progress) abandonSnapshot() {
 	pr.state = stateProbe
 	pr.next = pr.match + 1
 	pr.paused = false
-	pr.inflight = pr.inflight[:0]
+	pr.pendingSnapshot = 0
+	pr.snapWait = 0
 }
 
 func (pr *progress) becomeReplicate() {
@@ -75,8 +105,11 @@ func (pr *progress) maybeDecrTo(rejected, matchHint uint64) bool {
 }
 
 func (pr *progress) isPaused(maxInflight int) bool {
-	if pr.state == stateProbe {
+	switch pr.state {
+	case stateProbe:
 		return pr.paused
+	case stateSnapshot:
+		return true
 	}
 	return len(pr.inflight) >= maxInflight
 }

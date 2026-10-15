@@ -13,6 +13,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/snap"
 )
 
 type Options struct {
@@ -20,6 +21,7 @@ type Options struct {
 	Chaos         time.Duration
 	Heal          time.Duration
 	CheckTimeout  time.Duration
+	MaxEvents     int
 	Tick          time.Duration
 	ElectionTick  int
 	HeartbeatTick int
@@ -36,6 +38,7 @@ func DefaultOptions() Options {
 		Chaos:         20 * time.Second,
 		Heal:          10 * time.Second,
 		CheckTimeout:  time.Minute,
+		MaxEvents:     5_000_000,
 		Tick:          10 * time.Millisecond,
 		ElectionTick:  15,
 		HeartbeatTick: 3,
@@ -66,6 +69,10 @@ type Stats struct {
 	Writes         int
 	Fsyncs         int
 	TornTails      int
+	Snapshots      int
+	SnapshotsSent  int
+	Installs       int
+	Compactions    int
 }
 
 type Result struct {
@@ -106,8 +113,10 @@ type nodeEnv struct {
 	sn *simNode
 }
 
-func (e nodeEnv) Send(m raft.Message) { e.s.send(e.sn, m) }
-func (e nodeEnv) Write(w node.Write)  { e.s.write(e.sn, w) }
+func (e nodeEnv) Send(m raft.Message)          { e.s.send(e.sn, m) }
+func (e nodeEnv) Write(w node.Write)           { e.s.write(e.sn, w) }
+func (e nodeEnv) SaveSnapshot(s raft.Snapshot) { e.s.saveSnapshot(e.sn, s) }
+func (e nodeEnv) Compacted(s raft.Snapshot)    { e.s.compacted(e.sn, s) }
 
 type Sim struct {
 	opts    Options
@@ -267,7 +276,13 @@ func (s *Sim) boot(sn *simNode) {
 		return
 	}
 	sn.sm = newRecorder(s.chk, sn.idx)
-	sn.n = node.New(r, nodeEnv{s: s, sn: sn}, sn.sm)
+	if st.Snapshot != nil {
+		if err := sn.sm.Restore(st.Snapshot.Index, st.Snapshot.Data); err != nil {
+			s.chk.safetyf("node %d could not restore its snapshot: %v", sn.id, err)
+			return
+		}
+	}
+	sn.n = node.New(r, nodeEnv{s: s, sn: sn}, sn.sm, node.Config{SnapshotEvery: s.sw.snapEvery, Retain: s.sw.retain})
 	s.chk.restarted(sn.idx)
 	sn.n.Process()
 	s.observe(sn)
@@ -286,6 +301,10 @@ func (s *Sim) loop(until time.Duration) {
 	for len(s.queue) > 0 && !s.chk.failed() {
 		if s.queue[0].at > until {
 			s.now = until
+			return
+		}
+		if s.opts.MaxEvents > 0 && s.stats.Events >= s.opts.MaxEvents {
+			s.chk.report(CatLiveness, "liveness: %d events in %v of simulated time, a message storm", s.stats.Events, s.now)
 			return
 		}
 		e := s.queue.pop()
@@ -378,6 +397,9 @@ func (s *Sim) checkLogMatching() {
 
 func (s *Sim) send(from *simNode, m raft.Message) {
 	s.stats.MsgsSent++
+	if m.Type == raft.MsgSnap {
+		s.stats.SnapshotsSent++
+	}
 	if s.sw.buggify > 0 && !s.healing {
 		s.buggify(from, m)
 	}
@@ -394,6 +416,13 @@ func (s *Sim) send(from *simNode, m raft.Message) {
 }
 
 func (s *Sim) write(sn *simNode, w node.Write) {
+	if w.Snapshot != nil {
+		if w.Reset {
+			s.stats.Installs++
+		} else {
+			s.stats.Snapshots++
+		}
+	}
 	if err := sn.disk.submit(w); err != nil {
 		s.chk.safetyf("node %d could not write its log: %v", sn.id, err)
 		return
@@ -466,6 +495,24 @@ func (s *Sim) buggify(from *simNode, m raft.Message) {
 			s.observe(other)
 		})
 	}
+}
+
+func (s *Sim) saveSnapshot(sn *simNode, snapshot raft.Snapshot) {
+	if err := snap.Save(sn.disk.fs, snapshot); err != nil {
+		s.chk.safetyf("node %d could not save snapshot %d: %v", sn.id, snapshot.Index, err)
+	}
+}
+
+func (s *Sim) compacted(sn *simNode, snapshot raft.Snapshot) {
+	n, err := sn.disk.log.Compact(snapshot.Index)
+	if err == nil {
+		err = snap.Clean(sn.disk.fs, snapshot)
+	}
+	if err != nil {
+		s.chk.safetyf("node %d could not compact to %d: %v", sn.id, snapshot.Index, err)
+		return
+	}
+	s.stats.Compactions += n
 }
 
 func (s *Sim) crash(sn *simNode) {

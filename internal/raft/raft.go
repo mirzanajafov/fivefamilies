@@ -51,8 +51,7 @@ func (c *Config) validate() error {
 
 type Restore struct {
 	HardState HardState
-	SnapIndex uint64
-	SnapTerm  uint64
+	Snapshot  *Snapshot
 	Entries   []Entry
 }
 
@@ -72,6 +71,9 @@ type Raft struct {
 	electionElapsed           int
 	heartbeatElapsed          int
 	randomizedElectionTimeout int
+
+	snapshot        *Snapshot
+	pendingSnapshot *Snapshot
 
 	pendingBcast bool
 	msgs         []Message
@@ -95,14 +97,15 @@ func New(cfg Config, st Restore) (*Raft, error) {
 	slices.Sort(voters)
 	voters = slices.Compact(voters)
 	r := &Raft{
-		cfg:    cfg,
-		id:     cfg.ID,
-		term:   st.HardState.Term,
-		vote:   st.HardState.Vote,
-		log:    l,
-		voters: voters,
-		votes:  make(map[NodeID]bool, len(voters)),
-		prevHS: HardState{Term: st.HardState.Term, Vote: st.HardState.Vote, Commit: l.committed},
+		cfg:      cfg,
+		id:       cfg.ID,
+		term:     st.HardState.Term,
+		vote:     st.HardState.Vote,
+		log:      l,
+		voters:   voters,
+		votes:    make(map[NodeID]bool, len(voters)),
+		prevHS:   HardState{Term: st.HardState.Term, Vote: st.HardState.Vote, Commit: l.committed},
+		snapshot: st.Snapshot,
 	}
 	r.prs = make([]*progress, len(voters))
 	for i, id := range voters {
@@ -122,6 +125,29 @@ func (r *Raft) Applied() uint64    { return r.log.applied }
 func (r *Raft) Stabled() uint64    { return r.log.stabled }
 func (r *Raft) FirstIndex() uint64 { return r.log.firstIndex() }
 func (r *Raft) LastIndex() uint64  { return r.log.lastIndex() }
+
+func (r *Raft) HardState() HardState {
+	return r.hardState()
+}
+
+func (r *Raft) LatestSnapshot() *Snapshot {
+	return r.snapshot
+}
+
+func (r *Raft) Compact(s Snapshot, retain uint64) error {
+	if r.snapshot != nil && s.Index <= r.snapshot.Index {
+		return nil
+	}
+	if s.Index > r.log.applied {
+		return fmt.Errorf("raft: snapshot at %d is past the applied index %d", s.Index, r.log.applied)
+	}
+	if t, ok := r.log.term(s.Index); !ok || t != s.Term {
+		return fmt.Errorf("raft: snapshot at %d has term %d, the log has %d", s.Index, s.Term, t)
+	}
+	r.snapshot = &s
+	r.log.compact(s.Index - min(retain, s.Index))
+	return nil
+}
 
 func (r *Raft) LogTerm(i uint64) (uint64, bool) {
 	return r.log.term(i)
@@ -165,7 +191,7 @@ func (r *Raft) Step(m Message) {
 		switch {
 		case m.Type == MsgPreVote:
 		case m.Type == MsgPreVoteResp && !m.Reject:
-		case m.Type == MsgApp || m.Type == MsgHeartbeat:
+		case m.Type == MsgApp || m.Type == MsgHeartbeat || m.Type == MsgSnap:
 			r.becomeFollower(m.Term, m.From)
 		default:
 			r.becomeFollower(m.Term, None)
@@ -176,7 +202,7 @@ func (r *Raft) Step(m Message) {
 			return
 		}
 		switch {
-		case (r.cfg.CheckQuorum || r.cfg.PreVote) && (m.Type == MsgApp || m.Type == MsgHeartbeat):
+		case (r.cfg.CheckQuorum || r.cfg.PreVote) && (m.Type == MsgApp || m.Type == MsgHeartbeat || m.Type == MsgSnap):
 			r.send(Message{Type: MsgAppResp, To: m.From, Term: r.term})
 		case m.Type == MsgPreVote:
 			r.send(Message{Type: MsgPreVoteResp, To: m.From, Term: r.term, Reject: true})
@@ -201,6 +227,7 @@ func (r *Raft) Step(m Message) {
 
 func (r *Raft) HasReady() bool {
 	return r.pendingBcast ||
+		r.pendingSnapshot != nil ||
 		len(r.msgs) > 0 ||
 		len(r.afterPersist) > 0 ||
 		r.hardState() != r.prevHS ||
@@ -226,12 +253,22 @@ func (r *Raft) Ready() Ready {
 		rd.MustSync = hs.Term != r.prevHS.Term || hs.Vote != r.prevHS.Vote
 		r.prevHS = hs
 	}
+	ackIndex, ackTerm := uint64(0), uint64(0)
+	if r.pendingSnapshot != nil {
+		rd.Snapshot = r.pendingSnapshot
+		rd.MustSync = true
+		ackIndex, ackTerm = r.pendingSnapshot.Index, r.pendingSnapshot.Term
+		r.pendingSnapshot = nil
+	}
 	if ents := r.log.unhanded(); len(ents) > 0 {
 		rd.Entries = ents
 		rd.MustSync = true
 		last := ents[len(ents)-1]
 		r.log.handed = last.Index
-		r.afterPersist = append([]Message{{Type: MsgStorageAck, From: r.id, To: r.id, Index: last.Index, LogTerm: last.Term}}, r.afterPersist...)
+		ackIndex, ackTerm = last.Index, last.Term
+	}
+	if ackIndex > 0 {
+		r.afterPersist = append([]Message{{Type: MsgStorageAck, From: r.id, To: r.id, Index: ackIndex, LogTerm: ackTerm}}, r.afterPersist...)
 	}
 	if r.log.hasToApply() {
 		hi := r.log.applyLimit()
@@ -458,6 +495,10 @@ func (r *Raft) stepFollower(m Message) {
 		r.electionElapsed = 0
 		r.lead = m.From
 		r.handleHeartbeat(m)
+	case MsgSnap:
+		r.electionElapsed = 0
+		r.lead = m.From
+		r.handleSnapshot(m)
 	}
 }
 
@@ -473,6 +514,9 @@ func (r *Raft) stepCandidate(m Message) {
 	case MsgHeartbeat:
 		r.becomeFollower(m.Term, m.From)
 		r.handleHeartbeat(m)
+	case MsgSnap:
+		r.becomeFollower(m.Term, m.From)
+		r.handleSnapshot(m)
 	case want:
 		r.recordVote(m.From, !m.Reject)
 	}
@@ -516,12 +560,46 @@ func (r *Raft) handleAppend(m Message) {
 	r.send(Message{Type: MsgAppResp, To: m.From, Term: r.term, Index: m.Index, Reject: true, Hint: hint, LogTerm: hintTerm})
 }
 
+func (r *Raft) handleSnapshot(m Message) {
+	s := m.Snapshot
+	if s == nil {
+		return
+	}
+	switch {
+	case s.Index <= r.log.committed:
+		r.sendAfterPersist(Message{Type: MsgAppResp, To: m.From, Term: r.term, Index: r.log.committed})
+	case r.log.matchTerm(s.Index, s.Term):
+		r.log.commitTo(s.Index)
+		r.sendAfterPersist(Message{Type: MsgAppResp, To: m.From, Term: r.term, Index: s.Index})
+	default:
+		r.log.restore(s)
+		r.snapshot = s
+		r.pendingSnapshot = s
+		r.sendAfterPersist(Message{Type: MsgAppResp, To: m.From, Term: r.term, Index: s.Index})
+	}
+}
+
 func (r *Raft) handleHeartbeat(m Message) {
 	r.log.commitTo(m.Commit)
 	r.send(Message{Type: MsgHeartbeatResp, To: m.From, Term: r.term})
 }
 
 func (r *Raft) handleAppendResp(pr *progress, m Message) {
+	if pr.state == stateSnapshot {
+		if !m.Reject {
+			pr.maybeUpdate(m.Index)
+		}
+		if m.Reject || pr.match >= pr.pendingSnapshot {
+			pr.becomeProbe()
+			if !m.Reject {
+				pr.becomeReplicate()
+			}
+			r.maybeSendAppend(pr, true)
+			for pr.state == stateReplicate && r.maybeSendAppend(pr, false) {
+			}
+		}
+		return
+	}
 	if m.Reject {
 		next := m.Hint
 		if m.LogTerm > 0 {
@@ -552,6 +630,14 @@ func (r *Raft) handleAppendResp(pr *progress, m Message) {
 }
 
 func (r *Raft) handleHeartbeatResp(pr *progress) {
+	if pr.state == stateSnapshot {
+		pr.snapWait++
+		if pr.snapWait >= 3 {
+			pr.abandonSnapshot()
+			r.maybeSendAppend(pr, true)
+		}
+		return
+	}
 	pr.paused = false
 	if pr.state == stateReplicate && len(pr.inflight) >= r.cfg.MaxInflight {
 		pr.freeFirst()
@@ -605,7 +691,12 @@ func (r *Raft) maybeSendAppend(pr *progress, sendIfEmpty bool) bool {
 	prevIndex := pr.next - 1
 	prevTerm, ok := r.log.term(prevIndex)
 	if !ok {
-		return false
+		if r.snapshot == nil || prevIndex > r.log.lastIndex() {
+			return false
+		}
+		r.send(Message{Type: MsgSnap, To: pr.id, Term: r.term, Snapshot: r.snapshot})
+		pr.becomeSnapshot(r.snapshot.Index)
+		return true
 	}
 	var ents []Entry
 	if pr.next <= r.log.lastIndex() {

@@ -72,6 +72,8 @@ func TestSeeds(t *testing.T) {
 		total.TornTails += r.Stats.TornTails
 		total.Writes += r.Stats.Writes
 		total.Fsyncs += r.Stats.Fsyncs
+		total.Installs += r.Stats.Installs
+		total.Compactions += r.Stats.Compactions
 		if r.OK() && r.Check != porcupine.Ok {
 			t.Errorf("seed %d: linearizability check %s", r.Seed, r.Check)
 		}
@@ -93,6 +95,8 @@ func TestSeeds(t *testing.T) {
 		"successful swaps":        total.SwapsWon > 0,
 		"torn tails on restart":   total.TornTails > 0,
 		"group commit":            total.Fsyncs < total.Writes,
+		"snapshot installs":       total.Installs > 0,
+		"segments compacted away": total.Compactions > 0,
 	}
 	for what, ok := range reached {
 		if !ok {
@@ -127,8 +131,10 @@ func TestThreeNodeClusters(t *testing.T) {
 
 type nopEnv struct{}
 
-func (nopEnv) Send(raft.Message) {}
-func (nopEnv) Write(node.Write)  {}
+func (nopEnv) Send(raft.Message)          {}
+func (nopEnv) Write(node.Write)           {}
+func (nopEnv) SaveSnapshot(raft.Snapshot) {}
+func (nopEnv) Compacted(raft.Snapshot)    {}
 
 func soloLeader(t *testing.T, id raft.NodeID, st raft.Restore, data ...string) *raft.Raft {
 	t.Helper()

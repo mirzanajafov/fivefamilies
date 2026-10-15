@@ -7,13 +7,37 @@ import (
 
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/snap"
 	"github.com/mirzanajafov/fivefamilies/internal/vfs"
 	"github.com/mirzanajafov/fivefamilies/internal/wal"
 )
 
 type durableState struct {
 	hs   raft.HardState
+	snap *raft.Snapshot
 	ents []raft.Entry
+}
+
+func (d durableState) offset() uint64 {
+	if d.snap == nil {
+		return 0
+	}
+	return d.snap.Index
+}
+
+func (d durableState) last() uint64 {
+	return d.offset() + uint64(len(d.ents))
+}
+
+func (d durableState) clone() durableState {
+	return durableState{hs: d.hs, snap: d.snap, ents: slices.Clone(d.ents)}
+}
+
+func (d durableState) entry(index uint64) (raft.Entry, bool) {
+	if index <= d.offset() || index > d.last() {
+		return raft.Entry{}, false
+	}
+	return d.ents[index-d.offset()-1], true
 }
 
 type disk struct {
@@ -39,18 +63,33 @@ func (d *disk) open(chk *checker, idx int) (raft.Restore, wal.Recovery, error) {
 	if err != nil {
 		return st, rec, err
 	}
+	if st.Snapshot != nil {
+		data, err := snap.Load(d.fs, st.Snapshot.Index, st.Snapshot.Term)
+		if err != nil {
+			return st, rec, err
+		}
+		st.Snapshot = &raft.Snapshot{Index: st.Snapshot.Index, Term: st.Snapshot.Term, Data: data}
+	}
 	if !recoveredPrefix(d.durable, d.inflight, st) {
-		chk.safetyf("durability: node %d recovered %d entries in term %d, which is not its synced state (%d entries, term %d) plus a prefix of the %d writes in flight",
-			idx+1, len(st.Entries), st.HardState.Term, len(d.durable.ents), d.durable.hs.Term, len(d.inflight))
+		chk.safetyf("durability: node %d recovered %d entries after snapshot %v in term %d, which is not its synced state (%d entries after %d, term %d) plus a prefix of the %d writes in flight",
+			idx+1, len(st.Entries), st.Snapshot != nil, st.HardState.Term, len(d.durable.ents), d.durable.offset(), d.durable.hs.Term, len(d.inflight))
 	}
 	d.log = l
-	d.setDurable(durableState{hs: st.HardState, ents: slices.Clone(st.Entries)}, chk, idx)
+	recovered := durableState{hs: st.HardState, ents: slices.Clone(st.Entries)}
+	if st.Snapshot != nil {
+		recovered.snap = &raft.Snapshot{Index: st.Snapshot.Index, Term: st.Snapshot.Term}
+	}
+	d.setDurable(recovered, chk, idx)
 	d.inflight = nil
 	return st, rec, nil
 }
 
 func (d *disk) submit(w node.Write) error {
-	if err := d.log.Write(w.HardState, w.Entries); err != nil {
+	b := wal.Batch{HardState: w.HardState, Entries: w.Entries, Reset: w.Reset}
+	if w.Snapshot != nil {
+		b.Snapshot = &raft.Snapshot{Index: w.Snapshot.Index, Term: w.Snapshot.Term}
+	}
+	if err := d.log.WriteBatch(b); err != nil {
 		return err
 	}
 	d.written = append(d.written, w)
@@ -80,79 +119,137 @@ func (d *disk) crash(rng *rand.Rand) {
 	d.written, d.queue, d.syncing, d.covers, d.log = nil, nil, false, 0, nil
 }
 
-func (d *disk) applyDurable(w node.Write, chk *checker, idx int) {
+func applyWrite(st *durableState, w node.Write, each func()) bool {
 	if !w.HardState.IsEmpty() {
-		prev, hs := d.durable.hs, w.HardState
-		if hs.Term < prev.Term {
-			chk.safetyf("node %d persisted term %d after term %d", idx+1, hs.Term, prev.Term)
+		st.hs = w.HardState
+		each()
+	}
+	if w.Snapshot != nil {
+		if w.Reset || w.Snapshot.Index > st.last() {
+			st.ents = nil
+		} else if w.Snapshot.Index > st.offset() {
+			st.ents = slices.Clone(st.ents[w.Snapshot.Index-st.offset():])
 		}
-		if hs.Term == prev.Term && prev.Vote != raft.None && hs.Vote != prev.Vote {
-			chk.safetyf("node %d persisted a vote for %d in term %d after voting for %d", idx+1, hs.Vote, hs.Term, prev.Vote)
+		st.snap = &raft.Snapshot{Index: w.Snapshot.Index, Term: w.Snapshot.Term}
+		each()
+	}
+	for _, e := range w.Entries {
+		if e.Index <= st.offset() || e.Index > st.last()+1 {
+			return false
 		}
-		d.durable.hs = hs
+		st.ents = append(st.ents[:e.Index-st.offset()-1], e)
+		each()
+	}
+	return true
+}
+
+func (d *disk) applyDurable(w node.Write, chk *checker, idx int) {
+	cur := &d.durable
+	if !w.HardState.IsEmpty() {
+		if w.HardState.Term < cur.hs.Term {
+			chk.safetyf("node %d persisted term %d after term %d", idx+1, w.HardState.Term, cur.hs.Term)
+		}
+		if w.HardState.Term == cur.hs.Term && cur.hs.Vote != raft.None && w.HardState.Vote != cur.hs.Vote {
+			chk.safetyf("node %d persisted a vote for %d in term %d after voting for %d", idx+1, w.HardState.Vote, w.HardState.Term, cur.hs.Vote)
+		}
+		cur.hs = w.HardState
+	}
+	if s := w.Snapshot; s != nil {
+		var lost []raft.Entry
+		switch {
+		case w.Reset || s.Index > cur.last():
+			for _, e := range cur.ents {
+				if e.Index > s.Index {
+					lost = append(lost, e)
+				}
+			}
+			cur.ents = nil
+		case s.Index > cur.offset():
+			cur.ents = slices.Clone(cur.ents[s.Index-cur.offset():])
+		}
+		cur.snap = &raft.Snapshot{Index: s.Index, Term: s.Term}
+		if len(lost) > 0 {
+			chk.overwrote(idx, lost)
+		}
 	}
 	if len(w.Entries) == 0 {
 		return
 	}
 	first := w.Entries[0].Index
-	if first > uint64(len(d.durable.ents))+1 {
-		chk.safetyf("node %d persisted entry %d with only %d entries on disk", idx+1, first, len(d.durable.ents))
+	if first <= cur.offset() || first > cur.last()+1 {
+		chk.safetyf("node %d persisted entries %d.. that do not follow its log (after %d, up to %d)", idx+1, first, cur.offset(), cur.last())
 		return
 	}
-	if first > uint64(len(d.durable.ents)) {
-		d.durable.ents = append(d.durable.ents, w.Entries...)
+	if first > cur.last() {
+		cur.ents = append(cur.ents, w.Entries...)
 		return
 	}
-	old := slices.Clone(d.durable.ents[first-1:])
-	d.durable.ents = append(d.durable.ents[:first-1], w.Entries...)
-	chk.overwrote(idx, old)
+	pos := first - cur.offset() - 1
+	old := slices.Clone(cur.ents[pos:])
+	cur.ents = append(cur.ents[:pos], w.Entries...)
+	var lost []raft.Entry
+	for _, e := range old {
+		if now, ok := cur.entry(e.Index); !ok || keyOf(now) != keyOf(e) {
+			lost = append(lost, e)
+		}
+	}
+	if len(lost) > 0 {
+		chk.overwrote(idx, lost)
+	}
 }
 
 func (d *disk) setDurable(st durableState, chk *checker, idx int) {
-	old := d.durable.ents
+	prev := d.durable
 	d.durable = st
-	for i := range min(len(old), len(st.ents)) {
-		if keyOf(old[i]) != keyOf(st.ents[i]) {
-			chk.overwrote(idx, old[i:])
-			return
+	d.reportLost(prev, chk, idx)
+}
+
+func (d *disk) reportLost(prev durableState, chk *checker, idx int) {
+	var lost []raft.Entry
+	for _, e := range prev.ents {
+		if e.Index <= d.durable.offset() {
+			continue
 		}
+		if cur, ok := d.durable.entry(e.Index); ok && keyOf(cur) == keyOf(e) {
+			continue
+		}
+		lost = append(lost, e)
 	}
-	if len(st.ents) < len(old) {
-		chk.overwrote(idx, old[len(st.ents):])
+	if len(lost) > 0 {
+		chk.overwrote(idx, lost)
 	}
 }
 
 func recoveredPrefix(base durableState, inflight []node.Write, st raft.Restore) bool {
-	matches := func(hs raft.HardState, ents []raft.Entry) bool {
-		hs.Commit = min(hs.Commit, uint64(len(ents)))
-		return st.HardState == hs && slices.EqualFunc(st.Entries, ents, func(a, b raft.Entry) bool {
+	matches := func(c durableState) bool {
+		hs := c.hs
+		hs.Commit = max(min(hs.Commit, c.last()), c.offset())
+		if st.HardState != hs {
+			return false
+		}
+		if (st.Snapshot == nil) != (c.snap == nil) {
+			return false
+		}
+		if st.Snapshot != nil && (st.Snapshot.Index != c.snap.Index || st.Snapshot.Term != c.snap.Term) {
+			return false
+		}
+		return slices.EqualFunc(st.Entries, c.ents, func(a, b raft.Entry) bool {
 			return a.Index == b.Index && keyOf(a) == keyOf(b)
 		})
 	}
-	hs, ents := base.hs, slices.Clone(base.ents)
-	if matches(hs, ents) {
-		return true
-	}
+	cur := base.clone()
+	ok := matches(cur)
 	for _, w := range inflight {
-		if !w.HardState.IsEmpty() {
-			hs = w.HardState
-			if matches(hs, ents) {
-				return true
-			}
+		if ok {
+			return true
 		}
-		for _, e := range w.Entries {
-			if e.Index > uint64(len(ents))+1 {
-				return false
-			}
-			ents = append(ents[:e.Index-1], e)
-			if matches(hs, ents) {
-				return true
-			}
+		if !applyWrite(&cur, w, func() { ok = ok || matches(cur) }) {
+			return ok
 		}
 	}
-	return false
+	return ok
 }
 
 func (d *disk) String() string {
-	return fmt.Sprintf("durable hs %+v, %d durable entries, %d writes in flight", d.durable.hs, len(d.durable.ents), len(d.inflight))
+	return fmt.Sprintf("durable hs %+v, %d durable entries after %d, %d writes in flight", d.durable.hs, len(d.durable.ents), d.durable.offset(), len(d.inflight))
 }

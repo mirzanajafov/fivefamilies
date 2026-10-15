@@ -10,10 +10,10 @@ var canaries = []struct {
 	bug   raft.Bug
 	seeds []uint64
 }{
-	{raft.BugFigure8, []uint64{3377}},
-	{raft.BugStaleTerm, []uint64{391}},
+	{raft.BugFigure8, []uint64{314}},
+	{raft.BugStaleTerm, []uint64{45}},
 	{raft.BugPrevTerm, []uint64{10}},
-	{raft.BugAnyVote, []uint64{3}},
+	{raft.BugAnyVote, []uint64{1}},
 	{raft.BugNoFsync, []uint64{1}},
 }
 

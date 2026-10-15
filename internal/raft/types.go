@@ -20,6 +20,12 @@ type Entry struct {
 	Data  []byte
 }
 
+type Snapshot struct {
+	Index uint64
+	Term  uint64
+	Data  []byte
+}
+
 type HardState struct {
 	Term   uint64
 	Vote   NodeID
@@ -42,6 +48,7 @@ const (
 	MsgVote
 	MsgVoteResp
 	MsgStorageAck
+	MsgSnap
 )
 
 var messageTypeNames = [...]string{
@@ -54,6 +61,7 @@ var messageTypeNames = [...]string{
 	MsgVote:          "Vote",
 	MsgVoteResp:      "VoteResp",
 	MsgStorageAck:    "StorageAck",
+	MsgSnap:          "Snap",
 }
 
 func (t MessageType) String() string {
@@ -64,16 +72,17 @@ func (t MessageType) String() string {
 }
 
 type Message struct {
-	Type    MessageType
-	From    NodeID
-	To      NodeID
-	Term    uint64
-	LogTerm uint64
-	Index   uint64
-	Entries []Entry
-	Commit  uint64
-	Reject  bool
-	Hint    uint64
+	Type     MessageType
+	From     NodeID
+	To       NodeID
+	Term     uint64
+	LogTerm  uint64
+	Index    uint64
+	Entries  []Entry
+	Commit   uint64
+	Reject   bool
+	Hint     uint64
+	Snapshot *Snapshot
 }
 
 func (m Message) String() string {
@@ -83,6 +92,9 @@ func (m Message) String() string {
 	}
 	if m.Reject {
 		s += fmt.Sprintf(" reject hint%d", m.Hint)
+	}
+	if m.Snapshot != nil {
+		s += fmt.Sprintf(" snap[%d t%d %dB]", m.Snapshot.Index, m.Snapshot.Term, len(m.Snapshot.Data))
 	}
 	return s
 }
@@ -112,6 +124,7 @@ func (s StateType) String() string {
 
 type Ready struct {
 	HardState    HardState
+	Snapshot     *Snapshot
 	Entries      []Entry
 	MustSync     bool
 	Messages     []Message
@@ -120,5 +133,5 @@ type Ready struct {
 }
 
 func (rd Ready) NeedsWrite() bool {
-	return !rd.HardState.IsEmpty() || len(rd.Entries) > 0
+	return !rd.HardState.IsEmpty() || len(rd.Entries) > 0 || rd.Snapshot != nil
 }
