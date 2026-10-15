@@ -78,6 +78,7 @@ type swarm struct {
 	buggify       float64
 	maxMsgBytes   int
 	reorder       float64
+	segBytes      int64
 }
 
 func pick[T any](rng *rand.Rand, opts ...T) T {
@@ -111,6 +112,7 @@ func newSwarm(rng *rand.Rand) swarm {
 		buggify:      pick(rng, 0, 0, 0.002, 0.01, 0.05),
 		maxMsgBytes:  pick(rng, 0, 0, 1),
 		reorder:      pick(rng, 0, 0, 0.001, 0.01),
+		segBytes:     pick[int64](rng, 16<<10, 64<<10, 1<<20),
 	}
 	if rng.Float64() < 0.6 {
 		sw.partitionMean = between(rng, time.Second, 5*time.Second)
@@ -137,6 +139,7 @@ func (sw swarm) String() string {
 	if sw.maxMsgBytes > 0 {
 		fmt.Fprintf(&b, " msg %dB", sw.maxMsgBytes)
 	}
+	fmt.Fprintf(&b, " segment %dKiB", sw.segBytes>>10)
 	if sw.reorder > 0 {
 		fmt.Fprintf(&b, " reorder %.3f", sw.reorder)
 	}

@@ -69,6 +69,9 @@ func TestSeeds(t *testing.T) {
 		total.ClientOps += r.Stats.ClientOps
 		total.ClientRetries += r.Stats.ClientRetries
 		total.SwapsWon += r.Stats.SwapsWon
+		total.TornTails += r.Stats.TornTails
+		total.Writes += r.Stats.Writes
+		total.Fsyncs += r.Stats.Fsyncs
 		if r.OK() && r.Check != porcupine.Ok {
 			t.Errorf("seed %d: linearizability check %s", r.Seed, r.Check)
 		}
@@ -88,6 +91,8 @@ func TestSeeds(t *testing.T) {
 		"client operations":       total.ClientOps >= 100*n,
 		"client retries":          total.ClientRetries > 0,
 		"successful swaps":        total.SwapsWon > 0,
+		"torn tails on restart":   total.TornTails > 0,
+		"group commit":            total.Fsyncs < total.Writes,
 	}
 	for what, ok := range reached {
 		if !ok {
@@ -226,26 +231,26 @@ func TestDiskCatchesForgottenVotesAndTerms(t *testing.T) {
 	}
 	for _, tc := range cases {
 		c := newChecker(1)
-		d := newMemDisk()
-		d.apply(node.Write{HardState: tc.before}, c, 0)
-		d.apply(node.Write{HardState: tc.after}, c, 0)
+		d := newDisk(0, nil)
+		d.applyDurable(node.Write{HardState: tc.before}, c, 0)
+		d.applyDurable(node.Write{HardState: tc.after}, c, 0)
 		if !c.failed() {
 			t.Errorf("%s went unnoticed", tc.name)
 		}
 	}
 }
 
-func committedOnDisks(t *testing.T, holders, total int) (*checker, []*memDisk) {
+func committedOnDisks(t *testing.T, holders, total int) (*checker, []*disk) {
 	t.Helper()
 	c := newChecker(total)
 	c.committed = []entryKey{{term: 1}, {term: 1, data: "a"}}
 	c.commitTerm = []uint64{1, 1}
 	c.quorum = total/2 + 1
-	var disks []*memDisk
+	var disks []*disk
 	for i := range total {
-		d := newMemDisk()
+		d := newDisk(0, nil)
 		if i < holders {
-			d.apply(node.Write{Entries: []raft.Entry{{Term: 1, Index: 1}, {Term: 1, Index: 2, Data: []byte("a")}}}, c, i)
+			d.applyDurable(node.Write{Entries: []raft.Entry{{Term: 1, Index: 1}, {Term: 1, Index: 2, Data: []byte("a")}}}, c, i)
 		}
 		disks = append(disks, d)
 	}
@@ -255,7 +260,7 @@ func committedOnDisks(t *testing.T, holders, total int) (*checker, []*memDisk) {
 
 func TestDiskCatchesACommittedEntryFallingBelowAQuorum(t *testing.T) {
 	c, disks := committedOnDisks(t, 2, 3)
-	disks[0].apply(node.Write{Entries: []raft.Entry{{Term: 2, Index: 2}}}, c, 0)
+	disks[0].applyDurable(node.Write{Entries: []raft.Entry{{Term: 2, Index: 2}}}, c, 0)
 	if !c.failed() {
 		t.Fatal("a committed entry left on one disk of three went unnoticed")
 	}
@@ -263,7 +268,7 @@ func TestDiskCatchesACommittedEntryFallingBelowAQuorum(t *testing.T) {
 
 func TestDiskAllowsALaggingNodeToOverwriteACommittedEntry(t *testing.T) {
 	c, disks := committedOnDisks(t, 3, 3)
-	disks[0].apply(node.Write{Entries: []raft.Entry{{Term: 2, Index: 2}}}, c, 0)
+	disks[0].applyDurable(node.Write{Entries: []raft.Entry{{Term: 2, Index: 2}}}, c, 0)
 	if c.failed() {
 		t.Fatalf("two of three disks still hold the entry: %s", c.failure)
 	}
@@ -272,7 +277,7 @@ func TestDiskAllowsALaggingNodeToOverwriteACommittedEntry(t *testing.T) {
 func TestCheckerCatchesACommitThatIsNotDurableOnAQuorum(t *testing.T) {
 	c := newChecker(1)
 	c.quorum = 1
-	c.disks = []*memDisk{newMemDisk()}
+	c.disks = []*disk{newDisk(0, nil)}
 	c.observe(0, soloLeader(t, 1, raft.Restore{}, "a"))
 	if !c.failed() {
 		t.Fatal("entries committed with nothing on disk went unnoticed")
@@ -319,5 +324,35 @@ func TestRegressionSeeds(t *testing.T) {
 		if r := Run(seed, DefaultOptions()); !r.OK() {
 			t.Errorf("seed %d failed at %v: %s\n  swarm: %s", r.Seed, r.At, r.Violation, r.Swarm)
 		}
+	}
+}
+
+func TestRecoveryMustBeTheSyncedStatePlusAPrefixOfWhatWasInFlight(t *testing.T) {
+	salt := rand.New(rand.NewPCG(1, 1)).Uint64
+	d := newDisk(1<<20, salt)
+	c := newChecker(1)
+	if _, _, err := d.open(c, 0); err != nil {
+		t.Fatal(err)
+	}
+	synced := node.Write{Seq: 1, HardState: raft.HardState{Term: 1}, Entries: []raft.Entry{{Term: 1, Index: 1}, {Term: 1, Index: 2}}, Sync: true}
+	if err := d.submit(synced); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.sync(c, 0); err != nil {
+		t.Fatal(err)
+	}
+	d.submit(node.Write{Seq: 2, HardState: raft.HardState{Term: 2}, Entries: []raft.Entry{{Term: 2, Index: 3}}, Sync: true})
+	d.crash(rand.New(rand.NewPCG(5, 5)))
+	if _, _, err := d.open(c, 0); err != nil || c.failed() {
+		t.Fatalf("an honest crash: %v %s", err, c.failure)
+	}
+	names, _ := d.fs.List()
+	d.fs.Truncate(names[0], 24)
+	d.crash(rand.New(rand.NewPCG(6, 6)))
+	if _, _, err := d.open(c, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !c.failed() {
+		t.Fatal("a log that lost synced entries recovered without complaint")
 	}
 }

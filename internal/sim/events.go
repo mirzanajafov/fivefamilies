@@ -24,7 +24,6 @@ type event struct {
 	gen  uint64
 	msg  raft.Message
 	wseq uint64
-	done bool
 	req  *clientReq
 	call func()
 }

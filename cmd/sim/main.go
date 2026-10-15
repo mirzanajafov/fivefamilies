@@ -82,6 +82,7 @@ func main() {
 	var checkTotal, checkMax time.Duration
 	unknown, ran := 0, 0
 	categories := map[sim.Category]int{}
+	detected := map[sim.Category]int{}
 	var lowest uint64
 	var stop atomic.Bool
 	var wg sync.WaitGroup
@@ -95,6 +96,9 @@ func main() {
 				res := sim.Run(s, opts)
 				mu.Lock()
 				ran++
+				for cat := range res.Detected {
+					detected[cat]++
+				}
 				total = addStats(total, res.Stats)
 				checkTotal += res.CheckTook
 				checkMax = max(checkMax, res.CheckTook)
@@ -127,6 +131,9 @@ func main() {
 		ran, *from, elapsed.Round(time.Millisecond), float64(elapsed.Milliseconds())*float64(*parallel)/float64(max(ran, 1)), len(failed))
 	fmt.Printf("totals: %+v\n", total)
 	fmt.Printf("linearizability checks: %v in total, %v at most, %d timed out\n", checkTotal.Round(time.Millisecond), checkMax.Round(time.Millisecond), unknown)
+	if len(detected) > 0 {
+		fmt.Printf("seeds where each check fired: %v\n", detected)
+	}
 	if len(failed) == 0 {
 		return
 	}
@@ -173,5 +180,8 @@ func addStats(a, b sim.Stats) sim.Stats {
 	a.SwapsWon += b.SwapsWon
 	a.Indeterminate += b.Indeterminate
 	a.Buggified += b.Buggified
+	a.Writes += b.Writes
+	a.Fsyncs += b.Fsyncs
+	a.TornTails += b.TornTails
 	return a
 }
