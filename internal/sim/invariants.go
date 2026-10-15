@@ -169,7 +169,9 @@ func (c *checker) durableOn(index uint64) int {
 	want := c.committed[index-1]
 	n := 0
 	for _, d := range c.disks {
-		if index <= uint64(len(d.durable.ents)) && keyOf(d.durable.ents[index-1]) == want {
+		if index <= d.durable.offset() {
+			n++
+		} else if e, ok := d.durable.entry(index); ok && keyOf(e) == want {
 			n++
 		}
 	}
@@ -229,4 +231,20 @@ func (r *recorder) Apply(e raft.Entry) kv.Result {
 	r.chk.apply(r.idx, r.last, e)
 	r.last = e.Index
 	return r.store.Apply(e)
+}
+
+func (r *recorder) Snapshot() []byte {
+	return r.store.Snapshot()
+}
+
+func (r *recorder) Restore(index uint64, data []byte) error {
+	s, err := kv.Restore(data, 0)
+	if err != nil {
+		return err
+	}
+	if s.Rev() != index {
+		return fmt.Errorf("snapshot at %d holds a store at revision %d", index, s.Rev())
+	}
+	r.store, r.last = s, index
+	return nil
 }

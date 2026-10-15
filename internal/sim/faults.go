@@ -79,6 +79,8 @@ type swarm struct {
 	maxMsgBytes   int
 	reorder       float64
 	segBytes      int64
+	snapEvery     uint64
+	retain        uint64
 }
 
 func pick[T any](rng *rand.Rand, opts ...T) T {
@@ -113,6 +115,8 @@ func newSwarm(rng *rand.Rand) swarm {
 		maxMsgBytes:  pick(rng, 0, 0, 1),
 		reorder:      pick(rng, 0, 0, 0.001, 0.01),
 		segBytes:     pick[int64](rng, 16<<10, 64<<10, 1<<20),
+		snapEvery:    pick[uint64](rng, 0, 20, 200, 2000),
+		retain:       pick[uint64](rng, 0, 5, 50),
 	}
 	if rng.Float64() < 0.6 {
 		sw.partitionMean = between(rng, time.Second, 5*time.Second)
@@ -140,6 +144,9 @@ func (sw swarm) String() string {
 		fmt.Fprintf(&b, " msg %dB", sw.maxMsgBytes)
 	}
 	fmt.Fprintf(&b, " segment %dKiB", sw.segBytes>>10)
+	if sw.snapEvery > 0 {
+		fmt.Fprintf(&b, " snapshot every %d keep %d", sw.snapEvery, sw.retain)
+	}
 	if sw.reorder > 0 {
 		fmt.Fprintf(&b, " reorder %.3f", sw.reorder)
 	}

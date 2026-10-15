@@ -255,3 +255,78 @@ func TestBadCommandsAndEmptyEntriesOnlyAdvanceTheRevision(t *testing.T) {
 	}()
 	s.Apply(raft.Entry{Term: 1, Index: 2})
 }
+
+func populated() *applier {
+	a := newApplier(0)
+	id := a.do(Command{Op: OpRegister}).Client
+	a.do(Command{Op: OpCAS, Client: id, Seq: 1, Key: "k", Value: []byte("v1"), ExpectMissing: true})
+	a.do(Command{Op: OpPut, Key: "a", Value: []byte("1")})
+	a.do(Command{Op: OpPut, Key: "b", Value: nil})
+	a.do(Command{Op: OpRange, Client: id, Seq: 2, Key: ""})
+	a.do(Command{Op: OpDelete, Key: "a"})
+	a.do(Command{Op: OpRegister})
+	return a
+}
+
+func TestSnapshotRoundTrip(t *testing.T) {
+	a := populated()
+	data := a.s.Snapshot()
+	r, err := Restore(data, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Hash() != a.s.Hash() || r.Rev() != a.s.Rev() || r.Len() != a.s.Len() || r.Sessions() != a.s.Sessions() {
+		t.Fatalf("restored store differs: rev %d/%d len %d/%d", r.Rev(), a.s.Rev(), r.Len(), a.s.Len())
+	}
+	if string(r.Snapshot()) != string(data) {
+		t.Fatal("snapshot of a restored store is not byte for byte the same")
+	}
+	retry := Command{Op: OpRange, Client: 1, Seq: 2, Key: ""}
+	want := a.do(retry)
+	b := &applier{s: r, index: a.index - 1}
+	if got := b.do(retry); string(appendResult(nil, got)) != string(appendResult(nil, want)) {
+		t.Fatalf("a retry after restore answered %+v, want %+v", got, want)
+	}
+}
+
+func TestSnapshotRejectsTruncatedData(t *testing.T) {
+	data := populated().s.Snapshot()
+	for i := range len(data) {
+		if _, err := Restore(data[:i], 0); err == nil {
+			t.Fatalf("restored from the first %d of %d bytes", i, len(data))
+		}
+	}
+	if _, err := Restore(append(data, 0), 0); err == nil {
+		t.Fatal("restored with a trailing byte")
+	}
+}
+
+func TestCloneIsIndependent(t *testing.T) {
+	a := populated()
+	before := a.s.Hash()
+	c := a.s.Clone()
+	ca := &applier{s: c, index: a.index}
+	ca.do(Command{Op: OpPut, Key: "k", Value: []byte("changed")})
+	ca.do(Command{Op: OpRegister})
+	if a.s.Hash() != before {
+		t.Fatal("writing to the clone changed the original")
+	}
+	if c.Hash() == before {
+		t.Fatal("the clone did not change")
+	}
+}
+
+func FuzzRestore(f *testing.F) {
+	f.Add(populated().s.Snapshot())
+	f.Add([]byte("FFKV1"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		s, err := Restore(data, 0)
+		if err != nil {
+			return
+		}
+		again, err := Restore(s.Snapshot(), 0)
+		if err != nil || again.Hash() != s.Hash() {
+			t.Fatalf("a restored store did not survive a second round trip: %v", err)
+		}
+	})
+}

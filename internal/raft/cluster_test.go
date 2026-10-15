@@ -8,17 +8,35 @@ import (
 
 type stableStore struct {
 	hs   HardState
+	snap *Snapshot
 	ents []Entry
 }
 
+func (s *stableStore) offset() uint64 {
+	if s.snap == nil {
+		return 0
+	}
+	return s.snap.Index
+}
+
 func (s *stableStore) write(rd Ready) {
+	if rd.Snapshot != nil {
+		s.snap = rd.Snapshot
+		s.ents = nil
+	}
 	if !rd.HardState.IsEmpty() {
 		s.hs = rd.HardState
 	}
 	if len(rd.Entries) > 0 {
-		first := rd.Entries[0].Index
-		s.ents = append(s.ents[:first-1:first-1], rd.Entries...)
+		keep := rd.Entries[0].Index - s.offset() - 1
+		s.ents = append(s.ents[:keep:keep], rd.Entries...)
 	}
+}
+
+func (s *stableStore) compact(snap Snapshot) {
+	drop := snap.Index - s.offset()
+	s.ents = append([]Entry(nil), s.ents[drop:]...)
+	s.snap = &snap
 }
 
 type cluster struct {
@@ -149,7 +167,7 @@ func (c *cluster) crash(id NodeID) {
 func (c *cluster) restart(id NodeID) {
 	c.t.Helper()
 	s := c.stores[id-1]
-	r, err := New(c.cfgs[id-1], Restore{HardState: s.hs, Entries: slices.Clone(s.ents)})
+	r, err := New(c.cfgs[id-1], Restore{HardState: s.hs, Snapshot: s.snap, Entries: slices.Clone(s.ents)})
 	if err != nil {
 		c.t.Fatal(err)
 	}

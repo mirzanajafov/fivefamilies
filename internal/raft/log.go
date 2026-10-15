@@ -17,10 +17,13 @@ type raftLog struct {
 }
 
 func newLog(st Restore) (*raftLog, error) {
-	l := &raftLog{snapIndex: st.SnapIndex, snapTerm: st.SnapTerm}
+	l := &raftLog{}
+	if st.Snapshot != nil {
+		l.snapIndex, l.snapTerm = st.Snapshot.Index, st.Snapshot.Term
+	}
 	for i, e := range st.Entries {
-		if e.Index != st.SnapIndex+uint64(i)+1 {
-			return nil, fmt.Errorf("raft: restored entry %d has index %d, want %d", i, e.Index, st.SnapIndex+uint64(i)+1)
+		if e.Index != l.snapIndex+uint64(i)+1 {
+			return nil, fmt.Errorf("raft: restored entry %d has index %d, want %d", i, e.Index, l.snapIndex+uint64(i)+1)
 		}
 		if e.Term < l.snapTerm || (i > 0 && e.Term < st.Entries[i-1].Term) {
 			return nil, fmt.Errorf("raft: restored entry %d has term %d lower than the one before it", e.Index, e.Term)
@@ -31,8 +34,8 @@ func newLog(st Restore) (*raftLog, error) {
 	if st.HardState.Commit > last {
 		return nil, fmt.Errorf("raft: restored commit %d is past the last index %d", st.HardState.Commit, last)
 	}
-	l.committed = max(st.HardState.Commit, st.SnapIndex)
-	l.applied = st.SnapIndex
+	l.committed = max(st.HardState.Commit, l.snapIndex)
+	l.applied = l.snapIndex
 	l.stabled = last
 	l.handed = last
 	return l, nil
@@ -169,6 +172,25 @@ func (l *raftLog) commitTo(c uint64) {
 		panic(fmt.Sprintf("raft: commit %d is past the last index %d; the log was lost or truncated", c, l.lastIndex()))
 	}
 	l.committed = c
+}
+
+func (l *raftLog) restore(s *Snapshot) {
+	l.ents = nil
+	l.snapIndex, l.snapTerm = s.Index, s.Term
+	l.committed = s.Index
+	l.applied = s.Index
+	l.handed = s.Index
+	l.stabled = 0
+}
+
+func (l *raftLog) compact(point uint64) {
+	if point <= l.snapIndex {
+		return
+	}
+	t, _ := l.term(point)
+	keep := l.ents[point-l.snapIndex:]
+	l.ents = append(make([]Entry, 0, len(keep)), keep...)
+	l.snapIndex, l.snapTerm = point, t
 }
 
 func (l *raftLog) applyLimit() uint64 {

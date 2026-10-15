@@ -2,6 +2,7 @@ package node
 
 import (
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"testing"
 
@@ -10,28 +11,50 @@ import (
 )
 
 type recEnv struct {
-	sent   []raft.Message
-	writes []Write
+	sent      []raft.Message
+	writes    []Write
+	saved     []raft.Snapshot
+	compacted []raft.Snapshot
 }
 
-func (e *recEnv) Send(m raft.Message) { e.sent = append(e.sent, m) }
-func (e *recEnv) Write(w Write)       { e.writes = append(e.writes, w) }
+func (e *recEnv) Send(m raft.Message)          { e.sent = append(e.sent, m) }
+func (e *recEnv) Write(w Write)                { e.writes = append(e.writes, w) }
+func (e *recEnv) SaveSnapshot(s raft.Snapshot) { e.saved = append(e.saved, s) }
+func (e *recEnv) Compacted(s raft.Snapshot)    { e.compacted = append(e.compacted, s) }
 
-type recApp struct{ applied []raft.Entry }
+type recApp struct {
+	applied  []raft.Entry
+	restored []byte
+	at       uint64
+}
 
 func (a *recApp) Apply(e raft.Entry) kv.Result {
 	a.applied = append(a.applied, e)
+	a.at = e.Index
 	return kv.Result{Rev: e.Index, Ok: true}
 }
 
+func (a *recApp) Snapshot() []byte {
+	return []byte(fmt.Sprintf("at %d", a.at))
+}
+
+func (a *recApp) Restore(index uint64, data []byte) error {
+	a.restored, a.at = data, index
+	return nil
+}
+
 func newTestNode(t *testing.T, id raft.NodeID, voters []raft.NodeID) (*Node, *recEnv, *recApp) {
+	return newTestNodeConfig(t, id, voters, Config{})
+}
+
+func newTestNodeConfig(t *testing.T, id raft.NodeID, voters []raft.NodeID, cfg Config) (*Node, *recEnv, *recApp) {
 	t.Helper()
 	r, err := raft.New(raft.Config{ID: id, Voters: voters, ElectionTick: 10, HeartbeatTick: 1, Rand: rand.NewPCG(1, uint64(id))}, raft.Restore{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	env, app := &recEnv{}, &recApp{}
-	return New(r, env, app), env, app
+	return New(r, env, app, cfg), env, app
 }
 
 func TestAcksWaitForTheirWrite(t *testing.T) {
@@ -165,5 +188,72 @@ func TestSubmitReportsAnEntryReplacedByAnotherLeader(t *testing.T) {
 	n.settle(env)
 	if !errors.Is(got, ErrLost) {
 		t.Fatalf("err %v, want ErrLost", got)
+	}
+}
+
+func TestSnapshotsAreTakenAndTheLogCompactedOnlyAfterTheMarkerIsDurable(t *testing.T) {
+	n, env, _ := newTestNodeConfig(t, 1, []raft.NodeID{1}, Config{SnapshotEvery: 5, Retain: 2})
+	n.Raft().Campaign()
+	n.settle(env)
+	for i := range 4 {
+		n.Submit(kv.Command{Op: kv.OpPut, Key: "k", Value: []byte{byte(i)}}, nil)
+		n.settle(env)
+	}
+	if len(env.saved) != 1 || env.saved[0].Index != 5 || string(env.saved[0].Data) != "at 5" {
+		t.Fatalf("saved %+v", env.saved)
+	}
+	if len(env.compacted) != 1 || n.Raft().FirstIndex() != 4 {
+		t.Fatalf("compacted %+v, first index %d", env.compacted, n.Raft().FirstIndex())
+	}
+	n.Submit(kv.Command{Op: kv.OpPut, Key: "k"}, nil)
+	n.Process()
+	for i := range 5 {
+		n.Submit(kv.Command{Op: kv.OpPut, Key: "k", Value: []byte{byte(i)}}, nil)
+		n.Process()
+		for len(env.writes) > 0 && len(env.writes[len(env.writes)-1].Entries) > 0 {
+			w := env.writes[0]
+			env.writes = env.writes[1:]
+			n.WriteDone(w.Seq)
+			n.Process()
+		}
+	}
+	var marker *Write
+	for i := range env.writes {
+		if env.writes[i].Snapshot != nil {
+			marker = &env.writes[i]
+		}
+	}
+	if marker == nil {
+		t.Fatal("no marker write for the second snapshot")
+	}
+	if marker.Reset || marker.HardState.IsEmpty() || !marker.Sync {
+		t.Fatalf("marker %+v", *marker)
+	}
+	if len(env.compacted) != 1 {
+		t.Fatal("compacted before the marker write was durable")
+	}
+	n.settle(env)
+	if len(env.compacted) != 2 {
+		t.Fatalf("compacted %d times after the marker was durable", len(env.compacted))
+	}
+}
+
+func TestAnInstalledSnapshotRestoresTheStateMachine(t *testing.T) {
+	n, env, app := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	s := &raft.Snapshot{Index: 30, Term: 2, Data: []byte("state")}
+	n.Receive(raft.Message{Type: raft.MsgSnap, From: 1, To: 2, Term: 2, Snapshot: s})
+	n.Process()
+	if string(app.restored) != "state" || app.at != 30 {
+		t.Fatalf("restored %q at %d", app.restored, app.at)
+	}
+	if len(env.saved) != 1 || len(env.writes) != 1 || !env.writes[0].Reset || env.writes[0].Snapshot.Index != 30 {
+		t.Fatalf("saved %d, writes %+v", len(env.saved), env.writes)
+	}
+	if len(env.sent) != 0 {
+		t.Fatal("acknowledged the snapshot before the write")
+	}
+	n.settle(env)
+	if len(env.sent) != 1 || env.sent[0].Index != 30 {
+		t.Fatalf("sent %v", env.sent)
 	}
 }

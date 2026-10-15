@@ -21,8 +21,9 @@ const (
 )
 
 const (
-	recEntry byte = 1
-	recState byte = 2
+	recEntry    byte = 1
+	recState    byte = 2
+	recSnapshot byte = 3
 )
 
 var (
@@ -43,14 +44,31 @@ type Recovery struct {
 	DroppedEmpty bool
 }
 
+type Batch struct {
+	HardState raft.HardState
+	Snapshot  *raft.Snapshot
+	Reset     bool
+	Entries   []raft.Entry
+}
+
+func (b Batch) empty() bool {
+	return b.HardState.IsEmpty() && b.Snapshot == nil && len(b.Entries) == 0
+}
+
+type segment struct {
+	seq      uint64
+	maxIndex uint64
+}
+
 type Log struct {
-	fs   vfs.FS
-	opts Options
-	seq  uint64
-	f    vfs.File
-	size int64
-	salt uint64
-	buf  []byte
+	fs        vfs.FS
+	opts      Options
+	segs      []segment
+	markerSeq uint64
+	f         vfs.File
+	size      int64
+	salt      uint64
+	buf       []byte
 }
 
 func segmentName(seq uint64) string {
@@ -70,35 +88,67 @@ func corrupt(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrCorrupt, fmt.Sprintf(format, args...))
 }
 
-type replay struct {
-	hs   raft.HardState
-	ents []raft.Entry
+type record struct {
+	seg     int
+	typ     byte
+	payload []byte
 }
 
-func (r *replay) apply(typ byte, payload []byte) error {
-	switch typ {
-	case recState:
-		hs, err := decodeState(payload)
-		if err != nil {
-			return err
-		}
-		r.hs = hs
-	case recEntry:
-		e, err := decodeEntry(payload)
-		if err != nil {
-			return err
-		}
-		last := uint64(len(r.ents))
-		switch {
-		case e.Index == 0 || e.Index > last+1:
-			return corrupt("entry %d follows entry %d", e.Index, last)
-		case e.Index <= last:
-			r.ents = r.ents[:e.Index-1]
+type replay struct {
+	hs        raft.HardState
+	snap      *raft.Snapshot
+	ents      []raft.Entry
+	off       uint64
+	strict    bool
+	markerSeq uint64
+}
+
+func (r *replay) last() uint64 {
+	return r.off + uint64(len(r.ents))
+}
+
+func (r *replay) entry(e raft.Entry) error {
+	last := r.last()
+	if !r.strict {
+		if e.Index <= r.off || e.Index > last+1 {
+			r.ents, r.off = nil, e.Index-1
+		} else if e.Index <= last {
+			r.ents = r.ents[:e.Index-r.off-1]
 		}
 		r.ents = append(r.ents, e)
-	default:
-		return corrupt("unknown record type %d", typ)
+		return nil
 	}
+	switch {
+	case e.Index <= r.off:
+		return corrupt("entry %d at or before the snapshot at %d", e.Index, r.off)
+	case e.Index > last+1:
+		return corrupt("entry %d follows entry %d", e.Index, last)
+	case e.Index <= last:
+		r.ents = r.ents[:e.Index-r.off-1]
+	}
+	r.ents = append(r.ents, e)
+	return nil
+}
+
+func (r *replay) snapshot(index, term uint64, reset bool) error {
+	switch {
+	case reset:
+		r.ents = nil
+	case !r.strict && (len(r.ents) == 0 || index > r.last()):
+		r.ents = nil
+	case !r.strict && index < r.off:
+		return corrupt("the log was compacted and entries %d..%d are missing", index+1, r.off)
+	case index < r.off || index > r.last():
+		return corrupt("compaction to %d outside the log %d..%d", index, r.off, r.last())
+	default:
+		if index > r.off && r.ents[index-r.off-1].Term != term {
+			return corrupt("compaction to %d in term %d, the log has term %d there", index, term, r.ents[index-r.off-1].Term)
+		}
+		r.ents = r.ents[index-r.off:]
+	}
+	r.off = index
+	r.snap = &raft.Snapshot{Index: index, Term: term}
+	r.strict = true
 	return nil
 }
 
@@ -127,11 +177,11 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 			return nil, raft.Restore{}, rec, corrupt("segment %d follows segment %d", seqs[i], seqs[i-1])
 		}
 	}
-	var r replay
 	next := uint64(1)
 	if len(seqs) > 0 {
 		next = seqs[0]
 	}
+	var records []record
 	for i := 0; i < len(seqs); i++ {
 		seq, name, last := seqs[i], segmentName(seqs[i]), i == len(seqs)-1
 		data, err := fs.ReadFile(name)
@@ -151,7 +201,6 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 			}
 			rec.DroppedEmpty = true
 			rec.TornBytes += int64(len(data))
-			seqs = seqs[:i]
 			break
 		}
 		rec.Segments++
@@ -163,46 +212,89 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 					return nil, raft.Restore{}, rec, corrupt("segment %s has a bad record at offset %d", name, off)
 				}
 				rec.TornBytes += int64(len(data) - off)
-				if err := l.truncateTail(name, int64(off)); err != nil {
+				if err := truncateTail(fs, name, int64(off)); err != nil {
 					return nil, raft.Restore{}, rec, err
 				}
 				data = data[:off]
 				break
 			}
-			if err := r.apply(typ, payload); err != nil {
-				return nil, raft.Restore{}, rec, fmt.Errorf("segment %s offset %d: %w", name, off, err)
-			}
-			rec.Records++
+			records = append(records, record{seg: len(l.segs), typ: typ, payload: payload})
 			off += n
 		}
-		l.seq, l.size, l.salt = seq, int64(len(data)), salt
+		l.segs = append(l.segs, segment{seq: seq})
+		l.size, l.salt = int64(len(data)), salt
 	}
-	if len(seqs) == 0 {
+	compacted := next > 1
+	lastMarker := -1
+	for i, rc := range records {
+		if rc.typ == recSnapshot {
+			lastMarker = i
+		}
+	}
+	if compacted && lastMarker < 0 {
+		return nil, raft.Restore{}, rec, corrupt("the log starts at segment %d and has no snapshot record", next)
+	}
+	r := replay{strict: !compacted}
+	for i, rc := range records {
+		var err error
+		switch rc.typ {
+		case recState:
+			r.hs, err = decodeState(rc.payload)
+		case recSnapshot:
+			index, term, reset, derr := decodeSnapshot(rc.payload)
+			switch {
+			case derr != nil:
+				err = derr
+			case compacted && i < lastMarker:
+			default:
+				err = r.snapshot(index, term, reset)
+				r.markerSeq = l.segs[rc.seg].seq
+			}
+		case recEntry:
+			var e raft.Entry
+			if e, err = decodeEntry(rc.payload); err == nil {
+				err = r.entry(e)
+				l.segs[rc.seg].maxIndex = max(l.segs[rc.seg].maxIndex, e.Index)
+			}
+		default:
+			err = corrupt("unknown record type %d", rc.typ)
+		}
+		if err != nil {
+			return nil, raft.Restore{}, rec, fmt.Errorf("segment %s: %w", segmentName(l.segs[rc.seg].seq), err)
+		}
+		rec.Records++
+	}
+	if len(l.segs) == 0 {
 		if err := l.create(next); err != nil {
 			return nil, raft.Restore{}, rec, err
 		}
 	} else {
-		f, err := fs.OpenAppend(segmentName(l.seq))
+		f, err := fs.OpenAppend(segmentName(l.current().seq))
 		if err != nil {
 			return nil, raft.Restore{}, rec, err
 		}
 		l.f = f
 	}
+	l.markerSeq = r.markerSeq
 	hs := r.hs
-	hs.Commit = min(hs.Commit, uint64(len(r.ents)))
-	return l, raft.Restore{HardState: hs, Entries: r.ents}, rec, nil
+	hs.Commit = max(min(hs.Commit, r.last()), r.off)
+	return l, raft.Restore{HardState: hs, Snapshot: r.snap, Entries: r.ents}, rec, nil
 }
 
-func (l *Log) truncateTail(name string, size int64) error {
-	if err := l.fs.Truncate(name, size); err != nil {
+func truncateTail(fs vfs.FS, name string, size int64) error {
+	if err := fs.Truncate(name, size); err != nil {
 		return err
 	}
-	f, err := l.fs.OpenAppend(name)
+	f, err := fs.OpenAppend(name)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 	return f.Sync()
+}
+
+func (l *Log) current() *segment {
+	return &l.segs[len(l.segs)-1]
 }
 
 func (l *Log) create(seq uint64) error {
@@ -223,7 +315,8 @@ func (l *Log) create(seq uint64) error {
 		f.Close()
 		return err
 	}
-	l.f, l.seq, l.size, l.salt = f, seq, headerSize, salt
+	l.f, l.size, l.salt = f, headerSize, salt
+	l.segs = append(l.segs, segment{seq: seq})
 	return nil
 }
 
@@ -234,12 +327,19 @@ func (l *Log) rotate() error {
 	if err := l.f.Close(); err != nil {
 		return err
 	}
-	return l.create(l.seq + 1)
+	return l.create(l.current().seq + 1)
 }
 
 func (l *Log) Write(hs raft.HardState, ents []raft.Entry) error {
-	if hs.IsEmpty() && len(ents) == 0 {
+	return l.WriteBatch(Batch{HardState: hs, Entries: ents})
+}
+
+func (l *Log) WriteBatch(b Batch) error {
+	if b.empty() {
 		return nil
+	}
+	if b.Snapshot != nil && b.HardState.IsEmpty() {
+		return errors.New("wal: a snapshot record must carry the hard state, or compacting old segments could lose the term and vote")
 	}
 	if l.size >= l.opts.SegmentBytes {
 		if err := l.rotate(); err != nil {
@@ -247,11 +347,19 @@ func (l *Log) Write(hs raft.HardState, ents []raft.Entry) error {
 		}
 	}
 	buf := l.buf[:0]
-	if !hs.IsEmpty() {
-		buf = appendRecord(buf, l.salt, recState, func(b []byte) []byte { return encodeState(b, hs) })
+	if !b.HardState.IsEmpty() {
+		buf = appendRecord(buf, l.salt, recState, func(p []byte) []byte { return encodeState(p, b.HardState) })
 	}
-	for _, e := range ents {
-		buf = appendRecord(buf, l.salt, recEntry, func(b []byte) []byte { return encodeEntry(b, e) })
+	if b.Snapshot != nil {
+		buf = appendRecord(buf, l.salt, recSnapshot, func(p []byte) []byte { return encodeSnapshot(p, b.Snapshot, b.Reset) })
+		l.markerSeq = l.current().seq
+	}
+	for _, e := range b.Entries {
+		buf = appendRecord(buf, l.salt, recEntry, func(p []byte) []byte { return encodeEntry(p, e) })
+	}
+	if n := len(b.Entries); n > 0 {
+		cur := l.current()
+		cur.maxIndex = max(cur.maxIndex, b.Entries[n-1].Index)
 	}
 	l.buf = buf
 	n, err := l.f.Write(buf)
@@ -267,8 +375,23 @@ func (l *Log) Close() error {
 	return l.f.Close()
 }
 
-func (l *Log) Segment() uint64 {
-	return l.seq
+func (l *Log) Segments() int {
+	return len(l.segs)
+}
+
+func (l *Log) Compact(index uint64) (int, error) {
+	removed := 0
+	for len(l.segs) > 1 && l.segs[0].seq < l.markerSeq && l.segs[0].maxIndex <= index {
+		if err := l.fs.Remove(segmentName(l.segs[0].seq)); err != nil {
+			return removed, err
+		}
+		l.segs = l.segs[1:]
+		removed++
+	}
+	if removed > 0 {
+		return removed, l.fs.SyncDir()
+	}
+	return 0, nil
 }
 
 func readHeader(data []byte, seq uint64) (uint64, bool) {
@@ -336,6 +459,27 @@ func decodeState(p []byte) (raft.HardState, error) {
 	}
 	hs.Vote = raft.NodeID(vote)
 	return hs, nil
+}
+
+func encodeSnapshot(b []byte, s *raft.Snapshot, reset bool) []byte {
+	b = binary.AppendUvarint(b, s.Index)
+	b = binary.AppendUvarint(b, s.Term)
+	if reset {
+		return append(b, 1)
+	}
+	return append(b, 0)
+}
+
+func decodeSnapshot(p []byte) (uint64, uint64, bool, error) {
+	index, p, ok := uvarint(p)
+	if !ok {
+		return 0, 0, false, corrupt("bad snapshot record")
+	}
+	term, p, ok := uvarint(p)
+	if !ok || len(p) != 1 || p[0] > 1 {
+		return 0, 0, false, corrupt("bad snapshot record")
+	}
+	return index, term, p[0] == 1, nil
 }
 
 func encodeEntry(b []byte, e raft.Entry) []byte {

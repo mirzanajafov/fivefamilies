@@ -183,5 +183,9 @@ func addStats(a, b sim.Stats) sim.Stats {
 	a.Writes += b.Writes
 	a.Fsyncs += b.Fsyncs
 	a.TornTails += b.TornTails
+	a.Snapshots += b.Snapshots
+	a.SnapshotsSent += b.SnapshotsSent
+	a.Installs += b.Installs
+	a.Compactions += b.Compactions
 	return a
 }

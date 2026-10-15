@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"fmt"
 	"math/rand/v2"
 	"slices"
 	"testing"
@@ -538,5 +539,156 @@ func TestHandedOutEntriesSurviveTruncation(t *testing.T) {
 	r.Step(Message{Type: MsgApp, From: 3, To: 2, Term: 2, Index: 1, LogTerm: 1, Entries: []Entry{{Term: 2, Index: 2, Data: []byte("c")}}})
 	if string(rd.Entries[1].Data) != "b" || rd.Entries[1].Term != 1 {
 		t.Fatalf("an entry already handed to storage changed: %+v", rd.Entries[1])
+	}
+}
+
+func (c *cluster) snapshot(id NodeID, retain uint64) Snapshot {
+	c.t.Helper()
+	r := c.node(id)
+	idx := r.Applied()
+	term, _ := r.LogTerm(idx)
+	s := Snapshot{Index: idx, Term: term, Data: []byte(fmt.Sprintf("state of %d at %d", id, idx))}
+	if err := r.Compact(s, retain); err != nil {
+		c.t.Fatal(err)
+	}
+	c.stores[id-1].compact(s)
+	return s
+}
+
+func TestCompactKeepsWhatIsRetained(t *testing.T) {
+	c := newCluster(t, 1, nil)
+	c.elect(1)
+	for i := range 10 {
+		c.propose(1, fmt.Sprint(i))
+	}
+	r := c.node(1)
+	s := c.snapshot(1, 3)
+	if s.Index != 11 || r.FirstIndex() != 9 || r.LastIndex() != 11 {
+		t.Fatalf("snapshot at %d, log now %d..%d", s.Index, r.FirstIndex(), r.LastIndex())
+	}
+	if _, ok := r.EntryAt(8); ok {
+		t.Fatal("entry 8 survived compaction")
+	}
+	if term, ok := r.LogTerm(8); !ok || term != 1 {
+		t.Fatalf("term at the compaction point: %d %v", term, ok)
+	}
+	if err := r.Compact(Snapshot{Index: 99, Term: 1}, 0); err == nil {
+		t.Fatal("compacted past the applied index")
+	}
+	if err := r.Compact(Snapshot{Index: 11, Term: 7}, 0); err != nil {
+		t.Fatalf("an older or equal snapshot should be ignored: %v", err)
+	}
+}
+
+func TestALaggingFollowerGetsASnapshot(t *testing.T) {
+	c := newCluster(t, 3, nil)
+	c.elect(1)
+	c.isolate(3)
+	for i := range 20 {
+		c.propose(1, fmt.Sprint(i))
+	}
+	s := c.snapshot(1, 0)
+	c.heal()
+	c.tickAll(3)
+	r3 := c.node(3)
+	if r3.LatestSnapshot() == nil || r3.LatestSnapshot().Index != s.Index || string(r3.LatestSnapshot().Data) != string(s.Data) {
+		t.Fatalf("node 3 has snapshot %+v, want %d", r3.LatestSnapshot(), s.Index)
+	}
+	if c.stores[2].snap == nil || c.stores[2].snap.Index != s.Index {
+		t.Fatal("the snapshot was not handed to storage")
+	}
+	c.propose(1, "after")
+	for i, r := range c.nodes {
+		if r.Committed() != c.node(1).LastIndex() {
+			t.Fatalf("node %d committed %d, leader last %d", i+1, r.Committed(), c.node(1).LastIndex())
+		}
+	}
+	last := c.applied[2][len(c.applied[2])-1]
+	if string(last.Data) != "after" {
+		t.Fatalf("node 3 last applied %q", last.Data)
+	}
+	c.crash(3)
+	c.restart(3)
+	if r := c.node(3); r.FirstIndex() != s.Index+1 || r.Committed() < s.Index {
+		t.Fatalf("restarted node 3: first %d committed %d", r.FirstIndex(), r.Committed())
+	}
+}
+
+func TestSnapshotHandOffWaitsForItsWrite(t *testing.T) {
+	r := newNode(t, 2, five(), Restore{HardState: HardState{Term: 1}}, nil)
+	snap := &Snapshot{Index: 50, Term: 1, Data: []byte("s")}
+	r.Step(Message{Type: MsgSnap, From: 1, To: 2, Term: 1, Snapshot: snap})
+	rd := r.Ready()
+	if rd.Snapshot != snap || !rd.MustSync {
+		t.Fatalf("ready %+v", rd)
+	}
+	if _, ok := find(rd.Messages, MsgAppResp, 1); ok {
+		t.Fatal("acknowledged the snapshot before it was persisted")
+	}
+	ack, ok := find(rd.AfterPersist, MsgAppResp, 1)
+	if !ok || ack.Index != 50 {
+		t.Fatalf("ack after persistence: %v", ack)
+	}
+	if r.Committed() != 50 || r.Applied() != 50 || r.FirstIndex() != 51 {
+		t.Fatalf("committed %d applied %d first %d", r.Committed(), r.Applied(), r.FirstIndex())
+	}
+	for _, m := range rd.AfterPersist {
+		if m.To == 2 {
+			r.Step(m)
+		}
+	}
+	if r.Stabled() != 50 {
+		t.Fatalf("stabled %d after the write", r.Stabled())
+	}
+}
+
+func TestAnOldOrKnownSnapshotIsNotRestored(t *testing.T) {
+	r := newNode(t, 2, five(), Restore{HardState: HardState{Term: 2, Commit: 3}, Entries: ents(1, 1, 2, 2, 2)}, nil)
+	r.Step(Message{Type: MsgSnap, From: 1, To: 2, Term: 2, Snapshot: &Snapshot{Index: 2, Term: 1}})
+	if rd := r.Ready(); rd.Snapshot != nil || r.LastIndex() != 5 {
+		t.Fatal("restored a snapshot older than the commit index")
+	}
+	r.Step(Message{Type: MsgSnap, From: 1, To: 2, Term: 2, Snapshot: &Snapshot{Index: 4, Term: 2}})
+	rd := r.Ready()
+	if rd.Snapshot != nil || r.LastIndex() != 5 || r.Committed() != 4 {
+		t.Fatalf("a snapshot the log already has should only move commit: last %d committed %d", r.LastIndex(), r.Committed())
+	}
+}
+
+func TestALostSnapshotIsSentAgain(t *testing.T) {
+	c := newCluster(t, 3, nil)
+	c.elect(1)
+	c.isolate(3)
+	for i := range 5 {
+		c.propose(1, fmt.Sprint(i))
+	}
+	s := c.snapshot(1, 0)
+	c.heal()
+	c.cut[[2]NodeID{1, 3}] = true
+	c.tickAll(2)
+	delete(c.cut, [2]NodeID{1, 3})
+	c.tickAll(6)
+	if snap := c.node(3).LatestSnapshot(); snap == nil || snap.Index != s.Index {
+		t.Fatalf("node 3 never got the snapshot again: %+v", snap)
+	}
+}
+
+func TestRestoreFromASnapshot(t *testing.T) {
+	st := Restore{
+		HardState: HardState{Term: 3, Commit: 12},
+		Snapshot:  &Snapshot{Index: 10, Term: 2, Data: []byte("x")},
+		Entries:   []Entry{{Term: 3, Index: 11}, {Term: 3, Index: 12}},
+	}
+	r := newNode(t, 1, five(), st, nil)
+	if r.FirstIndex() != 11 || r.LastIndex() != 12 || r.Applied() != 10 || r.Committed() != 12 {
+		t.Fatalf("first %d last %d applied %d committed %d", r.FirstIndex(), r.LastIndex(), r.Applied(), r.Committed())
+	}
+	if term, _ := r.LogTerm(10); term != 2 {
+		t.Fatalf("term at the snapshot %d", term)
+	}
+	bad := st
+	bad.Entries = []Entry{{Term: 3, Index: 12}}
+	if _, err := New(testConfig(1, five()), bad); err == nil {
+		t.Fatal("entries that do not follow the snapshot were accepted")
 	}
 }
