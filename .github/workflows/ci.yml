@@ -18,6 +18,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: test -z "$(gofmt -l .)"
+      - run: sh scripts/protogen.sh && git diff --exit-code -- api
       - run: go vet ./...
       - run: go test -race $(go list ./... | grep -v /internal/sim)
       - run: go test ./internal/sim/

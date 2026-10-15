@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package fivefamilies.v1;
+
+option go_package = "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1";
+
+message StatusRequest {}
+
+message StatusResponse {
+  uint64 id = 1;
+  string state = 2;
+  uint64 term = 3;
+  uint64 leader = 4;
+  uint64 commit = 5;
+  uint64 applied = 6;
+  uint64 first_index = 7;
+  uint64 last_index = 8;
+  uint64 snapshot_index = 9;
+  uint64 state_hash = 10;
+  uint64 hash_index = 11;
+}
+
+service Admin {
+  rpc Status(StatusRequest) returns (StatusResponse);
+}
