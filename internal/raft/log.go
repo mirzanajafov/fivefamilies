@@ -12,6 +12,8 @@ type raftLog struct {
 	applied   uint64
 	stabled   uint64
 	handed    uint64
+
+	skipPrevTerm bool
 }
 
 func newLog(st Restore) (*raftLog, error) {
@@ -144,7 +146,11 @@ func (l *raftLog) findConflictByTerm(index, term uint64) (uint64, uint64) {
 }
 
 func (l *raftLog) maybeAppend(index, logTerm, committed uint64, ents []Entry) (uint64, bool) {
-	if !l.matchTerm(index, logTerm) {
+	if l.skipPrevTerm {
+		if index > l.lastIndex() || index < l.snapIndex {
+			return 0, false
+		}
+	} else if !l.matchTerm(index, logTerm) {
 		return 0, false
 	}
 	last := index + uint64(len(ents))
