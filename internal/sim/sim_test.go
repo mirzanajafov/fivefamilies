@@ -165,7 +165,7 @@ func TestCheckerCatchesTwoLeadersInOneTerm(t *testing.T) {
 func TestCheckerCatchesDifferentCommittedEntries(t *testing.T) {
 	c := newChecker(2)
 	c.observe(0, soloLeader(t, 1, raft.Restore{}, "a"))
-	c.leaders = map[uint64]raft.NodeID{}
+	c.leaders = map[uint64]leadership{}
 	c.observe(1, soloLeader(t, 2, raft.Restore{}, "b"))
 	if !c.failed() {
 		t.Fatal("two different entries committed at index 2 went unnoticed")
@@ -235,15 +235,47 @@ func TestDiskCatchesForgottenVotesAndTerms(t *testing.T) {
 	}
 }
 
-func TestDiskCatchesOverwrittenCommittedEntries(t *testing.T) {
-	c := newChecker(1)
+func committedOnDisks(t *testing.T, holders, total int) (*checker, []*memDisk) {
+	t.Helper()
+	c := newChecker(total)
 	c.committed = []entryKey{{term: 1}, {term: 1, data: "a"}}
 	c.commitTerm = []uint64{1, 1}
-	d := newMemDisk()
-	d.apply(node.Write{Entries: []raft.Entry{{Term: 1, Index: 1}, {Term: 1, Index: 2, Data: []byte("a")}}}, c, 0)
-	d.apply(node.Write{Entries: []raft.Entry{{Term: 2, Index: 2}}}, c, 0)
+	c.quorum = total/2 + 1
+	var disks []*memDisk
+	for i := range total {
+		d := newMemDisk()
+		if i < holders {
+			d.apply(node.Write{Entries: []raft.Entry{{Term: 1, Index: 1}, {Term: 1, Index: 2, Data: []byte("a")}}}, c, i)
+		}
+		disks = append(disks, d)
+	}
+	c.disks = disks
+	return c, disks
+}
+
+func TestDiskCatchesACommittedEntryFallingBelowAQuorum(t *testing.T) {
+	c, disks := committedOnDisks(t, 2, 3)
+	disks[0].apply(node.Write{Entries: []raft.Entry{{Term: 2, Index: 2}}}, c, 0)
 	if !c.failed() {
-		t.Fatal("a committed entry overwritten on disk went unnoticed")
+		t.Fatal("a committed entry left on one disk of three went unnoticed")
+	}
+}
+
+func TestDiskAllowsALaggingNodeToOverwriteACommittedEntry(t *testing.T) {
+	c, disks := committedOnDisks(t, 3, 3)
+	disks[0].apply(node.Write{Entries: []raft.Entry{{Term: 2, Index: 2}}}, c, 0)
+	if c.failed() {
+		t.Fatalf("two of three disks still hold the entry: %s", c.failure)
+	}
+}
+
+func TestCheckerCatchesACommitThatIsNotDurableOnAQuorum(t *testing.T) {
+	c := newChecker(1)
+	c.quorum = 1
+	c.disks = []*memDisk{newMemDisk()}
+	c.observe(0, soloLeader(t, 1, raft.Restore{}, "a"))
+	if !c.failed() {
+		t.Fatal("entries committed with nothing on disk went unnoticed")
 	}
 }
 
@@ -267,5 +299,25 @@ func TestHistoryMarksUnfinishedWritesIndeterminateAndDropsUnfinishedReads(t *tes
 	}
 	if v := check.Linearizable(h, 10*time.Second); !v.OK() {
 		t.Fatalf("verdict %s", v.Result)
+	}
+}
+
+func TestCheckerCatchesALeaderLeadingTheSameTermAfterARestart(t *testing.T) {
+	c := newChecker(1)
+	c.restarted(0)
+	c.observe(0, soloLeader(t, 1, raft.Restore{}))
+	c.restarted(0)
+	c.observe(0, soloLeader(t, 1, raft.Restore{}))
+	if !c.failed() {
+		t.Fatal("one node leading term 1 in two incarnations went unnoticed")
+	}
+}
+
+func TestRegressionSeeds(t *testing.T) {
+	seeds := []uint64{263, 281, 742, 2888, 4851, 4961}
+	for _, seed := range seeds {
+		if r := Run(seed, DefaultOptions()); !r.OK() {
+			t.Errorf("seed %d failed at %v: %s\n  swarm: %s", r.Seed, r.At, r.Violation, r.Swarm)
+		}
 	}
 }

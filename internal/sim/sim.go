@@ -25,6 +25,8 @@ type Options struct {
 	HeartbeatTick int
 	PreVote       bool
 	CheckQuorum   bool
+	Bugs          raft.Bug
+	MuteSafety    bool
 	Trace         io.Writer
 }
 
@@ -60,12 +62,16 @@ type Stats struct {
 	ClientRetries  int
 	SwapsWon       int
 	Indeterminate  int
+	Buggified      int
 }
 
 type Result struct {
 	Seed      uint64
 	Swarm     string
 	Violation string
+	Category  Category
+	Muted     string
+	Detected  map[Category]string
 	Stack     string
 	At        time.Duration
 	TraceHash uint64
@@ -131,6 +137,8 @@ func Run(seed uint64, opts Options) (res Result) {
 		if p := recover(); p != nil {
 			res = s.result()
 			res.Violation = fmt.Sprintf("panic: %v", p)
+			res.Category = CatPanic
+			res.Detected[CatPanic] = res.Violation
 			res.Stack = string(debug.Stack())
 		}
 	}()
@@ -153,13 +161,18 @@ func newSim(seed uint64, opts Options) *Sim {
 	s.net = newNetwork(opts.Nodes)
 	s.net.loss, s.net.dup, s.net.base, s.net.jitter = s.sw.loss, s.sw.dup, s.sw.base, s.sw.jitter
 	s.chk = newChecker(opts.Nodes)
+	s.chk.mute = opts.MuteSafety
 	for i := range opts.Nodes {
 		s.voters = append(s.voters, raft.NodeID(i+1))
 	}
 	for i := range opts.Nodes {
 		rate := 1 + s.sw.clockSpread*(2*rng.Float64()-1)
-		s.nodes = append(s.nodes, &simNode{idx: i, id: raft.NodeID(i + 1), disk: newMemDisk(), rate: rate})
+		sn := &simNode{idx: i, id: raft.NodeID(i + 1), disk: newMemDisk(), rate: rate}
+		s.nodes = append(s.nodes, sn)
+		s.chk.disks = append(s.chk.disks, sn.disk)
 	}
+	s.chk.quorum = opts.Nodes/2 + 1
+	s.net.reorder = s.sw.reorder
 	return s
 }
 
@@ -176,6 +189,9 @@ func (s *Sim) result() Result {
 		Seed:      s.seed,
 		Swarm:     s.sw.String(),
 		Violation: s.chk.failure,
+		Category:  s.chk.category,
+		Muted:     s.chk.muted,
+		Detected:  s.chk.detected,
 		At:        s.now,
 		TraceHash: s.hash,
 		Stats:     s.stats,
@@ -230,11 +246,13 @@ func (s *Sim) boot(sn *simNode) {
 		HeartbeatTick: s.opts.HeartbeatTick,
 		PreVote:       s.opts.PreVote,
 		CheckQuorum:   s.opts.CheckQuorum,
+		MaxMsgBytes:   s.sw.maxMsgBytes,
 		Rand:          rand.NewPCG(s.rng.Uint64(), s.rng.Uint64()),
+		Bugs:          s.opts.Bugs,
 	}
 	r, err := raft.New(cfg, sn.disk.restore())
 	if err != nil {
-		s.chk.failf("node %d failed to restart: %v (disk: %s)", sn.id, err, sn.disk)
+		s.chk.safetyf("node %d failed to restart: %v (disk: %s)", sn.id, err, sn.disk)
 		return
 	}
 	sn.sm = newRecorder(s.chk, sn.idx)
@@ -345,12 +363,15 @@ func (s *Sim) checkLogMatching() {
 
 func (s *Sim) send(from *simNode, m raft.Message) {
 	s.stats.MsgsSent++
+	if s.sw.buggify > 0 && !s.healing {
+		s.buggify(from, m)
+	}
 	to := int(m.To) - 1
 	if s.net.isBlocked(from.idx, to) || (s.net.loss > 0 && s.rng.Float64() < s.net.loss) {
 		s.stats.MsgsDropped++
 		return
 	}
-	s.schedule(event{kind: evDeliver, node: to, msg: m}, s.net.delay(s.rng))
+	s.schedule(event{kind: evDeliver, node: to, msg: m}, s.net.arrival(s.rng, s.now, from.idx, to)-s.now)
 	if s.net.dup > 0 && s.rng.Float64() < s.net.dup {
 		s.stats.MsgsDuplicated++
 		s.schedule(event{kind: evDeliver, node: to, msg: m}, s.net.delay(s.rng))
@@ -366,6 +387,49 @@ func (s *Sim) write(sn *simNode, w node.Write) {
 	done := max(s.now+lat, sn.disk.lastDone)
 	sn.disk.lastDone = done
 	s.schedule(event{kind: evWriteDone, node: sn.idx, gen: sn.incarnation, wseq: w.Seq}, done-s.now)
+}
+
+func (s *Sim) buggify(from *simNode, m raft.Message) {
+	switch {
+	case m.Type == raft.MsgVoteResp && !m.Reject,
+		m.Type == raft.MsgAppResp && !m.Reject && m.Index > 0,
+		m.Type == raft.MsgApp && len(m.Entries) > 0:
+		if s.rng.Float64() >= s.sw.buggify {
+			return
+		}
+		s.stats.Buggified++
+		inc := from.incarnation
+		s.after(between(s.rng, 0, 200*time.Microsecond), func() {
+			if from.n == nil || from.incarnation != inc || s.healing {
+				return
+			}
+			s.tracef("buggify: crash node %d right after it sent %v", from.id, m.Type)
+			s.crash(from)
+			s.after(between(s.rng, 20*time.Millisecond, 500*time.Millisecond), func() {
+				if from.n == nil {
+					s.restart(from)
+				}
+			})
+		})
+	case m.Type == raft.MsgVote:
+		if s.rng.Float64() >= s.sw.buggify {
+			return
+		}
+		other := s.nodes[s.rng.IntN(len(s.nodes))]
+		if other == from || other.n == nil || other.paused {
+			return
+		}
+		s.stats.Buggified++
+		s.after(0, func() {
+			if other.n == nil || other.paused || s.healing {
+				return
+			}
+			s.tracef("buggify: node %d campaigns alongside %d", other.id, from.id)
+			other.n.Raft().Campaign()
+			other.n.Process()
+			s.observe(other)
+		})
+	}
 }
 
 func (s *Sim) crash(sn *simNode) {
@@ -456,39 +520,65 @@ func (s *Sim) finalChecks() {
 	if s.chk.failed() {
 		return
 	}
+	s.checkLiveness()
+	s.checkStates()
+	if s.chk.failed() && !s.opts.MuteSafety {
+		return
+	}
+	s.check = check.Linearizable(s.porcupineHistory(), s.opts.CheckTimeout)
+	if s.check.Result == porcupine.Illegal {
+		s.chk.report(CatLinearizability, "linearizability: the history of %d client operations is not linearizable", s.check.Ops)
+	}
+}
+
+func (s *Sim) checkLiveness() {
+	for _, sn := range s.nodes {
+		if sn.n == nil {
+			s.chk.report(CatLiveness, "liveness: node %d could not restart", sn.id)
+			return
+		}
+	}
 	l := s.leader()
 	if l == nil {
-		s.chk.failf("liveness: no leader %v after every fault stopped", s.opts.Heal)
+		s.chk.report(CatLiveness, "liveness: no leader %v after every fault stopped", s.opts.Heal)
 		return
 	}
 	lr := l.n.Raft()
 	if t, _ := lr.LogTerm(lr.Committed()); t != lr.Term() {
-		s.chk.failf("liveness: leader %d of term %d has not committed an entry of its term", lr.ID(), lr.Term())
+		s.chk.report(CatLiveness, "liveness: leader %d of term %d has not committed an entry of its term", lr.ID(), lr.Term())
 		return
 	}
 	for _, sn := range s.nodes {
 		r := sn.n.Raft()
 		if r.Term() != lr.Term() || r.Leader() != lr.ID() {
-			s.chk.failf("liveness: node %d is in term %d following %d, leader %d is in term %d", r.ID(), r.Term(), r.Leader(), lr.ID(), lr.Term())
+			s.chk.report(CatLiveness, "liveness: node %d is in term %d following %d, leader %d is in term %d", r.ID(), r.Term(), r.Leader(), lr.ID(), lr.Term())
 			return
 		}
 		if r.Committed() != lr.LastIndex() || r.Applied() != r.Committed() {
-			s.chk.failf("liveness: node %d committed %d applied %d, leader's log ends at %d", r.ID(), r.Committed(), r.Applied(), lr.LastIndex())
-			return
-		}
-		if h, lh := sn.sm.store.Hash(), l.sm.store.Hash(); h != lh {
-			s.chk.failf("state machine safety: node %d's state at revision %d differs from the leader's", r.ID(), sn.sm.store.Rev())
+			s.chk.report(CatLiveness, "liveness: node %d committed %d applied %d, leader's log ends at %d", r.ID(), r.Committed(), r.Applied(), lr.LastIndex())
 			return
 		}
 	}
 	for _, c := range s.clients {
 		if c.busy() {
-			s.chk.failf("liveness: client %d is still waiting for %v (seq %d) after every fault stopped", c.idx, c.cmd.Op, c.cmd.Seq)
+			s.chk.report(CatLiveness, "liveness: client %d is still waiting for %v (seq %d) after every fault stopped", c.idx, c.cmd.Op, c.cmd.Seq)
 			return
 		}
 	}
-	s.check = check.Linearizable(s.porcupineHistory(), s.opts.CheckTimeout)
-	if s.check.Result == porcupine.Illegal {
-		s.chk.failf("linearizability: the history of %d client operations is not linearizable", s.check.Ops)
+}
+
+func (s *Sim) checkStates() {
+	l := s.leader()
+	if l == nil {
+		return
+	}
+	for _, sn := range s.nodes {
+		if sn.n == nil || sn == l || sn.sm.store.Rev() != l.sm.store.Rev() {
+			continue
+		}
+		if sn.sm.store.Hash() != l.sm.store.Hash() {
+			s.chk.report(CatState, "state: node %d's state at revision %d differs from the leader's", sn.id, sn.sm.store.Rev())
+			return
+		}
 	}
 }

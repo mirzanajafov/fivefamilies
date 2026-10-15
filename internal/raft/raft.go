@@ -22,6 +22,7 @@ type Config struct {
 	MaxMsgBytes   int
 	MaxInflight   int
 	Rand          Source
+	Bugs          Bug
 }
 
 func (c *Config) validate() error {
@@ -86,6 +87,7 @@ func New(cfg Config, st Restore) (*Raft, error) {
 	if err != nil {
 		return nil, err
 	}
+	l.skipPrevTerm = cfg.Bugs.Has(BugPrevTerm)
 	if st.HardState.Term < l.lastTerm() {
 		return nil, fmt.Errorf("raft: restored term %d is lower than the last entry's term %d", st.HardState.Term, l.lastTerm())
 	}
@@ -169,6 +171,10 @@ func (r *Raft) Step(m Message) {
 			r.becomeFollower(m.Term, None)
 		}
 	case m.Term < r.term:
+		if r.cfg.Bugs.Has(BugStaleTerm) && m.Type == MsgApp && r.state == StateFollower {
+			r.handleAppend(m)
+			return
+		}
 		switch {
 		case (r.cfg.CheckQuorum || r.cfg.PreVote) && (m.Type == MsgApp || m.Type == MsgHeartbeat):
 			r.send(Message{Type: MsgAppResp, To: m.From, Term: r.term})
@@ -203,6 +209,12 @@ func (r *Raft) HasReady() bool {
 }
 
 func (r *Raft) Ready() Ready {
+	if r.cfg.Bugs.Has(BugNoFsync) && r.log.stabled < r.log.lastIndex() {
+		r.log.stabled = r.log.lastIndex()
+		if r.state == StateLeader && r.maybeCommit() {
+			r.pendingBcast = true
+		}
+	}
 	if r.pendingBcast {
 		r.pendingBcast = false
 		r.bcastAppend()
@@ -244,6 +256,10 @@ func (r *Raft) send(m Message) {
 
 func (r *Raft) sendAfterPersist(m Message) {
 	m.From = r.id
+	if r.cfg.Bugs.Has(BugNoFsync) {
+		r.msgs = append(r.msgs, m)
+		return
+	}
 	r.afterPersist = append(r.afterPersist, m)
 }
 
@@ -326,7 +342,7 @@ func (r *Raft) campaign(pre bool) {
 		}
 		r.send(Message{Type: typ, To: id, Term: term, Index: r.log.lastIndex(), LogTerm: r.log.lastTerm()})
 	}
-	if pre {
+	if pre || r.cfg.Bugs.Has(BugNoFsync) {
 		r.recordVote(r.id, true)
 	} else {
 		r.sendAfterPersist(Message{Type: MsgVoteResp, To: r.id, Term: r.term})
@@ -355,7 +371,7 @@ func (r *Raft) recordVote(id NodeID, granted bool) {
 	case yes >= r.quorum():
 		if r.state == StatePreCandidate {
 			r.campaign(false)
-		} else {
+		} else if r.votes[r.id] {
 			r.becomeLeader()
 		}
 	case no > len(r.voters)-r.quorum():
@@ -419,7 +435,7 @@ func (r *Raft) handleVoteRequest(m Message) {
 	canVote := r.vote == m.From ||
 		(r.vote == None && r.lead == None) ||
 		(m.Type == MsgPreVote && m.Term > r.term)
-	if !canVote || !r.log.isUpToDate(m.Index, m.LogTerm) {
+	if !canVote || (!r.log.isUpToDate(m.Index, m.LogTerm) && !r.cfg.Bugs.Has(BugAnyVote)) {
 		r.send(Message{Type: resp, To: m.From, Term: r.term, Reject: true})
 		return
 	}
@@ -559,7 +575,7 @@ func (r *Raft) maybeCommit() bool {
 	if n <= r.log.committed {
 		return false
 	}
-	if t, _ := r.log.term(n); t != r.term {
+	if t, _ := r.log.term(n); t != r.term && !r.cfg.Bugs.Has(BugFigure8) {
 		return false
 	}
 	r.log.commitTo(n)

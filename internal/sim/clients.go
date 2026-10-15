@@ -128,7 +128,7 @@ func (s *Sim) clientResponse(c *simClient, attempt, seq uint64, res kv.Result, e
 		return
 	}
 	if err == nil && res.Code != kv.OK {
-		s.chk.failf("client %d got %v for %v seq %d", c.idx, res.Code, c.cmd.Op, seq)
+		s.chk.report(CatClient, "client %d got %v for %v seq %d", c.idx, res.Code, c.cmd.Op, seq)
 		return
 	}
 	if err != nil {

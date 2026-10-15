@@ -11,14 +11,27 @@ import (
 type network struct {
 	n       int
 	blocked []bool
+	last    []time.Duration
 	loss    float64
 	dup     float64
+	reorder float64
 	base    time.Duration
 	jitter  time.Duration
 }
 
 func newNetwork(n int) network {
-	return network{n: n, blocked: make([]bool, n*n)}
+	return network{n: n, blocked: make([]bool, n*n), last: make([]time.Duration, n*n)}
+}
+
+func (nw *network) arrival(rng *rand.Rand, now time.Duration, from, to int) time.Duration {
+	at := now + nw.delay(rng)
+	if nw.reorder > 0 && rng.Float64() < nw.reorder {
+		return at
+	}
+	link := from*nw.n + to
+	at = max(at, nw.last[link])
+	nw.last[link] = at
+	return at
 }
 
 func (nw *network) isBlocked(from, to int) bool {
@@ -62,6 +75,9 @@ type swarm struct {
 	keys          int
 	think         time.Duration
 	timeout       time.Duration
+	buggify       float64
+	maxMsgBytes   int
+	reorder       float64
 }
 
 func pick[T any](rng *rand.Rand, opts ...T) T {
@@ -92,6 +108,9 @@ func newSwarm(rng *rand.Rand) swarm {
 		keys:         1 + rng.IntN(5),
 		think:        between(rng, time.Millisecond, 50*time.Millisecond),
 		timeout:      between(rng, 200*time.Millisecond, 800*time.Millisecond),
+		buggify:      pick(rng, 0, 0, 0.002, 0.01, 0.05),
+		maxMsgBytes:  pick(rng, 0, 0, 1),
+		reorder:      pick(rng, 0, 0, 0.001, 0.01),
 	}
 	if rng.Float64() < 0.6 {
 		sw.partitionMean = between(rng, time.Second, 5*time.Second)
@@ -112,6 +131,15 @@ func (sw swarm) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "loss %.2f dup %.2f delay %v+%v disk %v load %.0f/s clock ±%.2f clients %d keys %d think %v timeout %v",
 		sw.loss, sw.dup, sw.base, sw.jitter, sw.diskBase, sw.proposalRate, sw.clockSpread, sw.clients, sw.keys, sw.think, sw.timeout)
+	if sw.buggify > 0 {
+		fmt.Fprintf(&b, " buggify %.3f", sw.buggify)
+	}
+	if sw.maxMsgBytes > 0 {
+		fmt.Fprintf(&b, " msg %dB", sw.maxMsgBytes)
+	}
+	if sw.reorder > 0 {
+		fmt.Fprintf(&b, " reorder %.3f", sw.reorder)
+	}
 	for _, f := range []struct {
 		name string
 		mean time.Duration

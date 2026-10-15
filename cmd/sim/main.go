@@ -12,6 +12,7 @@ import (
 	"github.com/anishathalye/porcupine"
 
 	"github.com/mirzanajafov/fivefamilies/internal/check"
+	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/sim"
 )
 
@@ -25,6 +26,11 @@ func main() {
 	chaos := flag.Duration("chaos", 0, "simulated time with faults (default from the simulator)")
 	heal := flag.Duration("heal", 0, "simulated time after every fault stops")
 	nodes := flag.Int("nodes", 0, "cluster size")
+	checkTimeout := flag.Duration("check-timeout", 0, "time limit for one linearizability check")
+	bugs := flag.String("bug", "", "planted bugs to switch on, comma separated: figure8, staleterm, prevterm, anyvote, nofsync")
+	mute := flag.Bool("mute-safety", false, "record protocol invariant violations without stopping, to see what the other checks catch")
+	first := flag.Bool("first", false, "stop handing out seeds after the first failure and report the lowest failing seed")
+	catch := flag.String("catch", "", "count a seed as failing only when this check fires (safety, liveness, linearizability, state, client, panic)")
 	flag.Parse()
 
 	opts := sim.DefaultOptions()
@@ -37,6 +43,16 @@ func main() {
 	if *nodes > 0 {
 		opts.Nodes = *nodes
 	}
+	if *checkTimeout > 0 {
+		opts.CheckTimeout = *checkTimeout
+	}
+	planted, err := raft.ParseBugs(*bugs)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(2)
+	}
+	opts.Bugs = planted
+	opts.MuteSafety = *mute
 
 	if *seed != 0 {
 		if *trace {
@@ -64,26 +80,42 @@ func main() {
 	var failed []sim.Result
 	var total sim.Stats
 	var checkTotal, checkMax time.Duration
-	unknown := 0
+	unknown, ran := 0, 0
+	categories := map[sim.Category]int{}
+	var lowest uint64
+	var stop atomic.Bool
 	var wg sync.WaitGroup
 	for range *parallel {
 		wg.Go(func() {
 			for {
 				s := next.Add(1) - 1
-				if s >= last {
+				if s >= last || stop.Load() {
 					return
 				}
 				res := sim.Run(s, opts)
 				mu.Lock()
+				ran++
 				total = addStats(total, res.Stats)
 				checkTotal += res.CheckTook
 				checkMax = max(checkMax, res.CheckTook)
 				if res.Check == porcupine.Unknown {
 					unknown++
 				}
-				if !res.OK() {
+				failing := !res.OK()
+				if *catch != "" {
+					_, failing = res.Detected[sim.Category(*catch)]
+				}
+				if failing {
 					failed = append(failed, res)
-					printResult(res)
+					categories[res.Category]++
+					if lowest == 0 || res.Seed < lowest {
+						lowest = res.Seed
+					}
+					if *first {
+						stop.Store(true)
+					} else {
+						printResult(res)
+					}
 				}
 				mu.Unlock()
 			}
@@ -92,20 +124,34 @@ func main() {
 	wg.Wait()
 	elapsed := time.Since(start)
 	fmt.Printf("%d seeds from %d in %v (%.1f ms per seed per core), %d failed\n",
-		*count, *from, elapsed.Round(time.Millisecond), float64(elapsed.Milliseconds())*float64(*parallel)/float64(*count), len(failed))
+		ran, *from, elapsed.Round(time.Millisecond), float64(elapsed.Milliseconds())*float64(*parallel)/float64(max(ran, 1)), len(failed))
 	fmt.Printf("totals: %+v\n", total)
 	fmt.Printf("linearizability checks: %v in total, %v at most, %d timed out\n", checkTotal.Round(time.Millisecond), checkMax.Round(time.Millisecond), unknown)
-	if len(failed) > 0 {
-		os.Exit(1)
+	if len(failed) == 0 {
+		return
 	}
+	fmt.Printf("failures by category: %v; lowest failing seed %d, the %dth of the batch\n", categories, lowest, lowest-*from+1)
+	if *first {
+		for _, f := range failed {
+			if f.Seed == lowest {
+				printResult(f)
+			}
+		}
+	}
+	os.Exit(1)
 }
 
 func printResult(r sim.Result) {
 	status := "ok"
 	if !r.OK() {
-		status = "FAIL at " + r.At.String() + ": " + r.Violation
+		status = fmt.Sprintf("FAIL (%s) at %v: %s", r.Category, r.At, r.Violation)
 	}
 	fmt.Printf("seed %d: %s\n  swarm: %s\n  stats: %+v\n  check: %s in %v\n", r.Seed, status, r.Swarm, r.Stats, r.Check, r.CheckTook.Round(time.Millisecond))
+	for _, cat := range []sim.Category{sim.CatSafety, sim.CatLiveness, sim.CatState, sim.CatLinearizability, sim.CatClient, sim.CatPanic} {
+		if msg, ok := r.Detected[cat]; ok {
+			fmt.Printf("  %s: %s\n", cat, msg)
+		}
+	}
 }
 
 func addStats(a, b sim.Stats) sim.Stats {
@@ -126,5 +172,6 @@ func addStats(a, b sim.Stats) sim.Stats {
 	a.ClientRetries += b.ClientRetries
 	a.SwapsWon += b.SwapsWon
 	a.Indeterminate += b.Indeterminate
+	a.Buggified += b.Buggified
 	return a
 }

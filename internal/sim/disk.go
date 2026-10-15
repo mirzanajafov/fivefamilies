@@ -37,10 +37,10 @@ func (d *memDisk) apply(w node.Write, chk *checker, idx int) {
 	if !w.HardState.IsEmpty() {
 		prev, hs := d.hs, w.HardState
 		if hs.Term < prev.Term {
-			chk.failf("node %d persisted term %d after term %d", idx+1, hs.Term, prev.Term)
+			chk.safetyf("node %d persisted term %d after term %d", idx+1, hs.Term, prev.Term)
 		}
 		if hs.Term == prev.Term && prev.Vote != raft.None && hs.Vote != prev.Vote {
-			chk.failf("node %d persisted a vote for %d in term %d after voting for %d", idx+1, hs.Vote, hs.Term, prev.Vote)
+			chk.safetyf("node %d persisted a vote for %d in term %d after voting for %d", idx+1, hs.Vote, hs.Term, prev.Vote)
 		}
 		d.hs = hs
 	}
@@ -49,14 +49,16 @@ func (d *memDisk) apply(w node.Write, chk *checker, idx int) {
 	}
 	first := w.Entries[0].Index
 	if first > uint64(len(d.ents))+1 {
-		chk.failf("node %d persisted entry %d with only %d entries on disk", idx+1, first, len(d.ents))
+		chk.safetyf("node %d persisted entry %d with only %d entries on disk", idx+1, first, len(d.ents))
 		return
 	}
-	if first <= uint64(len(d.ents)) {
-		chk.overwrite(idx, d.ents[first-1:], w.Entries)
-		d.ents = d.ents[:first-1]
+	if first > uint64(len(d.ents)) {
+		d.ents = append(d.ents, w.Entries...)
+		return
 	}
-	d.ents = append(d.ents, w.Entries...)
+	old := slices.Clone(d.ents[first-1:])
+	d.ents = append(d.ents[:first-1], w.Entries...)
+	chk.overwrote(idx, old)
 }
 
 func (d *memDisk) crash() {

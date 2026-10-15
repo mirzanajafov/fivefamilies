@@ -10,7 +10,7 @@ import (
 )
 
 func TestCoreStaysDeterministic(t *testing.T) {
-	allowed := map[string]bool{"errors": true, "fmt": true, "slices": true}
+	allowed := map[string]bool{"errors": true, "fmt": true, "slices": true, "strings": true}
 	files, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)

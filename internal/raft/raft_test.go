@@ -158,16 +158,18 @@ func TestVoteIsSentOnlyAfterItIsDurable(t *testing.T) {
 	}
 }
 
-func TestCandidateCountsItsOwnVoteOnlyAfterItIsDurable(t *testing.T) {
-	r := newNode(t, 1, []NodeID{1, 2, 3}, Restore{}, func(c *Config) { c.PreVote = false })
+func TestCandidateLeadsOnlyAfterItsOwnVoteIsDurable(t *testing.T) {
+	r := newNode(t, 1, five(), Restore{}, func(c *Config) { c.PreVote = false })
 	r.Campaign()
 	rd := r.Ready()
 	if r.State() != StateCandidate {
 		t.Fatalf("state %s", r.State())
 	}
-	r.Step(Message{Type: MsgVoteResp, From: 2, To: 1, Term: 1})
+	for _, id := range []NodeID{2, 3, 4} {
+		r.Step(Message{Type: MsgVoteResp, From: id, To: 1, Term: 1})
+	}
 	if r.State() != StateCandidate {
-		t.Fatal("became leader on one other vote before its own vote was durable")
+		t.Fatal("became leader on three other votes before its own term and vote were durable")
 	}
 	self, ok := find(rd.AfterPersist, MsgVoteResp, 1)
 	if !ok {
