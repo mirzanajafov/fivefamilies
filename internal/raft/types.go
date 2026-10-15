@@ -49,6 +49,8 @@ const (
 	MsgVoteResp
 	MsgStorageAck
 	MsgSnap
+	MsgReadIndex
+	MsgReadIndexResp
 )
 
 var messageTypeNames = [...]string{
@@ -62,6 +64,8 @@ var messageTypeNames = [...]string{
 	MsgVoteResp:      "VoteResp",
 	MsgStorageAck:    "StorageAck",
 	MsgSnap:          "Snap",
+	MsgReadIndex:     "ReadIndex",
+	MsgReadIndexResp: "ReadIndexResp",
 }
 
 func (t MessageType) String() string {
@@ -82,6 +86,7 @@ type Message struct {
 	Commit   uint64
 	Reject   bool
 	Hint     uint64
+	Context  uint64
 	Snapshot *Snapshot
 }
 
@@ -130,6 +135,7 @@ type Ready struct {
 	Messages     []Message
 	AfterPersist []Message
 	Committed    []Entry
+	ReadStates   []ReadState
 }
 
 func (rd Ready) NeedsWrite() bool {

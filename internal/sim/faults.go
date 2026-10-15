@@ -81,6 +81,20 @@ type swarm struct {
 	segBytes      int64
 	snapEvery     uint64
 	retain        uint64
+	readMode      readMode
+}
+
+type readMode uint8
+
+const (
+	readLog readMode = iota
+	readIndex
+	readLease
+	readFollower
+)
+
+func (m readMode) String() string {
+	return [...]string{"log", "index", "lease", "follower"}[m]
 }
 
 func pick[T any](rng *rand.Rand, opts ...T) T {
@@ -117,6 +131,7 @@ func newSwarm(rng *rand.Rand) swarm {
 		segBytes:     pick[int64](rng, 16<<10, 64<<10, 1<<20),
 		snapEvery:    pick[uint64](rng, 0, 20, 200, 2000),
 		retain:       pick[uint64](rng, 0, 5, 50),
+		readMode:     pick(rng, readLog, readIndex, readLease, readFollower),
 	}
 	if rng.Float64() < 0.6 {
 		sw.partitionMean = between(rng, time.Second, 5*time.Second)
@@ -143,7 +158,7 @@ func (sw swarm) String() string {
 	if sw.maxMsgBytes > 0 {
 		fmt.Fprintf(&b, " msg %dB", sw.maxMsgBytes)
 	}
-	fmt.Fprintf(&b, " segment %dKiB", sw.segBytes>>10)
+	fmt.Fprintf(&b, " segment %dKiB reads %v", sw.segBytes>>10, sw.readMode)
 	if sw.snapEvery > 0 {
 		fmt.Fprintf(&b, " snapshot every %d keep %d", sw.snapEvery, sw.retain)
 	}

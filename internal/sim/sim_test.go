@@ -73,6 +73,7 @@ func TestSeeds(t *testing.T) {
 		total.Writes += r.Stats.Writes
 		total.Fsyncs += r.Stats.Fsyncs
 		total.Installs += r.Stats.Installs
+		total.LocalReads += r.Stats.LocalReads
 		total.Compactions += r.Stats.Compactions
 		if r.OK() && r.Check != porcupine.Ok {
 			t.Errorf("seed %d: linearizability check %s", r.Seed, r.Check)
@@ -96,6 +97,7 @@ func TestSeeds(t *testing.T) {
 		"torn tails on restart":   total.TornTails > 0,
 		"group commit":            total.Fsyncs < total.Writes,
 		"snapshot installs":       total.Installs > 0,
+		"confirmed local reads":   total.LocalReads > 0,
 		"segments compacted away": total.Compactions > 0,
 	}
 	for what, ok := range reached {

@@ -8,13 +8,16 @@ import (
 
 var canaries = []struct {
 	bug   raft.Bug
+	reads string
+	nets  []Category
 	seeds []uint64
 }{
-	{raft.BugFigure8, []uint64{314}},
-	{raft.BugStaleTerm, []uint64{45}},
-	{raft.BugPrevTerm, []uint64{10}},
-	{raft.BugAnyVote, []uint64{1}},
-	{raft.BugNoFsync, []uint64{1}},
+	{raft.BugFigure8, "", []Category{CatSafety, CatPanic}, []uint64{853}},
+	{raft.BugStaleTerm, "", []Category{CatSafety, CatPanic}, []uint64{667}},
+	{raft.BugPrevTerm, "", []Category{CatSafety, CatPanic}, []uint64{10}},
+	{raft.BugAnyVote, "", []Category{CatSafety, CatPanic}, []uint64{3}},
+	{raft.BugNoFsync, "", []Category{CatSafety, CatPanic}, []uint64{1}},
+	{raft.BugFollowerRead, "follower", []Category{CatLinearizability}, []uint64{1}},
 }
 
 func TestPlantedBugsAreCaught(t *testing.T) {
@@ -23,14 +26,19 @@ func TestPlantedBugsAreCaught(t *testing.T) {
 			t.Parallel()
 			opts := DefaultOptions()
 			opts.Bugs = c.bug
+			opts.Reads = c.reads
 			for _, seed := range c.seeds {
 				r := Run(seed, opts)
 				if r.OK() {
 					t.Errorf("seed %d no longer catches %s; search for a new canary with cmd/sim -bug %s -first", seed, c.bug, c.bug)
 					continue
 				}
-				if r.Category != CatSafety && r.Category != CatPanic {
-					t.Errorf("seed %d caught %s through %s, expected a protocol invariant: %s", seed, c.bug, r.Category, r.Violation)
+				expected := false
+				for _, cat := range c.nets {
+					expected = expected || r.Category == cat
+				}
+				if !expected {
+					t.Errorf("seed %d caught %s through %s, expected %v: %s", seed, c.bug, r.Category, c.nets, r.Violation)
 				}
 			}
 		})
@@ -39,8 +47,10 @@ func TestPlantedBugsAreCaught(t *testing.T) {
 
 func TestCanarySeedsPassWithoutTheBug(t *testing.T) {
 	for _, c := range canaries {
+		opts := DefaultOptions()
+		opts.Reads = c.reads
 		for _, seed := range c.seeds {
-			if r := Run(seed, DefaultOptions()); !r.OK() {
+			if r := Run(seed, opts); !r.OK() {
 				t.Errorf("seed %d fails on the real code: %s", seed, r.Violation)
 			}
 		}
@@ -56,5 +66,18 @@ func TestEveryBugHasACanary(t *testing.T) {
 		if !have[b] {
 			t.Errorf("planted bug %s has no canary seed", b)
 		}
+	}
+}
+
+func TestATickMeasuredLeaseBreaksWithoutCatchUp(t *testing.T) {
+	opts := DefaultOptions()
+	opts.Reads = "lease"
+	opts.NoCatchUp = true
+	if r := Run(172, opts); r.OK() || r.Category != CatLinearizability {
+		t.Fatalf("seed 172 without tick catch-up: %s %s", r.Category, r.Violation)
+	}
+	opts.NoCatchUp = false
+	if r := Run(172, opts); !r.OK() {
+		t.Fatalf("seed 172 with tick catch-up: %s", r.Violation)
 	}
 }

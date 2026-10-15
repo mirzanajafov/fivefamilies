@@ -98,6 +98,9 @@ func (s *Sim) nextOp(c *simClient) {
 }
 
 func (s *Sim) sendRequest(c *simClient) {
+	if c.cmd.Op == kv.OpGet && s.sw.readMode == readFollower {
+		c.target = s.rng.IntN(len(s.nodes))
+	}
 	c.attempt++
 	a := c.attempt
 	req := &clientReq{client: c, attempt: a, cmd: c.cmd}
@@ -115,12 +118,28 @@ func (s *Sim) sendRequest(c *simClient) {
 
 func (s *Sim) handleRequest(sn *simNode, req *clientReq) {
 	seq := req.cmd.Seq
-	sn.n.Submit(req.cmd, func(res kv.Result, err error) {
+	reply := func(res kv.Result, err error) {
 		if s.net.loss > 0 && s.rng.Float64() < s.net.loss {
 			return
 		}
 		s.after(s.net.delay(s.rng), func() { s.clientResponse(req.client, req.attempt, seq, res, err) })
-	})
+	}
+	if req.cmd.Op == kv.OpGet && s.sw.readMode != readLog {
+		s.stats.LocalReads++
+		if s.opts.Trace != nil {
+			r := sn.n.Raft()
+			s.tracef("n%d read %s for client %d attempt %d (state %v term %d commit %d applied %d)", sn.id, req.cmd.Key, req.client.idx, req.attempt, r.State(), r.Term(), r.Committed(), r.Applied())
+		}
+		sn.n.Read(req.cmd.Key, s.sw.readMode == readLease, func(res kv.Result, err error) {
+			if s.opts.Trace != nil {
+				r := sn.n.Raft()
+				s.tracef("n%d answers read %s for client %d attempt %d: found %v %q rev %d err %v (state %v term %d)", sn.id, req.cmd.Key, req.client.idx, req.attempt, res.Found, res.KV.Value, res.Rev, err, r.State(), r.Term())
+			}
+			reply(res, err)
+		})
+		return
+	}
+	sn.n.Submit(req.cmd, reply)
 }
 
 func (s *Sim) clientResponse(c *simClient, attempt, seq uint64, res kv.Result, err error) {

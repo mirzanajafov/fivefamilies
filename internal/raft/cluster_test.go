@@ -45,6 +45,7 @@ type cluster struct {
 	nodes   []*Raft
 	stores  []*stableStore
 	applied [][]Entry
+	reads   [][]ReadState
 	down    []bool
 	cut     map[[2]NodeID]bool
 	queue   []Message
@@ -82,6 +83,7 @@ func newCluster(t *testing.T, n int, tweak func(*Config)) *cluster {
 		c.nodes = append(c.nodes, r)
 		c.stores = append(c.stores, &stableStore{})
 		c.applied = append(c.applied, nil)
+		c.reads = append(c.reads, nil)
 		c.down = append(c.down, false)
 	}
 	return c
@@ -104,6 +106,7 @@ func (c *cluster) drain() {
 			rd := r.Ready()
 			c.stores[i].write(rd)
 			c.applied[i] = append(c.applied[i], rd.Committed...)
+			c.reads[i] = append(c.reads[i], rd.ReadStates...)
 			c.queue = append(c.queue, rd.Messages...)
 			c.queue = append(c.queue, rd.AfterPersist...)
 		}
