@@ -63,6 +63,9 @@ type Stats struct {
 	SwapsWon       int
 	Indeterminate  int
 	Buggified      int
+	Writes         int
+	Fsyncs         int
+	TornTails      int
 }
 
 type Result struct {
@@ -93,7 +96,7 @@ type simNode struct {
 	tickGen     uint64
 	paused      bool
 	backlog     []event
-	disk        *memDisk
+	disk        *disk
 	rate        float64
 	sm          *recorder
 }
@@ -167,7 +170,7 @@ func newSim(seed uint64, opts Options) *Sim {
 	}
 	for i := range opts.Nodes {
 		rate := 1 + s.sw.clockSpread*(2*rng.Float64()-1)
-		sn := &simNode{idx: i, id: raft.NodeID(i + 1), disk: newMemDisk(), rate: rate}
+		sn := &simNode{idx: i, id: raft.NodeID(i + 1), disk: newDisk(s.sw.segBytes, s.rng.Uint64), rate: rate}
 		s.nodes = append(s.nodes, sn)
 		s.chk.disks = append(s.chk.disks, sn.disk)
 	}
@@ -250,7 +253,15 @@ func (s *Sim) boot(sn *simNode) {
 		Rand:          rand.NewPCG(s.rng.Uint64(), s.rng.Uint64()),
 		Bugs:          s.opts.Bugs,
 	}
-	r, err := raft.New(cfg, sn.disk.restore())
+	st, rec, err := sn.disk.open(s.chk, sn.idx)
+	if err != nil {
+		s.chk.safetyf("node %d could not recover its log: %v", sn.id, err)
+		return
+	}
+	if rec.TornBytes > 0 {
+		s.stats.TornTails++
+	}
+	r, err := raft.New(cfg, st)
 	if err != nil {
 		s.chk.safetyf("node %d failed to restart: %v (disk: %s)", sn.id, err, sn.disk)
 		return
@@ -314,18 +325,22 @@ func (s *Sim) dispatch(e event) {
 		}
 		sn.n.Receive(e.msg)
 	case evWriteDone:
-		if e.gen != sn.incarnation {
+		if e.gen != sn.incarnation || sn.n == nil {
 			return
-		}
-		if !e.done {
-			sn.disk.complete(e.wseq, s.chk, sn.idx)
-			e.done = true
 		}
 		if sn.paused {
 			sn.backlog = append(sn.backlog, e)
 			return
 		}
+		if sn.disk.covers > 0 {
+			if err := sn.disk.sync(s.chk, sn.idx); err != nil {
+				s.chk.safetyf("node %d could not sync its log: %v", sn.id, err)
+				return
+			}
+		}
+		sn.disk.syncing = false
 		sn.n.WriteDone(e.wseq)
+		s.startSync(sn)
 	case evRequest:
 		if sn.n == nil {
 			return
@@ -379,14 +394,35 @@ func (s *Sim) send(from *simNode, m raft.Message) {
 }
 
 func (s *Sim) write(sn *simNode, w node.Write) {
-	sn.disk.submit(w)
-	var lat time.Duration
-	if !w.Empty() {
-		lat = time.Duration(float64(s.sw.diskBase) * sn.disk.slow * (0.5 + s.rng.ExpFloat64()/2))
+	if err := sn.disk.submit(w); err != nil {
+		s.chk.safetyf("node %d could not write its log: %v", sn.id, err)
+		return
 	}
-	done := max(s.now+lat, sn.disk.lastDone)
-	sn.disk.lastDone = done
-	s.schedule(event{kind: evWriteDone, node: sn.idx, gen: sn.incarnation, wseq: w.Seq}, done-s.now)
+	if !sn.disk.syncing {
+		s.startSync(sn)
+	}
+}
+
+func (s *Sim) startSync(sn *simNode) {
+	d := sn.disk
+	if len(d.queue) == 0 {
+		return
+	}
+	batch := d.queue
+	d.queue = nil
+	d.syncing = true
+	need := false
+	for _, w := range batch {
+		need = need || w.Sync
+	}
+	var lat time.Duration
+	if need {
+		d.covers = len(d.written)
+		s.stats.Fsyncs++
+		lat = time.Duration(float64(s.sw.diskBase) * d.slow * (0.5 + s.rng.ExpFloat64()/2))
+	}
+	s.stats.Writes += len(batch)
+	s.schedule(event{kind: evWriteDone, node: sn.idx, gen: sn.incarnation, wseq: batch[len(batch)-1].Seq}, lat)
 }
 
 func (s *Sim) buggify(from *simNode, m raft.Message) {
@@ -440,8 +476,7 @@ func (s *Sim) crash(sn *simNode) {
 	sn.tickGen++
 	sn.paused = false
 	sn.backlog = nil
-	sn.disk.crash()
-	sn.disk.lastDone = s.now
+	sn.disk.crash(s.rng)
 }
 
 func (s *Sim) restart(sn *simNode) {

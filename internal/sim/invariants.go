@@ -45,7 +45,7 @@ type checker struct {
 	muted        string
 	detected     map[Category]string
 	overwrites   int
-	disks        []*memDisk
+	disks        []*disk
 	quorum       int
 }
 
@@ -169,7 +169,7 @@ func (c *checker) durableOn(index uint64) int {
 	want := c.committed[index-1]
 	n := 0
 	for _, d := range c.disks {
-		if index <= uint64(len(d.ents)) && keyOf(d.ents[index-1]) == want {
+		if index <= uint64(len(d.durable.ents)) && keyOf(d.durable.ents[index-1]) == want {
 			n++
 		}
 	}
