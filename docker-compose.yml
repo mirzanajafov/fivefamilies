@@ -1,0 +1,49 @@
+x-node: &node
+  image: fivefamilies-node
+  build: .
+  restart: unless-stopped
+  cpus: 1
+  mem_limit: 128m
+  pids_limit: 128
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  n1:
+    <<: *node
+    hostname: n1
+    command: ["-id", "1", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms"]
+    ports: ["127.0.0.1:3151:3161"]
+    volumes: ["n1:/data"]
+  n2:
+    <<: *node
+    hostname: n2
+    command: ["-id", "2", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms"]
+    ports: ["127.0.0.1:3152:3161"]
+    volumes: ["n2:/data"]
+  n3:
+    <<: *node
+    hostname: n3
+    command: ["-id", "3", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms"]
+    ports: ["127.0.0.1:3153:3161"]
+    volumes: ["n3:/data"]
+  n4:
+    <<: *node
+    hostname: n4
+    command: ["-id", "4", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms"]
+    ports: ["127.0.0.1:3154:3161"]
+    volumes: ["n4:/data"]
+  n5:
+    <<: *node
+    hostname: n5
+    command: ["-id", "5", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms"]
+    ports: ["127.0.0.1:3155:3161"]
+    volumes: ["n5:/data"]
+
+volumes:
+  n1:
+  n2:
+  n3:
+  n4:
+  n5:

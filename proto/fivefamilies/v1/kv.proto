@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package fivefamilies.v1;
+
+option go_package = "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1";
+
+enum ReadMode {
+  READ_MODE_INDEX = 0;
+  READ_MODE_LEASE = 1;
+  READ_MODE_LOG = 2;
+}
+
+message KeyValue {
+  string key = 1;
+  bytes value = 2;
+  uint64 create_rev = 3;
+  uint64 mod_rev = 4;
+  uint64 version = 5;
+}
+
+message RegisterRequest {}
+
+message RegisterResponse {
+  uint64 client = 1;
+}
+
+message GetRequest {
+  string key = 1;
+  ReadMode mode = 2;
+}
+
+message GetResponse {
+  bool found = 1;
+  KeyValue kv = 2;
+  uint64 rev = 3;
+}
+
+message RangeRequest {
+  string prefix = 1;
+  uint64 limit = 2;
+}
+
+message RangeResponse {
+  repeated KeyValue kvs = 1;
+  uint64 rev = 2;
+}
+
+message PutRequest {
+  uint64 client = 1;
+  uint64 seq = 2;
+  string key = 3;
+  bytes value = 4;
+}
+
+message PutResponse {
+  uint64 rev = 1;
+  bool had_prev = 2;
+  KeyValue prev = 3;
+}
+
+message DeleteRequest {
+  uint64 client = 1;
+  uint64 seq = 2;
+  string key = 3;
+}
+
+message DeleteResponse {
+  uint64 rev = 1;
+  bool deleted = 2;
+}
+
+message CompareAndSwapRequest {
+  uint64 client = 1;
+  uint64 seq = 2;
+  string key = 3;
+  bytes value = 4;
+  oneof expect {
+    bytes value_is = 5;
+    bool missing = 6;
+    uint64 mod_rev = 7;
+  }
+}
+
+message CompareAndSwapResponse {
+  uint64 rev = 1;
+  bool swapped = 2;
+  bool found = 3;
+  KeyValue current = 4;
+}
+
+service KV {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Range(RangeRequest) returns (RangeResponse);
+  rpc Put(PutRequest) returns (PutResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc CompareAndSwap(CompareAndSwapRequest) returns (CompareAndSwapResponse);
+}
