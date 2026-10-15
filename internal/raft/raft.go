@@ -1,0 +1,604 @@
+package raft
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+)
+
+var ErrNotLeader = errors.New("raft: not the leader")
+
+type Source interface {
+	Uint64() uint64
+}
+
+type Config struct {
+	ID            NodeID
+	Voters        []NodeID
+	ElectionTick  int
+	HeartbeatTick int
+	PreVote       bool
+	CheckQuorum   bool
+	MaxMsgBytes   int
+	MaxInflight   int
+	Rand          Source
+}
+
+func (c *Config) validate() error {
+	switch {
+	case c.ID == None:
+		return errors.New("raft: node ID must not be zero")
+	case len(c.Voters) == 0:
+		return errors.New("raft: no voters")
+	case slices.Contains(c.Voters, None):
+		return errors.New("raft: voter ID must not be zero")
+	case c.HeartbeatTick <= 0:
+		return errors.New("raft: heartbeat tick must be positive")
+	case c.ElectionTick <= c.HeartbeatTick:
+		return errors.New("raft: election tick must be greater than heartbeat tick")
+	case c.Rand == nil:
+		return errors.New("raft: no random source")
+	}
+	if c.MaxMsgBytes <= 0 {
+		c.MaxMsgBytes = 1 << 20
+	}
+	if c.MaxInflight <= 0 {
+		c.MaxInflight = 256
+	}
+	return nil
+}
+
+type Restore struct {
+	HardState HardState
+	SnapIndex uint64
+	SnapTerm  uint64
+	Entries   []Entry
+}
+
+type Raft struct {
+	cfg   Config
+	id    NodeID
+	term  uint64
+	vote  NodeID
+	state StateType
+	lead  NodeID
+	log   *raftLog
+
+	voters []NodeID
+	prs    []*progress
+	votes  map[NodeID]bool
+
+	electionElapsed           int
+	heartbeatElapsed          int
+	randomizedElectionTimeout int
+
+	pendingBcast bool
+	msgs         []Message
+	afterPersist []Message
+	prevHS       HardState
+}
+
+func New(cfg Config, st Restore) (*Raft, error) {
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	l, err := newLog(st)
+	if err != nil {
+		return nil, err
+	}
+	if st.HardState.Term < l.lastTerm() {
+		return nil, fmt.Errorf("raft: restored term %d is lower than the last entry's term %d", st.HardState.Term, l.lastTerm())
+	}
+	voters := slices.Clone(cfg.Voters)
+	slices.Sort(voters)
+	voters = slices.Compact(voters)
+	r := &Raft{
+		cfg:    cfg,
+		id:     cfg.ID,
+		term:   st.HardState.Term,
+		vote:   st.HardState.Vote,
+		log:    l,
+		voters: voters,
+		votes:  make(map[NodeID]bool, len(voters)),
+		prevHS: HardState{Term: st.HardState.Term, Vote: st.HardState.Vote, Commit: l.committed},
+	}
+	r.prs = make([]*progress, len(voters))
+	for i, id := range voters {
+		r.prs[i] = &progress{id: id}
+	}
+	r.becomeFollower(r.term, None)
+	return r, nil
+}
+
+func (r *Raft) ID() NodeID         { return r.id }
+func (r *Raft) Term() uint64       { return r.term }
+func (r *Raft) Vote() NodeID       { return r.vote }
+func (r *Raft) State() StateType   { return r.state }
+func (r *Raft) Leader() NodeID     { return r.lead }
+func (r *Raft) Committed() uint64  { return r.log.committed }
+func (r *Raft) Applied() uint64    { return r.log.applied }
+func (r *Raft) Stabled() uint64    { return r.log.stabled }
+func (r *Raft) FirstIndex() uint64 { return r.log.firstIndex() }
+func (r *Raft) LastIndex() uint64  { return r.log.lastIndex() }
+
+func (r *Raft) LogTerm(i uint64) (uint64, bool) {
+	return r.log.term(i)
+}
+
+func (r *Raft) EntryAt(i uint64) (Entry, bool) {
+	return r.log.entry(i)
+}
+
+func (r *Raft) Tick() {
+	if r.state == StateLeader {
+		r.tickHeartbeat()
+	} else {
+		r.tickElection()
+	}
+}
+
+func (r *Raft) Propose(data []byte) (uint64, error) {
+	if r.state != StateLeader {
+		return 0, ErrNotLeader
+	}
+	e := r.appendEntry(EntryNormal, data)
+	r.pendingBcast = true
+	return e.Index, nil
+}
+
+func (r *Raft) Campaign() {
+	r.hup()
+}
+
+func (r *Raft) Step(m Message) {
+	if m.Type == MsgStorageAck {
+		r.handleStorageAck(m)
+		return
+	}
+	switch {
+	case m.Term > r.term:
+		if (m.Type == MsgVote || m.Type == MsgPreVote) && r.inLease() {
+			return
+		}
+		switch {
+		case m.Type == MsgPreVote:
+		case m.Type == MsgPreVoteResp && !m.Reject:
+		case m.Type == MsgApp || m.Type == MsgHeartbeat:
+			r.becomeFollower(m.Term, m.From)
+		default:
+			r.becomeFollower(m.Term, None)
+		}
+	case m.Term < r.term:
+		switch {
+		case (r.cfg.CheckQuorum || r.cfg.PreVote) && (m.Type == MsgApp || m.Type == MsgHeartbeat):
+			r.send(Message{Type: MsgAppResp, To: m.From, Term: r.term})
+		case m.Type == MsgPreVote:
+			r.send(Message{Type: MsgPreVoteResp, To: m.From, Term: r.term, Reject: true})
+		}
+		return
+	}
+
+	if m.Type == MsgVote || m.Type == MsgPreVote {
+		r.handleVoteRequest(m)
+		return
+	}
+
+	switch r.state {
+	case StateLeader:
+		r.stepLeader(m)
+	case StateCandidate, StatePreCandidate:
+		r.stepCandidate(m)
+	default:
+		r.stepFollower(m)
+	}
+}
+
+func (r *Raft) HasReady() bool {
+	return r.pendingBcast ||
+		len(r.msgs) > 0 ||
+		len(r.afterPersist) > 0 ||
+		r.hardState() != r.prevHS ||
+		r.log.handed < r.log.lastIndex() ||
+		r.log.hasToApply()
+}
+
+func (r *Raft) Ready() Ready {
+	if r.pendingBcast {
+		r.pendingBcast = false
+		r.bcastAppend()
+	}
+	var rd Ready
+	hs := r.hardState()
+	if hs != r.prevHS {
+		rd.HardState = hs
+		rd.MustSync = hs.Term != r.prevHS.Term || hs.Vote != r.prevHS.Vote
+		r.prevHS = hs
+	}
+	if ents := r.log.unhanded(); len(ents) > 0 {
+		rd.Entries = ents
+		rd.MustSync = true
+		last := ents[len(ents)-1]
+		r.log.handed = last.Index
+		r.afterPersist = append([]Message{{Type: MsgStorageAck, From: r.id, To: r.id, Index: last.Index, LogTerm: last.Term}}, r.afterPersist...)
+	}
+	if r.log.hasToApply() {
+		hi := r.log.applyLimit()
+		rd.Committed = r.log.slice(r.log.applied+1, hi+1)
+		r.log.applied = hi
+	}
+	rd.Messages = r.msgs
+	rd.AfterPersist = r.afterPersist
+	r.msgs = nil
+	r.afterPersist = nil
+	return rd
+}
+
+func (r *Raft) hardState() HardState {
+	return HardState{Term: r.term, Vote: r.vote, Commit: r.log.committed}
+}
+
+func (r *Raft) send(m Message) {
+	m.From = r.id
+	r.msgs = append(r.msgs, m)
+}
+
+func (r *Raft) sendAfterPersist(m Message) {
+	m.From = r.id
+	r.afterPersist = append(r.afterPersist, m)
+}
+
+func (r *Raft) quorum() int {
+	return len(r.voters)/2 + 1
+}
+
+func (r *Raft) isVoter(id NodeID) bool {
+	_, ok := slices.BinarySearch(r.voters, id)
+	return ok
+}
+
+func (r *Raft) progress(id NodeID) *progress {
+	i, ok := slices.BinarySearch(r.voters, id)
+	if !ok {
+		return nil
+	}
+	return r.prs[i]
+}
+
+func (r *Raft) inLease() bool {
+	return r.cfg.CheckQuorum && r.lead != None && r.electionElapsed < r.cfg.ElectionTick
+}
+
+func (r *Raft) tickElection() {
+	r.electionElapsed++
+	if r.isVoter(r.id) && r.electionElapsed >= r.randomizedElectionTimeout {
+		r.electionElapsed = 0
+		r.hup()
+	}
+}
+
+func (r *Raft) tickHeartbeat() {
+	r.heartbeatElapsed++
+	r.electionElapsed++
+	if r.electionElapsed >= r.cfg.ElectionTick {
+		r.electionElapsed = 0
+		if r.cfg.CheckQuorum && !r.quorumActive() {
+			r.becomeFollower(r.term, None)
+			return
+		}
+	}
+	if r.heartbeatElapsed >= r.cfg.HeartbeatTick {
+		r.heartbeatElapsed = 0
+		r.bcastHeartbeat()
+	}
+}
+
+func (r *Raft) quorumActive() bool {
+	active := 0
+	for _, pr := range r.prs {
+		if pr.id == r.id || pr.active {
+			active++
+		}
+		pr.active = false
+	}
+	return active >= r.quorum()
+}
+
+func (r *Raft) hup() {
+	if r.state == StateLeader || !r.isVoter(r.id) {
+		return
+	}
+	r.campaign(r.cfg.PreVote)
+}
+
+func (r *Raft) campaign(pre bool) {
+	var typ MessageType
+	var term uint64
+	if pre {
+		r.becomePreCandidate()
+		typ, term = MsgPreVote, r.term+1
+	} else {
+		r.becomeCandidate()
+		typ, term = MsgVote, r.term
+	}
+	for _, id := range r.voters {
+		if id == r.id {
+			continue
+		}
+		r.send(Message{Type: typ, To: id, Term: term, Index: r.log.lastIndex(), LogTerm: r.log.lastTerm()})
+	}
+	if pre {
+		r.recordVote(r.id, true)
+	} else {
+		r.sendAfterPersist(Message{Type: MsgVoteResp, To: r.id, Term: r.term})
+	}
+}
+
+func (r *Raft) recordVote(id NodeID, granted bool) {
+	if !r.isVoter(id) {
+		return
+	}
+	if _, seen := r.votes[id]; !seen {
+		r.votes[id] = granted
+	}
+	yes, no := 0, 0
+	for _, v := range r.voters {
+		g, seen := r.votes[v]
+		switch {
+		case !seen:
+		case g:
+			yes++
+		default:
+			no++
+		}
+	}
+	switch {
+	case yes >= r.quorum():
+		if r.state == StatePreCandidate {
+			r.campaign(false)
+		} else {
+			r.becomeLeader()
+		}
+	case no > len(r.voters)-r.quorum():
+		r.becomeFollower(r.term, None)
+	}
+}
+
+func (r *Raft) reset(term uint64) {
+	if r.term != term {
+		r.term = term
+		r.vote = None
+	}
+	r.lead = None
+	r.electionElapsed = 0
+	r.heartbeatElapsed = 0
+	r.randomizedElectionTimeout = r.cfg.ElectionTick + int(r.cfg.Rand.Uint64()%uint64(r.cfg.ElectionTick))
+	clear(r.votes)
+	for _, pr := range r.prs {
+		pr.reset(r.log.lastIndex() + 1)
+	}
+	r.pendingBcast = false
+}
+
+func (r *Raft) becomeFollower(term uint64, lead NodeID) {
+	r.reset(term)
+	r.state = StateFollower
+	r.lead = lead
+}
+
+func (r *Raft) becomePreCandidate() {
+	r.state = StatePreCandidate
+	r.lead = None
+	clear(r.votes)
+}
+
+func (r *Raft) becomeCandidate() {
+	r.reset(r.term + 1)
+	r.vote = r.id
+	r.state = StateCandidate
+}
+
+func (r *Raft) becomeLeader() {
+	r.reset(r.term)
+	r.state = StateLeader
+	r.lead = r.id
+	r.appendEntry(EntryNormal, nil)
+	r.pendingBcast = true
+}
+
+func (r *Raft) appendEntry(typ EntryType, data []byte) Entry {
+	e := Entry{Term: r.term, Index: r.log.lastIndex() + 1, Type: typ, Data: data}
+	r.log.append(e)
+	return e
+}
+
+func (r *Raft) handleVoteRequest(m Message) {
+	resp := MsgVoteResp
+	if m.Type == MsgPreVote {
+		resp = MsgPreVoteResp
+	}
+	canVote := r.vote == m.From ||
+		(r.vote == None && r.lead == None) ||
+		(m.Type == MsgPreVote && m.Term > r.term)
+	if !canVote || !r.log.isUpToDate(m.Index, m.LogTerm) {
+		r.send(Message{Type: resp, To: m.From, Term: r.term, Reject: true})
+		return
+	}
+	if m.Type == MsgPreVote {
+		r.send(Message{Type: resp, To: m.From, Term: m.Term})
+		return
+	}
+	r.electionElapsed = 0
+	r.vote = m.From
+	r.sendAfterPersist(Message{Type: resp, To: m.From, Term: m.Term})
+}
+
+func (r *Raft) stepFollower(m Message) {
+	switch m.Type {
+	case MsgApp:
+		r.electionElapsed = 0
+		r.lead = m.From
+		r.handleAppend(m)
+	case MsgHeartbeat:
+		r.electionElapsed = 0
+		r.lead = m.From
+		r.handleHeartbeat(m)
+	}
+}
+
+func (r *Raft) stepCandidate(m Message) {
+	want := MsgVoteResp
+	if r.state == StatePreCandidate {
+		want = MsgPreVoteResp
+	}
+	switch m.Type {
+	case MsgApp:
+		r.becomeFollower(m.Term, m.From)
+		r.handleAppend(m)
+	case MsgHeartbeat:
+		r.becomeFollower(m.Term, m.From)
+		r.handleHeartbeat(m)
+	case want:
+		r.recordVote(m.From, !m.Reject)
+	}
+}
+
+func (r *Raft) stepLeader(m Message) {
+	pr := r.progress(m.From)
+	if pr == nil || pr.id == r.id {
+		return
+	}
+	switch m.Type {
+	case MsgAppResp:
+		pr.active = true
+		r.handleAppendResp(pr, m)
+	case MsgHeartbeatResp:
+		pr.active = true
+		r.handleHeartbeatResp(pr)
+	}
+}
+
+func (r *Raft) handleStorageAck(m Message) {
+	if m.Index <= r.log.stabled || m.Index > r.log.handed || !r.log.matchTerm(m.Index, m.LogTerm) {
+		return
+	}
+	r.log.stabled = m.Index
+	if r.state == StateLeader && r.maybeCommit() {
+		r.pendingBcast = true
+	}
+}
+
+func (r *Raft) handleAppend(m Message) {
+	if m.Index < r.log.committed {
+		r.sendAfterPersist(Message{Type: MsgAppResp, To: m.From, Term: r.term, Index: r.log.committed})
+		return
+	}
+	if last, ok := r.log.maybeAppend(m.Index, m.LogTerm, m.Commit, m.Entries); ok {
+		r.sendAfterPersist(Message{Type: MsgAppResp, To: m.From, Term: r.term, Index: last})
+		return
+	}
+	hint, hintTerm := r.log.findConflictByTerm(min(m.Index, r.log.lastIndex()), m.LogTerm)
+	r.send(Message{Type: MsgAppResp, To: m.From, Term: r.term, Index: m.Index, Reject: true, Hint: hint, LogTerm: hintTerm})
+}
+
+func (r *Raft) handleHeartbeat(m Message) {
+	r.log.commitTo(m.Commit)
+	r.send(Message{Type: MsgHeartbeatResp, To: m.From, Term: r.term})
+}
+
+func (r *Raft) handleAppendResp(pr *progress, m Message) {
+	if m.Reject {
+		next := m.Hint
+		if m.LogTerm > 0 {
+			next, _ = r.log.findConflictByTerm(m.Hint, m.LogTerm)
+		}
+		if pr.maybeDecrTo(m.Index, next) {
+			if pr.state == stateReplicate {
+				pr.becomeProbe()
+			}
+			r.maybeSendAppend(pr, true)
+		}
+		return
+	}
+	if !pr.maybeUpdate(m.Index) {
+		return
+	}
+	switch pr.state {
+	case stateProbe:
+		pr.becomeReplicate()
+	case stateReplicate:
+		pr.freeTo(m.Index)
+	}
+	if r.maybeCommit() {
+		r.pendingBcast = true
+	}
+	for r.maybeSendAppend(pr, false) {
+	}
+}
+
+func (r *Raft) handleHeartbeatResp(pr *progress) {
+	pr.paused = false
+	if pr.state == stateReplicate && len(pr.inflight) >= r.cfg.MaxInflight {
+		pr.freeFirst()
+	}
+	if pr.match < r.log.lastIndex() {
+		r.maybeSendAppend(pr, true)
+	}
+}
+
+func (r *Raft) maybeCommit() bool {
+	matches := make([]uint64, 0, len(r.prs))
+	for _, pr := range r.prs {
+		if pr.id == r.id {
+			matches = append(matches, r.log.stabled)
+		} else {
+			matches = append(matches, pr.match)
+		}
+	}
+	slices.Sort(matches)
+	n := matches[len(matches)-r.quorum()]
+	if n <= r.log.committed {
+		return false
+	}
+	if t, _ := r.log.term(n); t != r.term {
+		return false
+	}
+	r.log.commitTo(n)
+	return true
+}
+
+func (r *Raft) bcastAppend() {
+	for _, pr := range r.prs {
+		if pr.id != r.id {
+			r.maybeSendAppend(pr, true)
+		}
+	}
+}
+
+func (r *Raft) bcastHeartbeat() {
+	for _, pr := range r.prs {
+		if pr.id != r.id {
+			r.send(Message{Type: MsgHeartbeat, To: pr.id, Term: r.term, Commit: min(pr.match, r.log.committed)})
+		}
+	}
+}
+
+func (r *Raft) maybeSendAppend(pr *progress, sendIfEmpty bool) bool {
+	if pr.isPaused(r.cfg.MaxInflight) {
+		return false
+	}
+	prevIndex := pr.next - 1
+	prevTerm, ok := r.log.term(prevIndex)
+	if !ok {
+		return false
+	}
+	var ents []Entry
+	if pr.next <= r.log.lastIndex() {
+		ents = r.log.sliceBytes(pr.next, r.log.lastIndex()+1, r.cfg.MaxMsgBytes)
+	}
+	if len(ents) == 0 && !sendIfEmpty {
+		return false
+	}
+	r.send(Message{Type: MsgApp, To: pr.id, Term: r.term, Index: prevIndex, LogTerm: prevTerm, Entries: ents, Commit: r.log.committed})
+	pr.sent(ents)
+	return true
+}
