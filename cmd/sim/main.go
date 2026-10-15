@@ -9,12 +9,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/anishathalye/porcupine"
+
+	"github.com/mirzanajafov/fivefamilies/internal/check"
 	"github.com/mirzanajafov/fivefamilies/internal/sim"
 )
 
 func main() {
 	seed := flag.Uint64("seed", 0, "run one seed and print its result")
 	trace := flag.Bool("trace", false, "with -seed, print every event")
+	viz := flag.String("viz", "", "with -seed, write the history's linearizability visualization to this HTML file")
 	from := flag.Uint64("from", 1, "first seed of a batch")
 	count := flag.Int("seeds", 1000, "number of seeds in a batch")
 	parallel := flag.Int("parallel", runtime.NumCPU(), "seeds run at once")
@@ -40,6 +44,11 @@ func main() {
 		}
 		res := sim.Run(*seed, opts)
 		printResult(res)
+		if *viz != "" {
+			if err := porcupine.VisualizePath(check.KVModel, res.Info, *viz); err != nil {
+				fmt.Println("visualization:", err)
+			}
+		}
 		if !res.OK() {
 			fmt.Print(res.Stack)
 			os.Exit(1)
@@ -54,6 +63,8 @@ func main() {
 	var mu sync.Mutex
 	var failed []sim.Result
 	var total sim.Stats
+	var checkTotal, checkMax time.Duration
+	unknown := 0
 	var wg sync.WaitGroup
 	for range *parallel {
 		wg.Go(func() {
@@ -65,6 +76,11 @@ func main() {
 				res := sim.Run(s, opts)
 				mu.Lock()
 				total = addStats(total, res.Stats)
+				checkTotal += res.CheckTook
+				checkMax = max(checkMax, res.CheckTook)
+				if res.Check == porcupine.Unknown {
+					unknown++
+				}
 				if !res.OK() {
 					failed = append(failed, res)
 					printResult(res)
@@ -78,6 +94,7 @@ func main() {
 	fmt.Printf("%d seeds from %d in %v (%.1f ms per seed per core), %d failed\n",
 		*count, *from, elapsed.Round(time.Millisecond), float64(elapsed.Milliseconds())*float64(*parallel)/float64(*count), len(failed))
 	fmt.Printf("totals: %+v\n", total)
+	fmt.Printf("linearizability checks: %v in total, %v at most, %d timed out\n", checkTotal.Round(time.Millisecond), checkMax.Round(time.Millisecond), unknown)
 	if len(failed) > 0 {
 		os.Exit(1)
 	}
@@ -88,7 +105,7 @@ func printResult(r sim.Result) {
 	if !r.OK() {
 		status = "FAIL at " + r.At.String() + ": " + r.Violation
 	}
-	fmt.Printf("seed %d: %s\n  swarm: %s\n  stats: %+v\n", r.Seed, status, r.Swarm, r.Stats)
+	fmt.Printf("seed %d: %s\n  swarm: %s\n  stats: %+v\n  check: %s in %v\n", r.Seed, status, r.Swarm, r.Stats, r.Check, r.CheckTook.Round(time.Millisecond))
 }
 
 func addStats(a, b sim.Stats) sim.Stats {
@@ -97,7 +114,6 @@ func addStats(a, b sim.Stats) sim.Stats {
 	a.MsgsDropped += b.MsgsDropped
 	a.MsgsDuplicated += b.MsgsDuplicated
 	a.Proposals += b.Proposals
-	a.Accepted += b.Accepted
 	a.Leaders += b.Leaders
 	a.MaxTerm = max(a.MaxTerm, b.MaxTerm)
 	a.Committed += b.Committed
@@ -106,5 +122,9 @@ func addStats(a, b sim.Stats) sim.Stats {
 	a.Partitions += b.Partitions
 	a.SlowDisks += b.SlowDisks
 	a.Overwrites += b.Overwrites
+	a.ClientOps += b.ClientOps
+	a.ClientRetries += b.ClientRetries
+	a.SwapsWon += b.SwapsWon
+	a.Indeterminate += b.Indeterminate
 	return a
 }
