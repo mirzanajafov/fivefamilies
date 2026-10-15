@@ -1,13 +1,18 @@
 package sim
 
 import (
+	"math"
 	"math/rand/v2"
 	"os"
 	"runtime"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/anishathalye/porcupine"
+
+	"github.com/mirzanajafov/fivefamilies/internal/check"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
@@ -61,6 +66,12 @@ func TestSeeds(t *testing.T) {
 		total.MsgsDuplicated += r.Stats.MsgsDuplicated
 		total.Leaders += r.Stats.Leaders
 		total.MaxTerm = max(total.MaxTerm, r.Stats.MaxTerm)
+		total.ClientOps += r.Stats.ClientOps
+		total.ClientRetries += r.Stats.ClientRetries
+		total.SwapsWon += r.Stats.SwapsWon
+		if r.OK() && r.Check != porcupine.Ok {
+			t.Errorf("seed %d: linearizability check %s", r.Seed, r.Check)
+		}
 	}
 	if n < 20 {
 		return
@@ -74,6 +85,9 @@ func TestSeeds(t *testing.T) {
 		"duplicated messages":     total.MsgsDuplicated > 0,
 		"two elections per seed":  total.Leaders >= 2*n,
 		"a term of 5 or more":     total.MaxTerm >= 5,
+		"client operations":       total.ClientOps >= 100*n,
+		"client retries":          total.ClientRetries > 0,
+		"successful swaps":        total.SwapsWon > 0,
 	}
 	for what, ok := range reached {
 		if !ok {
@@ -87,7 +101,7 @@ func TestSameSeedSameRun(t *testing.T) {
 	a := runSeeds(1000, n, DefaultOptions())
 	b := runSeeds(1000, n, DefaultOptions())
 	for i := range a {
-		if a[i].TraceHash != b[i].TraceHash || a[i].Stats != b[i].Stats {
+		if a[i].TraceHash != b[i].TraceHash || a[i].Stats != b[i].Stats || a[i].Check != b[i].Check {
 			t.Errorf("seed %d ran differently twice: %x %+v and %x %+v", a[i].Seed, a[i].TraceHash, a[i].Stats, b[i].TraceHash, b[i].Stats)
 		}
 	}
@@ -193,7 +207,7 @@ func TestCheckerAllowsALateLeaderOfAnOldTerm(t *testing.T) {
 
 func TestCheckerCatchesOutOfOrderApply(t *testing.T) {
 	c := newChecker(1)
-	rec := &recorder{chk: c}
+	rec := newRecorder(c, 0)
 	rec.Apply(raft.Entry{Term: 1, Index: 1})
 	rec.Apply(raft.Entry{Term: 1, Index: 3})
 	if !c.failed() {
@@ -234,3 +248,24 @@ func TestDiskCatchesOverwrittenCommittedEntries(t *testing.T) {
 }
 
 var _ node.Env = nopEnv{}
+
+func TestHistoryMarksUnfinishedWritesIndeterminateAndDropsUnfinishedReads(t *testing.T) {
+	s := &Sim{history: []opRecord{
+		{client: 0, call: 1, ret: 2, done: true, in: check.Input{Kind: check.Put, Key: "k", Value: "a"}, out: check.Output{Ok: true}},
+		{client: 1, call: 3, in: check.Input{Kind: check.CAS, Key: "k", Expect: "a", Value: "b"}},
+		{client: 2, call: 4, in: check.Input{Kind: check.Get, Key: "k"}},
+	}}
+	h := s.porcupineHistory()
+	if len(h) != 2 {
+		t.Fatalf("%d operations, want the finished put and the unfinished swap", len(h))
+	}
+	if h[1].Return != math.MaxInt64 || !h[1].Output.(check.Output).Unknown {
+		t.Fatalf("unfinished swap: %+v", h[1])
+	}
+	if s.stats.Indeterminate != 1 {
+		t.Fatalf("indeterminate %d", s.stats.Indeterminate)
+	}
+	if v := check.Linearizable(h, 10*time.Second); !v.OK() {
+		t.Fatalf("verdict %s", v.Result)
+	}
+}

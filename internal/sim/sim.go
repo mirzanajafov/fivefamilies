@@ -1,13 +1,16 @@
 package sim
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 	"math/rand/v2"
 	"runtime/debug"
 	"time"
 
+	"github.com/anishathalye/porcupine"
+
+	"github.com/mirzanajafov/fivefamilies/internal/check"
+	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
@@ -16,6 +19,7 @@ type Options struct {
 	Nodes         int
 	Chaos         time.Duration
 	Heal          time.Duration
+	CheckTimeout  time.Duration
 	Tick          time.Duration
 	ElectionTick  int
 	HeartbeatTick int
@@ -29,6 +33,7 @@ func DefaultOptions() Options {
 		Nodes:         5,
 		Chaos:         20 * time.Second,
 		Heal:          10 * time.Second,
+		CheckTimeout:  time.Minute,
 		Tick:          10 * time.Millisecond,
 		ElectionTick:  15,
 		HeartbeatTick: 3,
@@ -43,7 +48,6 @@ type Stats struct {
 	MsgsDropped    int
 	MsgsDuplicated int
 	Proposals      int
-	Accepted       int
 	Leaders        int
 	MaxTerm        uint64
 	Committed      int
@@ -52,6 +56,10 @@ type Stats struct {
 	Partitions     int
 	SlowDisks      int
 	Overwrites     int
+	ClientOps      int
+	ClientRetries  int
+	SwapsWon       int
+	Indeterminate  int
 }
 
 type Result struct {
@@ -62,6 +70,9 @@ type Result struct {
 	At        time.Duration
 	TraceHash uint64
 	Stats     Stats
+	Check     porcupine.CheckResult
+	CheckTook time.Duration
+	Info      porcupine.LinearizationInfo
 }
 
 func (r Result) OK() bool {
@@ -78,6 +89,7 @@ type simNode struct {
 	backlog     []event
 	disk        *memDisk
 	rate        float64
+	sm          *recorder
 }
 
 type nodeEnv struct {
@@ -103,7 +115,9 @@ type Sim struct {
 	stats   Stats
 	hash    uint64
 	healing bool
-	nextID  uint64
+	clients []*simClient
+	history []opRecord
+	check   check.Verdict
 }
 
 const (
@@ -165,6 +179,9 @@ func (s *Sim) result() Result {
 		At:        s.now,
 		TraceHash: s.hash,
 		Stats:     s.stats,
+		Check:     s.check.Result,
+		CheckTook: s.check.Took,
+		Info:      s.check.Info,
 	}
 }
 
@@ -199,7 +216,10 @@ func (s *Sim) start() {
 		s.sw.partitionMean = 0
 	}
 	s.startFaults()
-	s.after(exponential(s.rng, time.Duration(float64(time.Second)/s.sw.proposalRate)), s.proposeLoop)
+	s.startClients()
+	if s.sw.proposalRate > 0 {
+		s.after(exponential(s.rng, time.Duration(float64(time.Second)/s.sw.proposalRate)), s.proposeLoop)
+	}
 }
 
 func (s *Sim) boot(sn *simNode) {
@@ -217,7 +237,8 @@ func (s *Sim) boot(sn *simNode) {
 		s.chk.failf("node %d failed to restart: %v (disk: %s)", sn.id, err, sn.disk)
 		return
 	}
-	sn.n = node.New(r, nodeEnv{s: s, sn: sn}, &recorder{chk: s.chk, idx: sn.idx})
+	sn.sm = newRecorder(s.chk, sn.idx)
+	sn.n = node.New(r, nodeEnv{s: s, sn: sn}, sn.sm)
 	s.chk.restarted(sn.idx)
 	sn.n.Process()
 	s.observe(sn)
@@ -287,6 +308,15 @@ func (s *Sim) dispatch(e event) {
 			return
 		}
 		sn.n.WriteDone(e.wseq)
+	case evRequest:
+		if sn.n == nil {
+			return
+		}
+		if sn.paused {
+			sn.backlog = append(sn.backlog, e)
+			return
+		}
+		s.handleRequest(sn, e.req)
 	}
 	sn.n.Process()
 	s.observe(sn)
@@ -398,12 +428,8 @@ func (s *Sim) proposeOnce() {
 	if sn == nil {
 		return
 	}
-	s.nextID++
 	s.stats.Proposals++
-	data := binary.BigEndian.AppendUint64(nil, s.nextID)
-	if _, err := sn.n.Propose(data); err == nil {
-		s.stats.Accepted++
-	}
+	sn.n.Submit(kv.Command{Op: kv.OpPut, Key: "load", Value: []byte(fmt.Sprint(s.stats.Proposals))}, nil)
 	sn.n.Process()
 	s.observe(sn)
 }
@@ -450,5 +476,19 @@ func (s *Sim) finalChecks() {
 			s.chk.failf("liveness: node %d committed %d applied %d, leader's log ends at %d", r.ID(), r.Committed(), r.Applied(), lr.LastIndex())
 			return
 		}
+		if h, lh := sn.sm.store.Hash(), l.sm.store.Hash(); h != lh {
+			s.chk.failf("state machine safety: node %d's state at revision %d differs from the leader's", r.ID(), sn.sm.store.Rev())
+			return
+		}
+	}
+	for _, c := range s.clients {
+		if c.busy() {
+			s.chk.failf("liveness: client %d is still waiting for %v (seq %d) after every fault stopped", c.idx, c.cmd.Op, c.cmd.Seq)
+			return
+		}
+	}
+	s.check = check.Linearizable(s.porcupineHistory(), s.opts.CheckTimeout)
+	if s.check.Result == porcupine.Illegal {
+		s.chk.failf("linearizability: the history of %d client operations is not linearizable", s.check.Ops)
 	}
 }

@@ -3,6 +3,7 @@ package sim
 import (
 	"fmt"
 
+	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
@@ -150,12 +151,18 @@ func (c *checker) logMatching(a, b *raft.Raft) {
 }
 
 type recorder struct {
-	chk  *checker
-	idx  int
-	last uint64
+	chk   *checker
+	idx   int
+	last  uint64
+	store *kv.Store
 }
 
-func (r *recorder) Apply(e raft.Entry) {
+func newRecorder(chk *checker, idx int) *recorder {
+	return &recorder{chk: chk, idx: idx, store: kv.NewStore(0)}
+}
+
+func (r *recorder) Apply(e raft.Entry) kv.Result {
 	r.chk.apply(r.idx, r.last, e)
 	r.last = e.Index
+	return r.store.Apply(e)
 }

@@ -12,6 +12,7 @@ const (
 	evTick eventKind = iota
 	evDeliver
 	evWriteDone
+	evRequest
 	evCall
 )
 
@@ -24,6 +25,7 @@ type event struct {
 	msg  raft.Message
 	wseq uint64
 	done bool
+	req  *clientReq
 	call func()
 }
 

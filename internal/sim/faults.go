@@ -58,6 +58,10 @@ type swarm struct {
 	diskBase      time.Duration
 	proposalRate  float64
 	clockSpread   float64
+	clients       int
+	keys          int
+	think         time.Duration
+	timeout       time.Duration
 }
 
 func pick[T any](rng *rand.Rand, opts ...T) T {
@@ -82,8 +86,12 @@ func newSwarm(rng *rand.Rand) swarm {
 		base:         between(rng, 100*time.Microsecond, time.Millisecond),
 		jitter:       pick(rng, 0, time.Millisecond, 5*time.Millisecond, 20*time.Millisecond),
 		diskBase:     between(rng, 50*time.Microsecond, 2*time.Millisecond),
-		proposalRate: pick(rng, 20.0, 100.0, 500.0),
+		proposalRate: pick(rng, 0, 20.0, 100.0, 500.0),
 		clockSpread:  pick(rng, 0, 0.01, 0.05),
+		clients:      1 + rng.IntN(8),
+		keys:         1 + rng.IntN(5),
+		think:        between(rng, time.Millisecond, 50*time.Millisecond),
+		timeout:      between(rng, 200*time.Millisecond, 800*time.Millisecond),
 	}
 	if rng.Float64() < 0.6 {
 		sw.partitionMean = between(rng, time.Second, 5*time.Second)
@@ -102,7 +110,8 @@ func newSwarm(rng *rand.Rand) swarm {
 
 func (sw swarm) String() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "loss %.2f dup %.2f delay %v+%v disk %v rate %.0f/s clock ±%.2f", sw.loss, sw.dup, sw.base, sw.jitter, sw.diskBase, sw.proposalRate, sw.clockSpread)
+	fmt.Fprintf(&b, "loss %.2f dup %.2f delay %v+%v disk %v load %.0f/s clock ±%.2f clients %d keys %d think %v timeout %v",
+		sw.loss, sw.dup, sw.base, sw.jitter, sw.diskBase, sw.proposalRate, sw.clockSpread, sw.clients, sw.keys, sw.think, sw.timeout)
 	for _, f := range []struct {
 		name string
 		mean time.Duration
