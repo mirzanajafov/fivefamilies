@@ -1,0 +1,98 @@
+x-node: &node
+  image: fivefamilies-lab-node
+  restart: "no"
+  cpus: 1
+  mem_limit: 256m
+  pids_limit: 256
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-net: &net
+  image: fivefamilies-lab-net
+  build:
+    context: .
+    dockerfile: Dockerfile.net
+  cap_drop: [ALL]
+  cap_add: [NET_ADMIN, NET_RAW]
+  cpus: 0.2
+  mem_limit: 32m
+  pids_limit: 32
+  networks: [lab]
+
+services:
+  n1net:
+    <<: *net
+    hostname: n1
+    networks:
+      lab:
+        aliases: [n1]
+    ports: ["127.0.0.1:3151:3161"]
+  n1:
+    <<: *node
+    network_mode: "service:n1net"
+    depends_on: [n1net]
+    command: ["-id", "1", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
+    volumes: ["n1:/data"]
+  n2net:
+    <<: *net
+    hostname: n2
+    networks:
+      lab:
+        aliases: [n2]
+    ports: ["127.0.0.1:3152:3161"]
+  n2:
+    <<: *node
+    network_mode: "service:n2net"
+    depends_on: [n2net]
+    command: ["-id", "2", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
+    volumes: ["n2:/data"]
+  n3net:
+    <<: *net
+    hostname: n3
+    networks:
+      lab:
+        aliases: [n3]
+    ports: ["127.0.0.1:3153:3161"]
+  n3:
+    <<: *node
+    network_mode: "service:n3net"
+    depends_on: [n3net]
+    command: ["-id", "3", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
+    volumes: ["n3:/data"]
+  n4net:
+    <<: *net
+    hostname: n4
+    networks:
+      lab:
+        aliases: [n4]
+    ports: ["127.0.0.1:3154:3161"]
+  n4:
+    <<: *node
+    network_mode: "service:n4net"
+    depends_on: [n4net]
+    command: ["-id", "4", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
+    volumes: ["n4:/data"]
+  n5net:
+    <<: *net
+    hostname: n5
+    networks:
+      lab:
+        aliases: [n5]
+    ports: ["127.0.0.1:3155:3161"]
+  n5:
+    <<: *node
+    network_mode: "service:n5net"
+    depends_on: [n5net]
+    command: ["-id", "5", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
+    volumes: ["n5:/data"]
+
+networks:
+  lab:
+
+volumes:
+  n1:
+  n2:
+  n3:
+  n4:
+  n5:
