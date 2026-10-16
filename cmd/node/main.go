@@ -38,6 +38,21 @@ func parseCluster(s string) (map[raft.NodeID]string, error) {
 	return nodes, nil
 }
 
+func parseIDs(s string) ([]raft.NodeID, error) {
+	if s == "" {
+		return nil, nil
+	}
+	var ids []raft.NodeID
+	for part := range strings.SplitSeq(s, ",") {
+		n, err := strconv.ParseUint(strings.TrimSpace(part), 10, 64)
+		if err != nil || n == 0 {
+			return nil, fmt.Errorf("bad node id %q", part)
+		}
+		ids = append(ids, raft.NodeID(n))
+	}
+	return ids, nil
+}
+
 func ticks(d, tick time.Duration) int {
 	return int((d + tick - 1) / tick)
 }
@@ -45,6 +60,7 @@ func ticks(d, tick time.Duration) int {
 func main() {
 	id := flag.Uint64("id", 0, "this node's ID")
 	cluster := flag.String("cluster", "", "every node as id=host:port, comma separated")
+	voterList := flag.String("voters", "", "the voters a fresh cluster starts with (default: every node in -cluster); a node outside it waits to be added")
 	listen := flag.String("listen", "", "address to listen on (default: this node's port from -cluster, on all interfaces)")
 	data := flag.String("data", "data", "data directory")
 	tick := flag.Duration("tick", 10*time.Millisecond, "tick interval")
@@ -69,6 +85,11 @@ func main() {
 		logger.Error("bad -cluster", "err", err)
 		os.Exit(2)
 	}
+	voters, err := parseIDs(*voterList)
+	if err != nil {
+		logger.Error("bad -voters", "err", err)
+		os.Exit(2)
+	}
 	planted, err := raft.ParseBugs(*bugs)
 	if err != nil || (planted != 0 && plantable != "yes") {
 		logger.Error("planted bugs are only available in test builds", "bug", *bugs, "err", err)
@@ -86,6 +107,7 @@ func main() {
 	cfg := server.Config{
 		ID:            raft.NodeID(*id),
 		Nodes:         nodes,
+		Voters:        voters,
 		DataDir:       *data,
 		Tick:          *tick,
 		HeartbeatTick: ticks(*heartbeat, *tick),

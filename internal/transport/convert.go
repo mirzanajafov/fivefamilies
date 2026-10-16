@@ -25,7 +25,7 @@ func toProto(m raft.Message) *pb.RaftMessage {
 		}
 	}
 	if m.Snapshot != nil {
-		out.Snapshot = &pb.SnapshotMeta{Index: m.Snapshot.Index, Term: m.Snapshot.Term}
+		out.Snapshot = &pb.SnapshotMeta{Index: m.Snapshot.Index, Term: m.Snapshot.Term, Voters: ids64(m.Snapshot.Conf.Voters), Learners: ids64(m.Snapshot.Conf.Learners)}
 	}
 	return out
 }
@@ -50,7 +50,29 @@ func fromProto(m *pb.RaftMessage) raft.Message {
 		}
 	}
 	if s := m.GetSnapshot(); s != nil {
-		out.Snapshot = &raft.Snapshot{Index: s.GetIndex(), Term: s.GetTerm()}
+		out.Snapshot = &raft.Snapshot{Index: s.GetIndex(), Term: s.GetTerm(), Conf: raft.ConfState{Voters: nodeIDs(s.GetVoters()), Learners: nodeIDs(s.GetLearners())}}
+	}
+	return out
+}
+
+func ids64(ids []raft.NodeID) []uint64 {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]uint64, len(ids))
+	for i, id := range ids {
+		out[i] = uint64(id)
+	}
+	return out
+}
+
+func nodeIDs(ids []uint64) []raft.NodeID {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]raft.NodeID, len(ids))
+	for i, id := range ids {
+		out[i] = raft.NodeID(id)
 	}
 	return out
 }

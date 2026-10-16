@@ -14,6 +14,7 @@ type raftLog struct {
 	handed    uint64
 
 	skipPrevTerm bool
+	onAppend     func(after uint64, ents []Entry)
 }
 
 func newLog(st Restore) (*raftLog, error) {
@@ -123,6 +124,9 @@ func (l *raftLog) append(ents ...Entry) {
 		l.ents = append(fresh, ents...)
 		l.handed = min(l.handed, after-1)
 		l.stabled = min(l.stabled, after-1)
+	}
+	if l.onAppend != nil {
+		l.onAppend(after, ents)
 	}
 }
 

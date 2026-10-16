@@ -48,6 +48,7 @@ type cluster struct {
 	reads   [][]ReadState
 	down    []bool
 	cut     map[[2]NodeID]bool
+	drop    func(Message) bool
 	queue   []Message
 }
 
@@ -115,7 +116,7 @@ func (c *cluster) drain() {
 		}
 		m := c.queue[0]
 		c.queue = c.queue[1:]
-		if c.down[m.To-1] || c.down[m.From-1] || c.cut[[2]NodeID{m.From, m.To}] {
+		if c.down[m.To-1] || c.down[m.From-1] || c.cut[[2]NodeID{m.From, m.To}] || (c.drop != nil && c.drop(m)) {
 			continue
 		}
 		c.node(m.To).Step(m)
@@ -202,7 +203,7 @@ func (c *cluster) leaders() []NodeID {
 func appliedData(ents []Entry) []string {
 	var out []string
 	for _, e := range ents {
-		if len(e.Data) > 0 {
+		if e.Type == EntryNormal && len(e.Data) > 0 {
 			out = append(out, string(e.Data))
 		}
 	}

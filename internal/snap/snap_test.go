@@ -1,7 +1,9 @@
 package snap
 
 import (
+	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"math/rand/v2"
 	"slices"
 	"testing"
@@ -12,13 +14,16 @@ import (
 
 func TestSaveLoad(t *testing.T) {
 	fs := vfs.NewMem()
-	s := raft.Snapshot{Index: 42, Term: 3, Data: []byte("state")}
+	s := raft.Snapshot{Index: 42, Term: 3, Data: []byte("state"), Conf: raft.ConfState{Voters: []raft.NodeID{1, 2, 300}, Learners: []raft.NodeID{7}}}
 	if err := Save(fs, s); err != nil {
 		t.Fatal(err)
 	}
-	data, err := Load(fs, 42, 3)
-	if err != nil || string(data) != "state" {
-		t.Fatalf("%q %v", data, err)
+	got, err := Load(fs, 42, 3)
+	if err != nil || string(got.Data) != "state" || got.Index != 42 || got.Term != 3 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if !slices.Equal(got.Conf.Voters, s.Conf.Voters) || !slices.Equal(got.Conf.Learners, s.Conf.Learners) {
+		t.Fatalf("conf %+v, saved %+v", got.Conf, s.Conf)
 	}
 	if _, err := Load(fs, 42, 4); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("loading a snapshot that does not exist: %v", err)
@@ -26,7 +31,7 @@ func TestSaveLoad(t *testing.T) {
 }
 
 func TestEveryFlippedByteIsCaught(t *testing.T) {
-	s := raft.Snapshot{Index: 7, Term: 2, Data: []byte("some state to protect")}
+	s := raft.Snapshot{Index: 7, Term: 2, Data: []byte("some state to protect"), Conf: raft.ConfState{Voters: []raft.NodeID{1, 2, 3}}}
 	fs := vfs.NewMem()
 	Save(fs, s)
 	good, _ := fs.ReadFile(Name(7, 2))
@@ -54,7 +59,7 @@ func TestACrashBeforeTheRenameLeavesNoSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	fs.Crash(rand.New(rand.NewPCG(2, 2)))
-	if data, err := Load(fs, 9, 1); err != nil || string(data) != "x" {
+	if s, err := Load(fs, 9, 1); err != nil || string(s.Data) != "x" {
 		t.Fatalf("a saved snapshot did not survive a crash: %v", err)
 	}
 }
@@ -74,5 +79,23 @@ func TestCleanKeepsOnlyTheNewest(t *testing.T) {
 	names, _ := fs.List()
 	if len(names) != 2 || !slices.Contains(names, "0000000000000001.wal") || !slices.Contains(names, Name(30, 1)) {
 		t.Fatalf("left %v", names)
+	}
+}
+
+func TestAVersionOneSnapshotLoadsWithoutAConfiguration(t *testing.T) {
+	fs := vfs.NewMem()
+	Save(fs, raft.Snapshot{Index: 5, Term: 1, Data: []byte("old")})
+	b, _ := fs.ReadFile(Name(5, 1))
+	v1 := append([]byte(nil), b...)
+	v1[7] = 1
+	binary.LittleEndian.PutUint64(v1[24:], 3)
+	binary.LittleEndian.PutUint32(v1[32:], crc32.Checksum([]byte("old"), castagnoli))
+	v1 = append(v1[:headerSize], "old"...)
+	fs.Truncate(Name(5, 1), 0)
+	f, _ := fs.OpenAppend(Name(5, 1))
+	f.Write(v1)
+	s, err := Load(fs, 5, 1)
+	if err != nil || string(s.Data) != "old" || len(s.Conf.Voters) != 0 {
+		t.Fatalf("%+v %v", s, err)
 	}
 }

@@ -27,15 +27,24 @@ type kvService struct {
 }
 
 func (k *kvService) fail(ctx context.Context, err error) error {
+	return fail(ctx, k.s, err)
+}
+
+func fail(ctx context.Context, s *Server, err error) error {
 	var nl *node.NotLeaderError
 	switch {
 	case errors.As(err, &nl):
 		if nl.Leader != raft.None {
-			grpc.SetHeader(ctx, metadata.Pairs(HeaderLeader, strconv.FormatUint(uint64(nl.Leader), 10), HeaderLeaderAddr, k.s.cfg.Nodes[nl.Leader]))
+			grpc.SetHeader(ctx, metadata.Pairs(HeaderLeader, strconv.FormatUint(uint64(nl.Leader), 10), HeaderLeaderAddr, s.cfg.Nodes[nl.Leader]))
 		}
 		return status.Error(codes.Unavailable, "not the leader")
-	case errors.Is(err, node.ErrLost), errors.Is(err, node.ErrNotReady), errors.Is(err, raft.ErrNotLeader):
+	case errors.Is(err, node.ErrLost), errors.Is(err, node.ErrNotReady), errors.Is(err, raft.ErrNotLeader),
+		errors.Is(err, raft.ErrTransferring), errors.Is(err, raft.ErrConfNotReady):
 		return status.Error(codes.Unavailable, err.Error())
+	case errors.Is(err, raft.ErrConfPending), errors.Is(err, raft.ErrLearnerBehind), errors.Is(err, ErrTransferAborted):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, raft.ErrBadConfChange):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return status.FromContextError(err).Err()
 	}
@@ -163,4 +172,32 @@ func (a *adminService) Status(ctx context.Context, _ *pb.StatusRequest) (*pb.Sta
 	}
 	st.StateHash, st.HashIndex = hash, rev
 	return &st, nil
+}
+
+func (a *adminService) ChangeMembers(ctx context.Context, req *pb.ChangeMembersRequest) (*pb.ChangeMembersResponse, error) {
+	typ, ok := map[pb.MemberChange]raft.ConfChangeType{
+		pb.MemberChange_MEMBER_CHANGE_ADD_LEARNER: raft.ConfAddLearner,
+		pb.MemberChange_MEMBER_CHANGE_PROMOTE:     raft.ConfPromote,
+		pb.MemberChange_MEMBER_CHANGE_REMOVE:      raft.ConfRemove,
+	}[req.GetChange()]
+	id := raft.NodeID(req.GetNode())
+	switch {
+	case !ok:
+		return nil, status.Error(codes.InvalidArgument, "unknown membership change")
+	case a.s.cfg.Nodes[id] == "":
+		return nil, status.Errorf(codes.InvalidArgument, "node %d has no address in this node's directory", id)
+	}
+	index, conf, err := a.s.ChangeMembers(ctx, raft.ConfChange{Type: typ, Node: id})
+	if err != nil {
+		return nil, fail(ctx, a.s, err)
+	}
+	return &pb.ChangeMembersResponse{Index: index, Voters: ids64(conf.Voters), Learners: ids64(conf.Learners)}, nil
+}
+
+func (a *adminService) TransferLeadership(ctx context.Context, req *pb.TransferLeadershipRequest) (*pb.TransferLeadershipResponse, error) {
+	if err := a.s.TransferLeadership(ctx, raft.NodeID(req.GetTo())); err != nil {
+		return nil, fail(ctx, a.s, err)
+	}
+	st := a.s.Status()
+	return &pb.TransferLeadershipResponse{Leader: st.GetLeader(), Term: st.GetTerm()}, nil
 }

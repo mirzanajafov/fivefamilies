@@ -26,6 +26,7 @@ type progress struct {
 	paused   bool
 	inflight []uint64
 	active   bool
+	learner  bool
 
 	pendingSnapshot uint64
 	snapWait        int

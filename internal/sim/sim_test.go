@@ -253,7 +253,9 @@ func committedOnDisks(t *testing.T, holders, total int) (*checker, []*disk) {
 	c := newChecker(total)
 	c.committed = []entryKey{{term: 1}, {term: 1, data: "a"}}
 	c.commitTerm = []uint64{1, 1}
-	c.quorum = total/2 + 1
+	for i := range total {
+		c.conf.Voters = append(c.conf.Voters, raft.NodeID(i+1))
+	}
 	var disks []*disk
 	for i := range total {
 		d := newDisk(0, nil)
@@ -284,7 +286,7 @@ func TestDiskAllowsALaggingNodeToOverwriteACommittedEntry(t *testing.T) {
 
 func TestCheckerCatchesACommitThatIsNotDurableOnAQuorum(t *testing.T) {
 	c := newChecker(1)
-	c.quorum = 1
+	c.conf = raft.ConfState{Voters: []raft.NodeID{1}}
 	c.disks = []*disk{newDisk(0, nil)}
 	c.observe(0, soloLeader(t, 1, raft.Restore{}, "a"))
 	if !c.failed() {
@@ -327,7 +329,7 @@ func TestCheckerCatchesALeaderLeadingTheSameTermAfterARestart(t *testing.T) {
 }
 
 func TestRegressionSeeds(t *testing.T) {
-	seeds := []uint64{263, 281, 742, 2888, 4851, 4961}
+	seeds := []uint64{39, 263, 281, 742, 894, 2888, 4107, 4851, 4961}
 	for _, seed := range seeds {
 		if r := Run(seed, DefaultOptions()); !r.OK() {
 			t.Errorf("seed %d failed at %v: %s\n  swarm: %s", r.Seed, r.At, r.Violation, r.Swarm)

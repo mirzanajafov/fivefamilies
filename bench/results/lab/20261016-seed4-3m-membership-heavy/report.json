@@ -1,0 +1,354 @@
+{
+  "options": {
+    "seed": 4,
+    "duration_ns": 180000000000,
+    "settle_ns": 5000000000,
+    "workers": 6,
+    "keys": 3,
+    "read": "index",
+    "faults": [
+      "member",
+      "transfer",
+      "kill-leader",
+      "isolate",
+      "pause"
+    ],
+    "fault_mean_ns": 2000000000,
+    "election": "1s",
+    "heartbeat": "100ms",
+    "lease": "0s",
+    "op_timeout_ns": 120000000000,
+    "check_timeout_ns": 300000000000
+  },
+  "started": "2026-10-16T11:15:38.7234303+04:00",
+  "ops": 49766,
+  "unknown_writes": 0,
+  "failed_reads": 0,
+  "faults": [
+    {
+      "kind": "transfer",
+      "detail": "hand leadership from node 1 to 2",
+      "start_ns": 219997400,
+      "end_ns": 2432981500
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 2",
+      "start_ns": 6017762900,
+      "end_ns": 10819835000
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 4, then add it back as a learner and promote it",
+      "start_ns": 11419628900,
+      "end_ns": 13563339600
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 4",
+      "start_ns": 14003709700,
+      "end_ns": 15919853600
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 5",
+      "start_ns": 16369545500,
+      "end_ns": 17269676200
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 1, then add it back as a learner and promote it",
+      "start_ns": 18647148200,
+      "end_ns": 21771825300
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 5",
+      "start_ns": 26084302200,
+      "end_ns": 28980606600
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 1",
+      "start_ns": 29609857500,
+      "end_ns": 30635027500
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 3, then add it back as a learner and promote it",
+      "start_ns": 30795613300,
+      "end_ns": 33561119300
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 2",
+      "start_ns": 34282826400,
+      "end_ns": 37943933800
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 2",
+      "start_ns": 38009741200,
+      "end_ns": 40414748000
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 4",
+      "start_ns": 48742379300,
+      "end_ns": 54526115000
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 1",
+      "start_ns": 54658142800,
+      "end_ns": 61479566800
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 1",
+      "start_ns": 62149662500,
+      "end_ns": 62645504100
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 2",
+      "start_ns": 69239748100,
+      "end_ns": 71691144600
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 3",
+      "start_ns": 72966558800,
+      "end_ns": 74112942400
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 4",
+      "start_ns": 77011176400,
+      "end_ns": 82613391300
+    },
+    {
+      "kind": "transfer",
+      "detail": "hand leadership from node 3 to 1",
+      "start_ns": 92415714900,
+      "end_ns": 93041153000
+    },
+    {
+      "kind": "transfer",
+      "detail": "hand leadership from node 1 to 4",
+      "start_ns": 93552659200,
+      "end_ns": 94994390100
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 4",
+      "start_ns": 100201109200,
+      "end_ns": 104763303000
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 4, then add it back as a learner and promote it",
+      "start_ns": 108282033400,
+      "end_ns": 113546434700
+    },
+    {
+      "kind": "transfer",
+      "detail": "hand leadership from node 5 to 3",
+      "start_ns": 115675807600,
+      "end_ns": 117269208200
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 3",
+      "start_ns": 117622847600,
+      "end_ns": 120888725300
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 5",
+      "start_ns": 123876353500,
+      "end_ns": 126433252900
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 5",
+      "start_ns": 126885278900,
+      "end_ns": 133512472800
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 4",
+      "start_ns": 138564808400,
+      "end_ns": 140696098200
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 3, then add it back as a learner and promote it",
+      "start_ns": 143564584200,
+      "end_ns": 149913212100
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 4, then add it back as a learner and promote it",
+      "start_ns": 149973256900,
+      "end_ns": 155476555400
+    },
+    {
+      "kind": "transfer",
+      "detail": "hand leadership from node 1 to 5",
+      "start_ns": 163853767800,
+      "end_ns": 165127539300
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 1, then add it back as a learner and promote it",
+      "start_ns": 166421777100,
+      "end_ns": 168855702200
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 1",
+      "start_ns": 170107891500,
+      "end_ns": 173171891100
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 2, then add it back as a learner and promote it",
+      "start_ns": 174895564600,
+      "end_ns": 178173649400
+    }
+  ],
+  "leaders": [
+    {
+      "at_ns": 6064800,
+      "leader": 1,
+      "term": 1
+    },
+    {
+      "at_ns": 613916900,
+      "leader": 2,
+      "term": 2
+    },
+    {
+      "at_ns": 6294265400,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 7313487200,
+      "leader": 5,
+      "term": 3
+    },
+    {
+      "at_ns": 16797886600,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 17241052400,
+      "leader": 5,
+      "term": 3
+    },
+    {
+      "at_ns": 26198203600,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 27826356700,
+      "leader": 2,
+      "term": 4
+    },
+    {
+      "at_ns": 34466475300,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 35482578300,
+      "leader": 1,
+      "term": 5
+    },
+    {
+      "at_ns": 55992642300,
+      "leader": 2,
+      "term": 6
+    },
+    {
+      "at_ns": 69485222200,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 70906701800,
+      "leader": 3,
+      "term": 7
+    },
+    {
+      "at_ns": 73431383800,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 74134746400,
+      "leader": 3,
+      "term": 7
+    },
+    {
+      "at_ns": 92623083900,
+      "leader": 1,
+      "term": 8
+    },
+    {
+      "at_ns": 93640433800,
+      "leader": 4,
+      "term": 9
+    },
+    {
+      "at_ns": 100353577700,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 101371150700,
+      "leader": 5,
+      "term": 10
+    },
+    {
+      "at_ns": 115768582700,
+      "leader": 3,
+      "term": 11
+    },
+    {
+      "at_ns": 119019002500,
+      "leader": 4,
+      "term": 12
+    },
+    {
+      "at_ns": 138690563700,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 139913367800,
+      "leader": 1,
+      "term": 13
+    },
+    {
+      "at_ns": 164052079200,
+      "leader": 5,
+      "term": 14
+    }
+  ],
+  "linearizable": "Ok",
+  "check_took_ns": 315077800,
+  "states_equal": true,
+  "state_index": 29865,
+  "hashes": [
+    "866ed07f05225234@29865",
+    "866ed07f05225234@29865",
+    "866ed07f05225234@29865",
+    "866ed07f05225234@29865",
+    "866ed07f05225234@29865"
+  ]
+}

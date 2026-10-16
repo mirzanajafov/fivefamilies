@@ -28,6 +28,7 @@ import (
 type Config struct {
 	ID            raft.NodeID
 	Nodes         map[raft.NodeID]string
+	Voters        []raft.NodeID
 	DataDir       string
 	Tick          time.Duration
 	HeartbeatTick int
@@ -45,6 +46,17 @@ type Config struct {
 func (c *Config) defaults() error {
 	if c.ID == raft.None || c.Nodes[c.ID] == "" {
 		return errors.New("server: the node's own ID is not in the cluster")
+	}
+	if len(c.Voters) == 0 {
+		for id := range c.Nodes {
+			c.Voters = append(c.Voters, id)
+		}
+	}
+	slices.Sort(c.Voters)
+	for _, id := range c.Voters {
+		if c.Nodes[id] == "" {
+			return fmt.Errorf("server: voter %d has no address", id)
+		}
 	}
 	if c.Tick <= 0 {
 		c.Tick = 10 * time.Millisecond
@@ -128,23 +140,18 @@ func New(cfg Config) (*Server, error) {
 	s.wal = l
 	s.sm = &machine{store: kv.NewStore(cfg.MaxSessions), maxSessions: cfg.MaxSessions}
 	if st.Snapshot != nil {
-		data, err := snap.Load(s.fs, st.Snapshot.Index, st.Snapshot.Term)
+		sn, err := snap.Load(s.fs, st.Snapshot.Index, st.Snapshot.Term)
 		if err != nil {
 			return nil, fmt.Errorf("loading snapshot %d: %w", st.Snapshot.Index, err)
 		}
-		st.Snapshot.Data = data
-		if err := s.sm.Restore(st.Snapshot.Index, data); err != nil {
+		st.Snapshot = &sn
+		if err := s.sm.Restore(sn.Index, sn.Data); err != nil {
 			return nil, err
 		}
 	}
-	voters := make([]raft.NodeID, 0, len(cfg.Nodes))
-	for id := range cfg.Nodes {
-		voters = append(voters, id)
-	}
-	slices.Sort(voters)
 	r, err := raft.New(raft.Config{
 		ID:            cfg.ID,
-		Voters:        voters,
+		Voters:        cfg.Voters,
 		ElectionTick:  cfg.ElectionTick,
 		HeartbeatTick: cfg.HeartbeatTick,
 		PreVote:       true,
@@ -340,7 +347,17 @@ func (s *Server) publish() {
 	if sn := r.LatestSnapshot(); sn != nil {
 		st.SnapshotIndex = sn.Index
 	}
+	conf := r.Conf()
+	st.Voters, st.Learners, st.Transferee = ids64(conf.Voters), ids64(conf.Learners), uint64(r.Transferring())
 	s.status.Store(st)
+}
+
+func ids64(ids []raft.NodeID) []uint64 {
+	out := make([]uint64, len(ids))
+	for i, id := range ids {
+		out[i] = uint64(id)
+	}
+	return out
 }
 
 func (s *Server) Status() *pb.StatusResponse {
@@ -381,6 +398,61 @@ func (s *Server) Submit(ctx context.Context, cmd kv.Command) (kv.Result, error) 
 
 func (s *Server) Read(ctx context.Context, key string, lease bool) (kv.Result, error) {
 	return s.run(ctx, func(done node.Done) { s.node.Read(key, lease, done) })
+}
+
+func (s *Server) ChangeMembers(ctx context.Context, cc raft.ConfChange) (uint64, raft.ConfState, error) {
+	if _, err := s.run(ctx, func(done node.Done) { s.node.ProposeConfChange(cc, done) }); err != nil {
+		return 0, raft.ConfState{}, err
+	}
+	var index uint64
+	var conf raft.ConfState
+	err := s.inLoop(ctx, func() { index, conf = s.raft.Applied(), s.raft.Conf() })
+	return index, conf, err
+}
+
+func (s *Server) TransferLeadership(ctx context.Context, to raft.NodeID) error {
+	var err error
+	if lerr := s.inLoop(ctx, func() { err = s.node.TransferLeadership(to); s.publish() }); lerr != nil {
+		return lerr
+	}
+	if err != nil {
+		return err
+	}
+	t := time.NewTicker(s.cfg.Tick)
+	defer t.Stop()
+	for {
+		st := s.Status()
+		switch {
+		case raft.NodeID(st.GetLeader()) == to && to != s.cfg.ID:
+			return nil
+		case to == s.cfg.ID && st.GetState() == raft.StateLeader.String():
+			return nil
+		case st.GetState() == raft.StateLeader.String() && st.GetTransferee() == 0:
+			return ErrTransferAborted
+		}
+		select {
+		case <-t.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+var ErrTransferAborted = errors.New("server: the transfer gave up, the target did not take over within an election timeout")
+
+func (s *Server) inLoop(ctx context.Context, f func()) error {
+	done := make(chan struct{})
+	select {
+	case s.calls <- func() { f(); close(done) }:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Server) StateHash(ctx context.Context) (uint64, uint64, error) {
