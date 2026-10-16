@@ -1,0 +1,179 @@
+{
+  "options": {
+    "seed": 11,
+    "duration_ns": 90000000000,
+    "settle_ns": 5000000000,
+    "workers": 6,
+    "keys": 3,
+    "read": "index",
+    "faults": [
+      "kill",
+      "kill-leader",
+      "pause",
+      "isolate",
+      "split",
+      "bridge",
+      "one-way",
+      "netem"
+    ],
+    "fault_mean_ns": 1000000000,
+    "bug": "anyvote",
+    "election": "1s",
+    "heartbeat": "100ms",
+    "lease": "0s",
+    "op_timeout_ns": 20000000000,
+    "check_timeout_ns": 120000000000
+  },
+  "started": "2026-10-15T20:57:50.3251629+04:00",
+  "ops": 2002,
+  "unknown_writes": 24,
+  "failed_reads": 0,
+  "faults": [
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 5",
+      "start_ns": 1541807500,
+      "end_ns": 3303658000
+    },
+    {
+      "kind": "split",
+      "detail": "split [3 4] | [5 2 1]",
+      "start_ns": 4584641500,
+      "end_ns": 12875996600
+    },
+    {
+      "kind": "netem",
+      "detail": "netem delay 13ms 19ms loss 3% on node 1",
+      "start_ns": 14156965900,
+      "end_ns": 22479086100
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 2",
+      "start_ns": 22988457300,
+      "end_ns": 29584654100
+    },
+    {
+      "kind": "bridge",
+      "detail": "bridge 1 between [2] and [5 4 3]",
+      "start_ns": 29803847500,
+      "end_ns": 34177281900
+    },
+    {
+      "kind": "netem",
+      "detail": "netem delay 52ms 12ms loss 3% on node 2",
+      "start_ns": 35219715200,
+      "end_ns": 42079467200
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 2",
+      "start_ns": 44606773100,
+      "end_ns": 53277724400
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 5",
+      "start_ns": 55498091900,
+      "end_ns": 61573762200
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 4",
+      "start_ns": 62124083900,
+      "end_ns": 63680938200
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 3",
+      "start_ns": 66126278100,
+      "end_ns": 75071660800
+    },
+    {
+      "kind": "kill",
+      "detail": "SIGKILL node 4",
+      "start_ns": 76158438600,
+      "end_ns": 78991226200
+    },
+    {
+      "kind": "netem",
+      "detail": "netem delay 38ms 13ms loss 9% on node 2",
+      "start_ns": 79596331800,
+      "end_ns": 86166466100
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 2",
+      "start_ns": 87018786800,
+      "end_ns": 88638386500
+    },
+    {
+      "kind": "split",
+      "detail": "split [3] | [2 5 4 1]",
+      "start_ns": 89691143600,
+      "end_ns": 92262434300,
+      "error": "docker exec fflab-n3net-1 sh -c iptables -A OUTPUT -d 192.168.48.5 -j DROP \u0026\u0026 iptables -A INPUT -s 192.168.48.5 -j DROP \u0026\u0026 iptables -A OUTPUT -d 192.168.48.2 -j DROP \u0026\u0026 iptables -A INPUT -s 192.168.48.2 -j DROP \u0026\u0026 iptables -A OUTPUT -d 192.168.48.3 -j DROP \u0026\u0026 iptables -A INPUT -s 192.168.48.3 -j DROP \u0026\u0026 iptables -A OUTPUT -d 192.168.48.6 -j DROP \u0026\u0026 iptables -A INPUT -s 192.168.48.6 -j DROP: exit status 1: "
+    }
+  ],
+  "leaders": [
+    {
+      "at_ns": 5838800,
+      "leader": 5,
+      "term": 2
+    },
+    {
+      "at_ns": 1846585200,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 3281506500,
+      "leader": 3,
+      "term": 3
+    },
+    {
+      "at_ns": 6345078900,
+      "leader": 5,
+      "term": 4
+    },
+    {
+      "at_ns": 57299274100,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 57503135300,
+      "leader": 4,
+      "term": 5
+    },
+    {
+      "at_ns": 62442634700,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 63670609300,
+      "leader": 3,
+      "term": 6
+    },
+    {
+      "at_ns": 67777091500,
+      "leader": 5,
+      "term": 7
+    }
+  ],
+  "linearizable": "Illegal",
+  "check_took_ns": 6973500,
+  "states_equal": false,
+  "state_index": 0,
+  "hashes": [
+    "a590866ce7995115@1157",
+    "a590866ce7995115@1157",
+    "a590866ce7995115@1157",
+    "807bc5efc6c8b6f8@1157",
+    "807bc5efc6c8b6f8@1157"
+  ],
+  "problems": [
+    "nodes did not converge to one state within 30 s of the heal"
+  ]
+}
