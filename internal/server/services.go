@@ -203,6 +203,25 @@ func (a *adminService) ChangeMembers(ctx context.Context, req *pb.ChangeMembersR
 	return &pb.ChangeMembersResponse{Index: index, Voters: ids64(conf.Voters), Learners: ids64(conf.Learners)}, nil
 }
 
+func (a *adminService) Backup(_ *pb.BackupRequest, stream pb.Admin_BackupServer) error {
+	ctx := stream.Context()
+	f, err := a.s.Backup(ctx.Done())
+	if err != nil {
+		return status.FromContextError(ctx.Err()).Err()
+	}
+	const chunk = 1 << 20
+	for off := 0; off == 0 || off < len(f.Data); off += chunk {
+		msg := &pb.BackupChunk{Data: f.Data[off:min(off+chunk, len(f.Data))]}
+		if off == 0 {
+			msg.Rev, msg.Hash, msg.Size = f.Rev, f.Hash, uint64(len(f.Data))
+		}
+		if err := stream.Send(msg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 const maxChaos = time.Minute
 
 func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.ChaosResponse, error) {

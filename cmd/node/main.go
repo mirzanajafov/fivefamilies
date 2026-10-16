@@ -15,6 +15,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/mirzanajafov/fivefamilies/internal/backup"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/server"
 	"github.com/mirzanajafov/fivefamilies/internal/transport"
@@ -76,6 +77,7 @@ func main() {
 	writeFirst := flag.Bool("write-before-send", false, "the leader writes entries before sending them, instead of in parallel")
 	maxInflight := flag.Int("max-inflight", 0, "append messages in flight per follower (1 turns pipelining off)")
 	maxMsgBytes := flag.Int("max-msg-bytes", 0, "bytes of entries per append message (1 sends one entry per message)")
+	restore := flag.String("restore", "", "start a new cluster from this backup file when the data directory is empty (every node needs the same file)")
 	chaos := flag.Bool("chaos", false, "accept chaos requests (stall-disk, pause, isolate, crash) on the admin API")
 	level := flag.String("log-level", "info", "debug, info, warn or error")
 	flag.Parse()
@@ -134,6 +136,29 @@ func main() {
 		MaxInflight:     *maxInflight,
 		MaxMsgBytes:     *maxMsgBytes,
 		Chaos:           *chaos,
+	}
+	if *restore != "" {
+		f, sum, err := backup.Load(*restore)
+		if err != nil {
+			logger.Error("reading the backup", "file", *restore, "err", err)
+			os.Exit(1)
+		}
+		ids := voters
+		if len(ids) == 0 {
+			for id := range nodes {
+				ids = append(ids, id)
+			}
+		}
+		done, err := server.Restore(*data, ids, f)
+		if err != nil {
+			logger.Error("restoring", "err", err)
+			os.Exit(1)
+		}
+		if done {
+			logger.Info("restored a backup", "rev", sum.Rev, "keys", sum.Keys)
+		} else {
+			logger.Info("the data directory already holds a log; the backup is not used", "file", *restore)
+		}
 	}
 	srv, err := server.New(cfg)
 	if err != nil {

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -18,6 +20,8 @@ import (
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
+	"github.com/mirzanajafov/fivefamilies/internal/backup"
+	"github.com/mirzanajafov/fivefamilies/internal/kv"
 )
 
 func usage() {
@@ -34,6 +38,9 @@ func usage() {
   register SERVICE INSTANCE ADDR [TTL]   (keeps the instance registered until interrupted)
   discover SERVICE       (prints the instances on every change, until interrupted)
   config set SERVICE KEY VALUE | get SERVICE KEY | watch SERVICE
+  backup FILE            (a consistent copy of the state, checked before it is kept)
+  backup-check FILE
+  content-hash           (key count and a hash of every key, to compare with a backup)
   transfer ID`)
 	os.Exit(2)
 }
@@ -59,6 +66,14 @@ func main() {
 		return
 	case args[0] == "transfer" && len(args) == 2:
 		transfer(ctx, addrs, args[1])
+		return
+	case args[0] == "backup" && len(args) == 2:
+		takeBackup(ctx, addrs, args[1])
+		return
+	case args[0] == "backup-check" && len(args) == 2:
+		_, s, err := backup.Load(args[1])
+		check(err)
+		fmt.Printf("revision %d, %d keys, %d bytes, state %x, content %x\n", s.Rev, s.Keys, s.Bytes, s.Hash, s.Content)
 		return
 	}
 	c, err := client.New(addrs, client.Options{})
@@ -111,6 +126,10 @@ func main() {
 		wctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
 		watchPrefix(wctx, c, args[1], from)
+	case args[0] == "content-hash" && len(args) == 1:
+		kvs, err := c.Range(ctx, "", 0)
+		check(err)
+		contentHash(kvs)
 	case args[0] == "lease" && len(args) == 3:
 		lease(ctx, c, args[1], args[2])
 	case args[0] == "get" && len(args) == 2:
@@ -297,4 +316,40 @@ func config(ctx context.Context, c *client.Client, args []string) {
 	default:
 		usage()
 	}
+}
+
+func takeBackup(ctx context.Context, addrs []string, path string) {
+	var f backup.File
+	onLeader(ctx, addrs, func(c pb.AdminClient) error {
+		stream, err := c.Backup(ctx, &pb.BackupRequest{})
+		if err != nil {
+			return err
+		}
+		f = backup.File{}
+		for first := true; ; first = false {
+			chunk, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if first {
+				f.Rev, f.Hash, f.Data = chunk.GetRev(), chunk.GetHash(), make([]byte, 0, chunk.GetSize())
+			}
+			f.Data = append(f.Data, chunk.GetData()...)
+		}
+	})
+	sum, err := backup.Check(f)
+	check(err)
+	check(backup.Save(path, f))
+	fmt.Println("saved", path, "at revision", sum.Rev, "with", sum.Keys, "keys and content", fmt.Sprintf("%x", sum.Content))
+}
+
+func contentHash(kvs []client.KeyValue) {
+	out := make([]kv.KeyValue, len(kvs))
+	for i, k := range kvs {
+		out[i] = kv.KeyValue{Key: k.Key, Value: k.Value, CreateRev: k.CreateRev, ModRev: k.ModRev, Version: k.Version, Lease: k.Lease}
+	}
+	fmt.Printf("%d keys, content %x\n", len(out), kv.ContentHash(out))
 }
