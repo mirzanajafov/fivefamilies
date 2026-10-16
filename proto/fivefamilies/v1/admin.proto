@@ -4,7 +4,9 @@ package fivefamilies.v1;
 
 option go_package = "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1";
 
-message StatusRequest {}
+message StatusRequest {
+  bool hash = 1;
+}
 
 message StatusResponse {
   uint64 id = 1;

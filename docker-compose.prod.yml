@@ -1,6 +1,7 @@
 services:
   n1:
     ports: !reset []
+    command: ["-id", "1", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos", "-tick", "50ms"]
     cpus: 0.25
     mem_limit: 64m
     environment:
@@ -8,6 +9,7 @@ services:
       GOMEMLIMIT: 48MiB
   n2:
     ports: !reset []
+    command: ["-id", "2", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos", "-tick", "50ms"]
     cpus: 0.25
     mem_limit: 64m
     environment:
@@ -15,6 +17,7 @@ services:
       GOMEMLIMIT: 48MiB
   n3:
     ports: !reset []
+    command: ["-id", "3", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos", "-tick", "50ms"]
     cpus: 0.25
     mem_limit: 64m
     environment:
@@ -22,6 +25,7 @@ services:
       GOMEMLIMIT: 48MiB
   n4:
     ports: !reset []
+    command: ["-id", "4", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos", "-tick", "50ms"]
     cpus: 0.25
     mem_limit: 64m
     environment:
@@ -29,6 +33,7 @@ services:
       GOMEMLIMIT: 48MiB
   n5:
     ports: !reset []
+    command: ["-id", "5", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos", "-tick", "50ms"]
     cpus: 0.25
     mem_limit: 64m
     environment:
