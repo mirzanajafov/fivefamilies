@@ -130,3 +130,13 @@ func wait(ctx context.Context, d time.Duration) bool {
 		return true
 	}
 }
+
+func (d *Docker) Exited(ctx context.Context, n int) (string, bool) {
+	name := d.container(fmt.Sprintf("n%d", n))
+	out, err := d.cmd(ctx, nil, "inspect", "-f", "{{.State.Running}} {{.State.ExitCode}}", name)
+	if err != nil || strings.HasPrefix(out, "true") {
+		return "", false
+	}
+	logs, _ := d.cmd(ctx, nil, "logs", "--tail", "2", name)
+	return fmt.Sprintf("node %d is not running (state %q): %s", n, out, logs), true
+}

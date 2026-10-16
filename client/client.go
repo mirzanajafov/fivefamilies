@@ -62,7 +62,17 @@ func New(addrs []string, opts Options) (*Client, error) {
 	if opts.Backoff <= 0 {
 		opts.Backoff = 20 * time.Millisecond
 	}
-	return &Client{opts: opts, addrs: addrs, conns: map[string]*grpc.ClientConn{}, leader: addrs[0]}, nil
+	c := &Client{opts: opts, addrs: addrs, conns: map[string]*grpc.ClientConn{}, leader: addrs[0]}
+	for _, a := range addrs {
+		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			c.Close()
+			return nil, err
+		}
+		conn.Connect()
+		c.conns[a] = conn
+	}
+	return c, nil
 }
 
 func (c *Client) Close() error {

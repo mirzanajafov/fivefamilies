@@ -182,9 +182,11 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		rep.Problems = append(rep.Problems, "heal: "+err.Error())
 	}
 	for i := 1; i <= d.Nodes; i++ {
-		if !d.Running(context.Background(), i) {
-			d.Unpause(context.Background(), i)
+		if msg, exited := d.Exited(context.Background(), i); exited {
+			rep.Problems = append(rep.Problems, msg)
 			d.Start(context.Background(), i)
+		} else if !d.Running(context.Background(), i) {
+			d.Unpause(context.Background(), i)
 		}
 	}
 	rep.Faults = nem.log

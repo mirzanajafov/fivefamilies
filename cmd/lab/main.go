@@ -14,7 +14,63 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/lab"
 )
 
+func failover(args []string) {
+	fs := flag.NewFlagSet("failover", flag.ExitOnError)
+	elections := fs.String("election", "150ms,300ms,600ms,1s", "election timeouts to sweep; the heartbeat is a third of each")
+	trials := fs.Int("trials", 10, "leader kills per election timeout")
+	rate := fs.Int("rate", 200, "writes per second from the generator")
+	timeout := fs.Duration("timeout", 300*time.Millisecond, "per-request timeout in the generator")
+	before := fs.Duration("before", 3*time.Second, "writing before the kill")
+	after := fs.Duration("after", 7*time.Second, "writing after the kill")
+	out := fs.String("out", filepath.Join("bench", "results", "e1", time.Now().UTC().Format("20060102-150405")), "results directory")
+	build := fs.Bool("build", false, "build the lab image first")
+	cold := fs.Bool("cold", false, "keep the generator's write connections to followers cold until the leader dies")
+	fs.Parse(args)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if *build {
+		buildImage(ctx)
+	}
+	for e := range strings.SplitSeq(*elections, ",") {
+		el, err := time.ParseDuration(e)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		res, err := lab.Failover(ctx, lab.FailoverOptions{
+			Election: el.String(), Heartbeat: (el / 3).String(), Lease: "0s", Trials: *trials, Rate: *rate,
+			Timeout: *timeout, Before: *before, After: *after, Cold: *cold, Project: "fflab", File: filepath.Join("lab", "compose.yml"),
+		}, *out)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		var us []string
+		for _, t := range res.Trials {
+			s := t.Unavailable.Round(time.Millisecond).String()
+			if t.Err != "" {
+				s += "!"
+			}
+			us = append(us, s)
+		}
+		fmt.Printf("election %v: unavailable median %v (min %v, max %v) over %d kills: %s\n", el, res.Median.Round(time.Millisecond), res.Min.Round(time.Millisecond), res.Max.Round(time.Millisecond), len(res.Trials), strings.Join(us, " "))
+	}
+}
+
+func buildImage(ctx context.Context) {
+	cmd := exec.CommandContext(ctx, "docker", "build", "-q", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", ".")
+	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "build:", err)
+		os.Exit(1)
+	}
+}
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "failover" {
+		failover(os.Args[2:])
+		return
+	}
 	seed := flag.Uint64("seed", uint64(time.Now().UnixNano()), "fault schedule and workload seed")
 	duration := flag.Duration("duration", time.Minute, "time with faults")
 	settle := flag.Duration("settle", 5*time.Second, "time after the heal before the workload stops")
@@ -55,12 +111,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if *build {
-		cmd := exec.CommandContext(ctx, "docker", "build", "-q", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", ".")
-		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintln(os.Stderr, "build:", err)
-			os.Exit(1)
-		}
+		buildImage(ctx)
 	}
 	rep, err := lab.Run(ctx, opts)
 	if err != nil {

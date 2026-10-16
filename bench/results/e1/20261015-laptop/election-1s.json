@@ -1,0 +1,148 @@
+{
+  "options": {
+    "election": "1s",
+    "heartbeat": "333.333333ms",
+    "lease": "0s",
+    "trials": 10,
+    "rate": 200,
+    "request_timeout_ns": 300000000,
+    "cold_connections": false,
+    "before_ns": 3000000000,
+    "after_ns": 7000000000
+  },
+  "trials": [
+    {
+      "killed": 2,
+      "requests": 2000,
+      "failed": 213,
+      "unavailable_ns": 1069618134,
+      "quiet_gap_ns": 12809230,
+      "errors": {
+        "Unavailable": 213
+      },
+      "detected_ns": 2612601281,
+      "new_leader_ns": 3651573257,
+      "election_ns": 1038971976
+    },
+    {
+      "killed": 5,
+      "requests": 2000,
+      "failed": 219,
+      "unavailable_ns": 1075889915,
+      "quiet_gap_ns": 22099347,
+      "errors": {
+        "Unavailable": 219
+      },
+      "detected_ns": 2695579497,
+      "new_leader_ns": 3749122982,
+      "election_ns": 1053543485
+    },
+    {
+      "killed": 1,
+      "requests": 2000,
+      "failed": 241,
+      "unavailable_ns": 1205594021,
+      "quiet_gap_ns": 14052936,
+      "errors": {
+        "Unavailable": 241
+      },
+      "detected_ns": 2587773273,
+      "new_leader_ns": 3777120021,
+      "election_ns": 1189346748
+    },
+    {
+      "killed": 2,
+      "requests": 2000,
+      "failed": 266,
+      "unavailable_ns": 1211115769,
+      "quiet_gap_ns": 13831023,
+      "errors": {
+        "Unavailable": 266
+      },
+      "detected_ns": 2603519842,
+      "new_leader_ns": 3793079226,
+      "election_ns": 1189559384
+    },
+    {
+      "killed": 5,
+      "requests": 2000,
+      "failed": 283,
+      "unavailable_ns": 1406499271,
+      "quiet_gap_ns": 14538680,
+      "errors": {
+        "Unavailable": 283
+      },
+      "detected_ns": 2616554092,
+      "new_leader_ns": 3989491503,
+      "election_ns": 1372937411
+    },
+    {
+      "killed": 4,
+      "requests": 2000,
+      "failed": 302,
+      "unavailable_ns": 1496652849,
+      "quiet_gap_ns": 23187589,
+      "errors": {
+        "Unavailable": 302
+      },
+      "detected_ns": 2635415824,
+      "new_leader_ns": 4103727606,
+      "election_ns": 1468311782
+    },
+    {
+      "killed": 3,
+      "requests": 2000,
+      "failed": 405,
+      "unavailable_ns": 2005423907,
+      "quiet_gap_ns": 13356820,
+      "errors": {
+        "Unavailable": 405
+      },
+      "detected_ns": 2586123389,
+      "new_leader_ns": 3936178844,
+      "election_ns": 1350055455
+    },
+    {
+      "killed": 2,
+      "requests": 2000,
+      "failed": 210,
+      "unavailable_ns": 1040707287,
+      "quiet_gap_ns": 14237549,
+      "errors": {
+        "Unavailable": 210
+      },
+      "detected_ns": 2601216394,
+      "new_leader_ns": 3620755973,
+      "election_ns": 1019539579
+    },
+    {
+      "killed": 4,
+      "requests": 2000,
+      "failed": 286,
+      "unavailable_ns": 1422000041,
+      "quiet_gap_ns": 15892098,
+      "errors": {
+        "Unavailable": 286
+      },
+      "detected_ns": 2625762812,
+      "new_leader_ns": 4011080902,
+      "election_ns": 1385318090
+    },
+    {
+      "killed": 3,
+      "requests": 2000,
+      "failed": 280,
+      "unavailable_ns": 1400068788,
+      "quiet_gap_ns": 14314204,
+      "errors": {
+        "Unavailable": 280
+      },
+      "detected_ns": 2528628844,
+      "new_leader_ns": 3898225891,
+      "election_ns": 1369597047
+    }
+  ],
+  "median_ns": 1400068788,
+  "min_ns": 1040707287,
+  "max_ns": 2005423907
+}

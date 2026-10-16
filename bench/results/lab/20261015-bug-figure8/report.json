@@ -1,0 +1,174 @@
+{
+  "options": {
+    "seed": 11,
+    "duration_ns": 90000000000,
+    "settle_ns": 5000000000,
+    "workers": 6,
+    "keys": 3,
+    "read": "index",
+    "faults": [
+      "kill",
+      "kill-leader",
+      "pause",
+      "isolate",
+      "split",
+      "bridge",
+      "one-way",
+      "netem"
+    ],
+    "fault_mean_ns": 1000000000,
+    "bug": "figure8",
+    "election": "1s",
+    "heartbeat": "100ms",
+    "lease": "0s",
+    "op_timeout_ns": 20000000000,
+    "check_timeout_ns": 120000000000
+  },
+  "started": "2026-10-15T21:04:31.6956812+04:00",
+  "ops": 20026,
+  "unknown_writes": 0,
+  "failed_reads": 0,
+  "faults": [
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 4",
+      "start_ns": 1541738000,
+      "end_ns": 3320004700
+    },
+    {
+      "kind": "split",
+      "detail": "split [3 4] | [5 2 1]",
+      "start_ns": 4600848800,
+      "end_ns": 13170682700
+    },
+    {
+      "kind": "netem",
+      "detail": "netem delay 13ms 19ms loss 3% on node 1",
+      "start_ns": 14451506400,
+      "end_ns": 22880940600
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 2",
+      "start_ns": 23390041900,
+      "end_ns": 29968563500
+    },
+    {
+      "kind": "bridge",
+      "detail": "bridge 1 between [2] and [5 4 3]",
+      "start_ns": 30187855100,
+      "end_ns": 34872547300
+    },
+    {
+      "kind": "netem",
+      "detail": "netem delay 52ms 12ms loss 3% on node 2",
+      "start_ns": 35915583000,
+      "end_ns": 42971487700
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 2",
+      "start_ns": 45499175700,
+      "end_ns": 54682430600
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 5",
+      "start_ns": 56902719200,
+      "end_ns": 63086198000
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 1",
+      "start_ns": 63635998300,
+      "end_ns": 65089644600
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 3",
+      "start_ns": 67535014800,
+      "end_ns": 76159227700
+    },
+    {
+      "kind": "kill",
+      "detail": "SIGKILL node 4",
+      "start_ns": 77245260300,
+      "end_ns": 79930149400
+    },
+    {
+      "kind": "netem",
+      "detail": "netem delay 38ms 13ms loss 9% on node 2",
+      "start_ns": 80535206200,
+      "end_ns": 86568844000
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 2",
+      "start_ns": 87420896300,
+      "end_ns": 88991136100
+    }
+  ],
+  "leaders": [
+    {
+      "at_ns": 7278500,
+      "leader": 4,
+      "term": 1
+    },
+    {
+      "at_ns": 1847125700,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 3077296800,
+      "leader": 1,
+      "term": 2
+    },
+    {
+      "at_ns": 64017024600,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 65049512600,
+      "leader": 3,
+      "term": 3
+    },
+    {
+      "at_ns": 69992782000,
+      "leader": 2,
+      "term": 4
+    },
+    {
+      "at_ns": 82532416000,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 82780617700,
+      "leader": 2,
+      "term": 4
+    },
+    {
+      "at_ns": 88008429800,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 90576614800,
+      "leader": 2,
+      "term": 5
+    }
+  ],
+  "linearizable": "Ok",
+  "check_took_ns": 216859500,
+  "states_equal": true,
+  "state_index": 12036,
+  "hashes": [
+    "47b2affdc615e60f@12036",
+    "47b2affdc615e60f@12036",
+    "47b2affdc615e60f@12036",
+    "47b2affdc615e60f@12036",
+    "47b2affdc615e60f@12036"
+  ]
+}
