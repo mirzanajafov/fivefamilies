@@ -131,6 +131,20 @@ func TestThreeNodeClusters(t *testing.T) {
 	}
 }
 
+func TestSeveralEventsBeforeOneReady(t *testing.T) {
+	opts := DefaultOptions()
+	opts.Batch = true
+	results := runSeeds(1, seedCount(t, 40), opts)
+	for _, r := range results {
+		if !r.OK() {
+			t.Errorf("seed %d failed at %v: %s\n  swarm: %s\n%s", r.Seed, r.At, r.Violation, r.Swarm, r.Stack)
+		}
+	}
+	if plain := Run(1, DefaultOptions()); plain.TraceHash == results[0].TraceHash {
+		t.Error("batching changed nothing in seed 1")
+	}
+}
+
 type nopEnv struct{}
 
 func (nopEnv) Send(raft.Message)          {}

@@ -88,8 +88,8 @@ function point(step) {
   }
 }
 
-function curves(kind) {
-  const run = runs(kind).at(-1)
+function curves(kind, label) {
+  const run = label ?? runs(kind).filter((r) => r.endsWith('-laptop')).at(-1)
   const f = run && read(kind, run, `${kind}.json`)
   if (!f) return null
   return {
@@ -109,6 +109,18 @@ function curves(kind) {
   }
 }
 
+function batching() {
+  const label = runs('e2').filter((r) => r.endsWith('-batch-check')).at(-1)
+  const parts = label ? ['e2', 'e4'].map((k) => curves(k, label)).filter(Boolean) : []
+  const names = {
+    '5 nodes': 'writes, queue taken in one Ready',
+    '5 nodes, one event per Ready': 'writes, one event per Ready',
+    'index reads, 0.95': 'ReadIndex at 95% reads, queue taken in one Ready',
+    'index reads, 0.95, one event per Ready': 'ReadIndex at 95% reads, one event per Ready',
+  }
+  return parts.length ? { run: label, curves: parts.flatMap((p) => p.curves).map((c) => ({ ...c, name: names[c.name] ?? c.name })) } : null
+}
+
 function e1b() {
   const run = runs('e1b').at(-1)
   const f = run && read('e1b', run, 'e1b.json')
@@ -126,5 +138,5 @@ function e1b() {
 mkdirSync(path.dirname(out), { recursive: true })
 writeFileSync(
   out,
-  JSON.stringify({ failover: failover(), registry: registry(), lab: lab(), e1b: e1b(), e2: curves('e2'), e3: curves('e3'), e4: curves('e4'), e5: curves('e5') }, null, 2) + '\n',
+  JSON.stringify({ failover: failover(), registry: registry(), lab: lab(), e1b: e1b(), e2: curves('e2'), e3: curves('e3'), e4: curves('e4'), e5: curves('e5'), batching: batching() }, null, 2) + '\n',
 )

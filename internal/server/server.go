@@ -50,6 +50,7 @@ type Config struct {
 	WriteBeforeSend bool
 	MaxInflight     int
 	MaxMsgBytes     int
+	Batch           int
 	Chaos           bool
 	Crash           func()
 }
@@ -100,6 +101,9 @@ func (c *Config) defaults() error {
 	}
 	if c.WatchProgress <= 0 {
 		c.WatchProgress = time.Second
+	}
+	if c.Batch <= 0 {
+		c.Batch = 256
 	}
 	if c.Fatal == nil {
 		c.Fatal = func(err error) {
@@ -284,11 +288,27 @@ func (s *Server) loop(ctx context.Context) {
 			s.catchUp()
 			s.node.WriteDone(seq)
 		}
+		s.drain()
 		s.node.Process()
 		if s.cfg.SyncStorage {
 			s.waitForDisk(ctx)
 		}
 		s.publish()
+	}
+}
+
+func (s *Server) drain() {
+	for range s.cfg.Batch - 1 {
+		select {
+		case m := <-s.inbound:
+			s.node.Receive(m)
+		case f := <-s.calls:
+			f()
+		case seq := <-s.written:
+			s.node.WriteDone(seq)
+		default:
+			return
+		}
 	}
 }
 

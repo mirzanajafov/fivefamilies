@@ -59,6 +59,7 @@ type Results = {
   e3?: Curves
   e4?: Curves
   e5?: Curves
+  batching?: Curves
 }
 
 const results = data as Results
@@ -67,4 +68,4 @@ export const failover = () => results.failover
 export const registry = () => results.registry
 export const lab = () => results.lab
 export const e1b = () => results.e1b ?? null
-export const experiment = (name: 'e2' | 'e3' | 'e4' | 'e5') => results[name] ?? null
+export const experiment = (name: 'e2' | 'e3' | 'e4' | 'e5' | 'batching') => results[name] ?? null

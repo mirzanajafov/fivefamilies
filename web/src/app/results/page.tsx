@@ -19,7 +19,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function Results() {
   const e1 = failover()
   const short = e1b()
-  const [e2, e3, e4, e5] = (['e2', 'e3', 'e4', 'e5'] as const).map(experiment)
+  const [e2, e3, e4, e5, batched] = (['e2', 'e3', 'e4', 'e5', 'batching'] as const).map(experiment)
   const reg = registry()
   const runs = lab()
   const clean = runs.filter((r) => !r.bug)
@@ -66,7 +66,7 @@ export default function Results() {
           <p className="mt-3 text-sm leading-relaxed">
             Cluster size moved the knee less than chance does: the same five nodes reached 4,000 here and 6,000 in the etcd
             comparison an hour later. The number that stands out is messages per write. With pipelining each write goes to every
-            follower as its own append, because the event loop hands Raft one event at a time; without pipelining the appends wait
+            follower as its own append, because the event loop handed Raft one event at a time (changed since, see below); without pipelining the appends wait
             for each other and carry dozens of entries, and the knee doubled. Past the knee the cluster doesn&apos;t level off, it
             collapses: writes time out and the leader keeps working on requests nobody is waiting for.
           </p>
@@ -83,7 +83,8 @@ export default function Results() {
             A flush takes about 9 ms on this disk, so one per write holds every node to about 110 writes a second. Group commit
             flushes about 40 entries at once near its knee. At low load the flush is nearly all of a write&apos;s latency: 13 ms with
             it, under a millisecond without. Writing on the leader before sending added 2 to 3 ms at low load; its knee is not a fair
-            number yet, because that setting also holds back the heartbeats queued with the entries, and it caused two elections.
+            number yet, because in this run that setting also held back the heartbeats queued with the entries (fixed since), and it
+            caused two elections.
           </p>
         </Section>
       )}
@@ -97,7 +98,7 @@ export default function Results() {
           <p className="mt-3 text-sm leading-relaxed">
             A lease read costs no messages and answers in about half a millisecond until the leader is busy with writes. ReadIndex
             should cost one heartbeat round shared by every read waiting for it; here it costs 10 to 16 messages per operation, a
-            round per read, for the same reason writes aren&apos;t batched. That is why it reaches half of the lease&apos;s throughput, and
+            round per read, for the same reason (see below). That is why it reaches half of the lease&apos;s throughput, and
             follower reads, which add a round trip to the leader, don&apos;t raise it much.
           </p>
         </Section>
@@ -115,9 +116,24 @@ export default function Results() {
           <p className="mt-3 text-sm leading-relaxed">
             etcd wins clearly anyway: about three times the writes and four times the linearizable reads. At low load
             FiveFamilies is faster (13 ms against 22 to 38 ms for a write), and past their knees they behave differently: etcd
-            slows down and keeps answering, FiveFamilies falls over. Both point at the same thing, batching under load, which is
-            the next change to make and measure. etcd&apos;s five-node write knee is a lower bound: the step above it was ruled
+            slows down and keeps answering, FiveFamilies falls over. Both point at batching under load; the first change for it is
+            measured below. etcd&apos;s five-node write knee is a lower bound: the step above it was ruled
             invalid because the load generator itself fell behind.
+          </p>
+        </Section>
+      )}
+      {batched && (
+        <Section title="Taking the whole queue into one Ready">
+          <p className="mb-3 text-sm leading-relaxed">
+            After the runs above, the server loop takes everything queued, up to 256 events, before it asks Raft for a Ready. One
+            event per Ready is the old behaviour, kept as a switch for this comparison; both ran back to back on the same evening.
+          </p>
+          <WriteCurves curves={batched.curves} unit="op" />
+          <p className="mt-3 text-sm leading-relaxed">
+            ReadIndex gained the most: reads that queue up share a heartbeat round, the knee went from 8,000 to 14,000, and offered
+            16,000 a second the cluster still served 13,178 instead of 27. Writes send about half the messages (8 against 15 per
+            write at 4,000 a second), but their knee moved by less than run-to-run noise, so something else holds writes back. A
+            profile of the leader is the next step.
           </p>
         </Section>
       )}

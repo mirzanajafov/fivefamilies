@@ -192,6 +192,9 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 	}
 	var curves []Curve
 	for _, sp := range specs {
+		if !o.wants(sp.name) {
+			continue
+		}
 		o.Log("%s: starting", sp.name)
 		var gen generator
 		var quiet quieter

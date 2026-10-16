@@ -36,6 +36,7 @@ type Options struct {
 	Membership    bool
 	Leases        bool
 	Watches       bool
+	Batch         bool
 	Trace         io.Writer
 }
 
@@ -131,6 +132,7 @@ type simNode struct {
 	rate        float64
 	sm          *recorder
 	ledTerm     uint64
+	deferred    bool
 }
 
 type nodeEnv struct {
@@ -153,6 +155,7 @@ type Sim struct {
 	ls       leaseSwarm
 	leases   map[uint64]*leaseTrack
 	wrng     *rand.Rand
+	brng     *rand.Rand
 	ws       watchSwarm
 	watchers []*simWatcher
 	truth    [][]kv.Event
@@ -235,6 +238,7 @@ func newSim(seed uint64, opts Options) *Sim {
 		s.ws = newWatchSwarm(s.wrng)
 	}
 	s.chk.onEvents = s.recordTruth
+	s.brng = rand.New(rand.NewPCG(seed^0x6261746368, seed))
 	skewed := -1
 	if opts.ClockSkew != 0 {
 		skewed = rng.IntN(opts.Nodes)
@@ -454,8 +458,28 @@ func (s *Sim) dispatch(e event) {
 		}
 		e.on(sn)
 	}
+	if s.opts.Batch && s.brng.IntN(2) == 0 {
+		s.deferProcess(sn)
+		return
+	}
 	sn.n.Process()
 	s.observe(sn)
+}
+
+func (s *Sim) deferProcess(sn *simNode) {
+	if sn.deferred {
+		return
+	}
+	sn.deferred = true
+	gen := sn.incarnation
+	s.after(time.Duration(s.brng.Int64N(int64(time.Millisecond))), func() {
+		sn.deferred = false
+		if sn.n == nil || sn.paused || gen != sn.incarnation {
+			return
+		}
+		sn.n.Process()
+		s.observe(sn)
+	})
 }
 
 func (s *Sim) observe(sn *simNode) {
