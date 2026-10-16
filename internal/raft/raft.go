@@ -163,6 +163,10 @@ func (r *Raft) Stabled() uint64    { return r.log.stabled }
 func (r *Raft) FirstIndex() uint64 { return r.log.firstIndex() }
 func (r *Raft) LastIndex() uint64  { return r.log.lastIndex() }
 
+func (r *Raft) LeaderFresh() bool {
+	return r.state == StateLeader || (r.lead != None && r.electionElapsed < r.cfg.ElectionTick)
+}
+
 func (r *Raft) Planted(b Bug) bool {
 	return r.cfg.Bugs.Has(b)
 }
