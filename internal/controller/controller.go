@@ -25,6 +25,7 @@ type Config struct {
 	ChaosToken  string
 	AdminToken  string
 	Poll        time.Duration
+	IdlePoll    time.Duration
 	Window      time.Duration
 	Idle        time.Duration
 	Clients     int
@@ -46,6 +47,9 @@ func (c *Config) defaults() error {
 	}
 	if c.Poll <= 0 {
 		c.Poll = 100 * time.Millisecond
+	}
+	if c.IdlePoll <= 0 {
+		c.IdlePoll = time.Second
 	}
 	if c.Window <= 0 {
 		c.Window = 10 * time.Second

@@ -91,16 +91,23 @@ type Snapshot struct {
 }
 
 func (c *Controller) poll(ctx context.Context) {
-	t := time.NewTicker(c.cfg.Poll)
-	defer t.Stop()
 	for {
 		c.pollOnce(ctx)
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case <-time.After(c.pollEvery()):
 		}
 	}
+}
+
+func (c *Controller) pollEvery() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.viewers > 0 || c.loadOn || c.fault != nil {
+		return c.cfg.Poll
+	}
+	return c.cfg.IdlePoll
 }
 
 func (c *Controller) statuses(ctx context.Context) []*pb.StatusResponse {
