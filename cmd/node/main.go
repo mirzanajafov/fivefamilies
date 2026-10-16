@@ -71,6 +71,12 @@ func main() {
 	retain := flag.Uint64("retain", 5000, "entries kept behind a snapshot for slow followers")
 	segment := flag.Int64("segment-bytes", 64<<20, "log segment size")
 	bugs := flag.String("bug", "", "planted bugs (only in builds made for testing)")
+	fsync := flag.String("fsync", "group", "group (one fsync for everything queued), ready (one per write), entry (one per entry), or off (unsafe, test builds only)")
+	syncStorage := flag.Bool("sync-storage", false, "wait for the disk inside the event loop, for measuring what asynchronous storage buys")
+	writeFirst := flag.Bool("write-before-send", false, "the leader writes entries before sending them, instead of in parallel")
+	maxInflight := flag.Int("max-inflight", 0, "append messages in flight per follower (1 turns pipelining off)")
+	maxMsgBytes := flag.Int("max-msg-bytes", 0, "bytes of entries per append message (1 sends one entry per message)")
+	chaos := flag.Bool("chaos", false, "accept chaos requests (stall-disk, pause, isolate, crash) on the admin API")
 	level := flag.String("log-level", "info", "debug, info, warn or error")
 	flag.Parse()
 
@@ -95,6 +101,10 @@ func main() {
 		logger.Error("planted bugs are only available in test builds", "bug", *bugs, "err", err)
 		os.Exit(2)
 	}
+	if *fsync == server.FsyncOff && plantable != "yes" {
+		logger.Error("turning fsync off is only available in test builds")
+		os.Exit(2)
+	}
 	addr := *listen
 	if addr == "" {
 		_, port, err := net.SplitHostPort(nodes[raft.NodeID(*id)])
@@ -105,19 +115,25 @@ func main() {
 		addr = ":" + port
 	}
 	cfg := server.Config{
-		ID:            raft.NodeID(*id),
-		Nodes:         nodes,
-		Voters:        voters,
-		DataDir:       *data,
-		Tick:          *tick,
-		HeartbeatTick: ticks(*heartbeat, *tick),
-		ElectionTick:  ticks(*election, *tick),
-		LeaseTicks:    ticks(*lease, *tick),
-		SnapshotEvery: *snapEvery,
-		Retain:        *retain,
-		SegmentBytes:  *segment,
-		Bugs:          planted,
-		Logger:        logger,
+		ID:              raft.NodeID(*id),
+		Nodes:           nodes,
+		Voters:          voters,
+		DataDir:         *data,
+		Tick:            *tick,
+		HeartbeatTick:   ticks(*heartbeat, *tick),
+		ElectionTick:    ticks(*election, *tick),
+		LeaseTicks:      ticks(*lease, *tick),
+		SnapshotEvery:   *snapEvery,
+		Retain:          *retain,
+		SegmentBytes:    *segment,
+		Bugs:            planted,
+		Logger:          logger,
+		FsyncMode:       *fsync,
+		SyncStorage:     *syncStorage,
+		WriteBeforeSend: *writeFirst,
+		MaxInflight:     *maxInflight,
+		MaxMsgBytes:     *maxMsgBytes,
+		Chaos:           *chaos,
 	}
 	srv, err := server.New(cfg)
 	if err != nil {

@@ -21,7 +21,22 @@ message StatusResponse {
   repeated uint64 voters = 12;
   repeated uint64 learners = 13;
   uint64 transferee = 14;
+  uint64 fsyncs = 15;
+  uint64 wal_batches = 16;
+  uint64 entries_written = 17;
+  uint64 msgs_sent = 18;
+  uint64 msgs_received = 19;
+  uint64 reads = 20;
+  uint64 writes = 21;
+  uint64 elections = 22;
 }
+
+message ChaosRequest {
+  string action = 1;
+  uint64 duration_ms = 2;
+}
+
+message ChaosResponse {}
 
 enum MemberChange {
   MEMBER_CHANGE_UNSPECIFIED = 0;
@@ -54,4 +69,5 @@ service Admin {
   rpc Status(StatusRequest) returns (StatusResponse);
   rpc ChangeMembers(ChangeMembersRequest) returns (ChangeMembersResponse);
   rpc TransferLeadership(TransferLeadershipRequest) returns (TransferLeadershipResponse);
+  rpc Chaos(ChaosRequest) returns (ChaosResponse);
 }

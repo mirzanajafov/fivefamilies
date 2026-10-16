@@ -40,9 +40,10 @@ type StateMachine interface {
 }
 
 type Config struct {
-	SnapshotEvery uint64
-	Retain        uint64
-	Tick          time.Duration
+	SnapshotEvery   uint64
+	Retain          uint64
+	Tick            time.Duration
+	WriteBeforeSend bool
 }
 
 var (
@@ -384,10 +385,14 @@ func (n *Node) Process() {
 			n.lastSnap = s.Index
 			n.loseWaitersUpTo(s.Index)
 		}
-		if rd.NeedsWrite() || len(rd.AfterPersist) > 0 {
-			n.write(Write{HardState: rd.HardState, Snapshot: rd.Snapshot, Reset: rd.Snapshot != nil, Entries: rd.Entries, Sync: rd.MustSync}, rd.AfterPersist, rd.Snapshot)
+		now, after := rd.Messages, rd.AfterPersist
+		if n.cfg.WriteBeforeSend && len(rd.Entries) > 0 && n.r.State() == raft.StateLeader {
+			now, after = nil, append(rd.Messages, rd.AfterPersist...)
 		}
-		for _, m := range rd.Messages {
+		if rd.NeedsWrite() || len(after) > 0 {
+			n.write(Write{HardState: rd.HardState, Snapshot: rd.Snapshot, Reset: rd.Snapshot != nil, Entries: rd.Entries, Sync: rd.MustSync}, after, rd.Snapshot)
+		}
+		for _, m := range now {
 			n.env.Send(m)
 		}
 		for _, rs := range rd.ReadStates {
