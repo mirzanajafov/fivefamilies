@@ -209,6 +209,11 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 	if !a.s.cfg.Chaos {
 		return nil, status.Error(codes.PermissionDenied, "chaos is off on this node")
 	}
+	if req.GetAction() == "heal" {
+		a.s.Filter.Clear()
+		a.s.stall.Store(0)
+		return &pb.ChaosResponse{}, nil
+	}
 	d := time.Duration(req.GetDurationMs()) * time.Millisecond
 	if d <= 0 || d > maxChaos {
 		return nil, status.Errorf(codes.InvalidArgument, "chaos lasts between 1 ms and %v", maxChaos)

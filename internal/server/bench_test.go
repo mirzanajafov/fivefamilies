@@ -143,6 +143,23 @@ func TestChaosIsBoundedAndOffByDefault(t *testing.T) {
 	t.Fatal("isolating the leader did not elect another")
 }
 
+func TestHealClearsAnIsolationEarly(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
+	old := c.leader(5 * time.Second)
+	chaos(t, c, old, "isolate", time.Minute)
+	if c.running[old].srv.Filter.Allow(old, old%3+1) {
+		t.Fatal("isolate did not block")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.admin(old).Chaos(ctx, &pb.ChaosRequest{Action: "heal"}); err != nil {
+		t.Fatal(err)
+	}
+	if !c.running[old].srv.Filter.Allow(old, old%3+1) {
+		t.Fatal("heal left the isolation in place")
+	}
+}
+
 func TestOneClientCanWriteFromManyGoroutines(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
 	c.leader(5 * time.Second)
