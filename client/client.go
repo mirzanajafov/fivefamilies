@@ -284,15 +284,20 @@ func (c *Client) Get(ctx context.Context, key string, mode ReadMode) (KeyValue, 
 }
 
 func (c *Client) Range(ctx context.Context, prefix string, limit uint64) ([]KeyValue, error) {
+	kvs, _, err := c.RangeRev(ctx, prefix, limit)
+	return kvs, err
+}
+
+func (c *Client) RangeRev(ctx context.Context, prefix string, limit uint64) ([]KeyValue, uint64, error) {
 	res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.RangeResponse, error) {
 		return pb.NewKVClient(cc).Range(ctx, &pb.RangeRequest{Prefix: prefix, Limit: limit}, opts...)
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	out := make([]KeyValue, len(res.GetKvs()))
 	for i, kv := range res.GetKvs() {
 		out[i] = fromPB(kv)
 	}
-	return out, nil
+	return out, res.GetRev(), nil
 }
