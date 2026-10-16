@@ -21,6 +21,8 @@ var canaries = []struct {
 	{raft.BugFollowerRead, "follower", false, []Category{CatLinearizability}, []uint64{1}},
 	{raft.BugEarlyConf, "", true, []Category{CatSafety}, []uint64{7622}},
 	{raft.BugLocalKeepAlive, "", false, []Category{CatLease}, []uint64{981}},
+	{raft.BugWatchGap, "", false, []Category{CatWatch}, []uint64{2}},
+	{raft.BugWatchKeep, "", false, []Category{CatWatch}, []uint64{7}},
 }
 
 func TestPlantedBugsAreCaught(t *testing.T) {

@@ -35,6 +35,7 @@ type Options struct {
 	NoCatchUp     bool
 	Membership    bool
 	Leases        bool
+	Watches       bool
 	Trace         io.Writer
 }
 
@@ -53,6 +54,7 @@ func DefaultOptions() Options {
 		LeaseTicks:    12,
 		Membership:    true,
 		Leases:        true,
+		Watches:       true,
 	}
 }
 
@@ -90,6 +92,10 @@ type Stats struct {
 	KeepAlives     int
 	LeasesLost     int
 	LeaseExpiries  int
+	WatchEvents    int
+	WatchResyncs   int
+	WatchCompacted int
+	WatchDrops     int
 }
 
 type Result struct {
@@ -138,28 +144,33 @@ func (e nodeEnv) SaveSnapshot(s raft.Snapshot) { e.s.saveSnapshot(e.sn, s) }
 func (e nodeEnv) Compacted(s raft.Snapshot)    { e.s.compacted(e.sn, s) }
 
 type Sim struct {
-	opts    Options
-	seed    uint64
-	rng     *rand.Rand
-	mrng    *rand.Rand
-	ms      memberSwarm
-	lrng    *rand.Rand
-	ls      leaseSwarm
-	leases  map[uint64]*leaseTrack
-	now     time.Duration
-	seq     uint64
-	queue   eventQueue
-	nodes   []*simNode
-	voters  []raft.NodeID
-	net     network
-	sw      swarm
-	chk     *checker
-	stats   Stats
-	hash    uint64
-	healing bool
-	clients []*simClient
-	history []opRecord
-	check   check.Verdict
+	opts     Options
+	seed     uint64
+	rng      *rand.Rand
+	mrng     *rand.Rand
+	ms       memberSwarm
+	lrng     *rand.Rand
+	ls       leaseSwarm
+	leases   map[uint64]*leaseTrack
+	wrng     *rand.Rand
+	ws       watchSwarm
+	watchers []*simWatcher
+	truth    [][]kv.Event
+	healRev  uint64
+	now      time.Duration
+	seq      uint64
+	queue    eventQueue
+	nodes    []*simNode
+	voters   []raft.NodeID
+	net      network
+	sw       swarm
+	chk      *checker
+	stats    Stats
+	hash     uint64
+	healing  bool
+	clients  []*simClient
+	history  []opRecord
+	check    check.Verdict
 }
 
 const (
@@ -218,6 +229,12 @@ func newSim(seed uint64, opts Options) *Sim {
 		s.ls = newLeaseSwarm(s.lrng, time.Duration(opts.ElectionTick)*opts.Tick)
 	}
 	s.chk.onExpire = s.leaseExpired
+	s.wrng = rand.New(rand.NewPCG(seed^0x7761746368, seed))
+	s.ws = watchSwarm{history: 10000}
+	if opts.Watches {
+		s.ws = newWatchSwarm(s.wrng)
+	}
+	s.chk.onEvents = s.recordTruth
 	skewed := -1
 	if opts.ClockSkew != 0 {
 		skewed = rng.IntN(opts.Nodes)
@@ -246,7 +263,7 @@ func (s *Sim) result() Result {
 	}
 	return Result{
 		Seed:      s.seed,
-		Swarm:     s.sw.String() + s.ms.String() + s.ls.String(),
+		Swarm:     s.sw.String() + s.ms.String() + s.ls.String() + s.ws.String(),
 		Violation: s.chk.failure,
 		Category:  s.chk.category,
 		Muted:     s.chk.muted,
@@ -286,13 +303,14 @@ func (s *Sim) start() {
 	for _, sn := range s.nodes {
 		s.boot(sn)
 	}
-	s.tracef("swarm: %s%s%s", s.sw, s.ms, s.ls)
+	s.tracef("swarm: %s%s%s%s", s.sw, s.ms, s.ls, s.ws)
 	if len(s.nodes) < 3 {
 		s.sw.partitionMean = 0
 	}
 	s.startFaults()
 	s.startMembership()
 	s.startLeaseHolders()
+	s.startWatchers()
 	s.startClients()
 	if s.sw.proposalRate > 0 {
 		s.after(exponential(s.rng, time.Duration(float64(time.Second)/s.sw.proposalRate)), s.proposeLoop)
@@ -325,7 +343,7 @@ func (s *Sim) boot(sn *simNode) {
 		s.chk.safetyf("node %d failed to restart: %v (disk: %s)", sn.id, err, sn.disk)
 		return
 	}
-	sn.sm = newRecorder(s.chk, sn.idx)
+	sn.sm = newRecorder(s.chk, sn.idx, s.ws.history, s.opts.Bugs)
 	if st.Snapshot != nil {
 		if err := sn.sm.Restore(st.Snapshot.Index, st.Snapshot.Data); err != nil {
 			s.chk.safetyf("node %d could not restore its snapshot: %v", sn.id, err)
@@ -587,6 +605,7 @@ func (s *Sim) compacted(sn *simNode, snapshot raft.Snapshot) {
 
 func (s *Sim) crash(sn *simNode) {
 	s.tracef("fault: crash node %d", sn.id)
+	s.watchBroken(sn)
 	s.stats.Crashes++
 	sn.n = nil
 	sn.incarnation++
@@ -661,6 +680,11 @@ func (s *Sim) proposeOnce() {
 func (s *Sim) heal() {
 	s.healing = true
 	s.tracef("heal: every fault stops")
+	for _, sn := range s.nodes {
+		if sn.n != nil {
+			s.healRev = max(s.healRev, sn.sm.Store.Rev())
+		}
+	}
 	s.net.healAll()
 	s.net.loss, s.net.dup = 0, 0
 	s.net.jitter = min(s.net.jitter, time.Millisecond)
@@ -683,6 +707,9 @@ func (s *Sim) finalChecks() {
 	s.checkLiveness()
 	if !s.chk.failed() {
 		s.checkLeasesExpired()
+	}
+	if !s.chk.failed() {
+		s.checkWatchers()
 	}
 	s.checkStates()
 	if s.chk.failed() && !s.opts.MuteSafety {
@@ -740,11 +767,11 @@ func (s *Sim) checkStates() {
 		return
 	}
 	for _, sn := range s.nodes {
-		if sn.n == nil || sn == l || sn.sm.store.Rev() != l.sm.store.Rev() {
+		if sn.n == nil || sn == l || sn.sm.Store.Rev() != l.sm.Store.Rev() {
 			continue
 		}
-		if sn.sm.store.Hash() != l.sm.store.Hash() {
-			s.chk.report(CatState, "state: node %d's state at revision %d differs from the leader's", sn.id, sn.sm.store.Rev())
+		if sn.sm.Store.Hash() != l.sm.Store.Hash() {
+			s.chk.report(CatState, "state: node %d's state at revision %d differs from the leader's", sn.id, sn.sm.Store.Rev())
 			return
 		}
 	}

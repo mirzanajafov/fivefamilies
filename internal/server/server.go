@@ -23,6 +23,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/transport"
 	"github.com/mirzanajafov/fivefamilies/internal/vfs"
 	"github.com/mirzanajafov/fivefamilies/internal/wal"
+	"github.com/mirzanajafov/fivefamilies/internal/watch"
 )
 
 type Config struct {
@@ -38,6 +39,8 @@ type Config struct {
 	Retain        uint64
 	SegmentBytes  int64
 	MaxSessions   int
+	WatchHistory  int
+	WatchProgress time.Duration
 	Bugs          raft.Bug
 	Logger        *slog.Logger
 	Fatal         func(error)
@@ -70,6 +73,9 @@ func (c *Config) defaults() error {
 	if c.Logger == nil {
 		c.Logger = slog.Default()
 	}
+	if c.WatchProgress <= 0 {
+		c.WatchProgress = time.Second
+	}
 	if c.Fatal == nil {
 		c.Fatal = func(err error) {
 			c.Logger.Error("fatal", "err", err)
@@ -85,23 +91,24 @@ type diskJob struct {
 }
 
 type Server struct {
-	cfg      Config
-	fs       vfs.OS
-	wal      *wal.Log
-	raft     *raft.Raft
-	node     *node.Node
-	sm       *machine
-	tr       *transport.Transport
-	Filter   *Filter
-	inbound  chan raft.Message
-	calls    chan func()
-	jobs     chan diskJob
-	written  chan uint64
-	stopped  chan struct{}
-	lastTick time.Time
-	status   atomic.Pointer[pb.StatusResponse]
-	log      *slog.Logger
-	fatalled atomic.Bool
+	cfg       Config
+	fs        vfs.OS
+	wal       *wal.Log
+	raft      *raft.Raft
+	node      *node.Node
+	sm        *watch.Machine
+	tr        *transport.Transport
+	Filter    *Filter
+	inbound   chan raft.Message
+	calls     chan func()
+	jobs      chan diskJob
+	written   chan uint64
+	stopped   chan struct{}
+	lastTick  time.Time
+	lastWatch time.Time
+	status    atomic.Pointer[pb.StatusResponse]
+	log       *slog.Logger
+	fatalled  atomic.Bool
 }
 
 func randomUint64() uint64 {
@@ -138,7 +145,7 @@ func New(cfg Config) (*Server, error) {
 		s.log.Warn("cut a torn tail from the log", "bytes", rec.TornBytes)
 	}
 	s.wal = l
-	s.sm = &machine{store: kv.NewStore(cfg.MaxSessions), maxSessions: cfg.MaxSessions}
+	s.sm = watch.NewMachine(cfg.MaxSessions, cfg.WatchHistory, cfg.Bugs)
 	if st.Snapshot != nil {
 		sn, err := snap.Load(s.fs, st.Snapshot.Index, st.Snapshot.Term)
 		if err != nil {
@@ -183,6 +190,7 @@ func (s *Server) Register(g *grpc.Server) {
 	pb.RegisterKVServer(g, &kvService{s: s})
 	pb.RegisterAdminServer(g, &adminService{s: s})
 	pb.RegisterLeaseServer(g, &leaseService{s: s})
+	pb.RegisterWatchServer(g, &watchService{s: s})
 }
 
 func (s *Server) Run(ctx context.Context) {
@@ -230,6 +238,7 @@ func (s *Server) loop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.catchUp()
+			s.tendWatches()
 		case m := <-s.inbound:
 			s.catchUp()
 			s.node.Receive(m)
@@ -242,6 +251,24 @@ func (s *Server) loop(ctx context.Context) {
 		}
 		s.node.Process()
 		s.publish()
+	}
+}
+
+func (s *Server) leaderless() bool {
+	return s.node.LeaderlessTicks() > uint64(2*s.cfg.ElectionTick)
+}
+
+func (s *Server) tendWatches() {
+	if s.sm.Hub.Len() == 0 {
+		return
+	}
+	if s.leaderless() {
+		s.sm.Hub.EndAll()
+		return
+	}
+	if time.Since(s.lastWatch) >= s.cfg.WatchProgress {
+		s.lastWatch = time.Now()
+		s.sm.Hub.Progress()
 	}
 }
 
@@ -470,7 +497,7 @@ func (s *Server) TimeToLive(ctx context.Context, id uint64) (remaining time.Dura
 	if lerr := s.inLoop(ctx, func() {
 		leader, hint = s.raft.State() == raft.StateLeader, s.raft.Leader()
 		remaining, tracked = s.node.LeaseRemaining(id)
-		info, exists = s.sm.store.Lease(id)
+		info, exists = s.sm.Store.Lease(id)
 	}); lerr != nil {
 		return 0, info, lerr
 	}
@@ -489,7 +516,7 @@ func (s *Server) StateHash(ctx context.Context) (uint64, uint64, error) {
 	type hashed struct{ hash, rev uint64 }
 	ch := make(chan hashed, 1)
 	select {
-	case s.calls <- func() { ch <- hashed{s.sm.store.Hash(), s.sm.store.Rev()} }:
+	case s.calls <- func() { ch <- hashed{s.sm.Store.Hash(), s.sm.Store.Rev()} }:
 	case <-ctx.Done():
 		return 0, 0, ctx.Err()
 	}
@@ -499,42 +526,4 @@ func (s *Server) StateHash(ctx context.Context) (uint64, uint64, error) {
 	case <-ctx.Done():
 		return 0, 0, ctx.Err()
 	}
-}
-
-type machine struct {
-	store       *kv.Store
-	maxSessions int
-}
-
-func (m *machine) Apply(e raft.Entry) kv.Result {
-	return m.store.Apply(e)
-}
-
-func (m *machine) Get(key string) kv.Result {
-	kvp, found := m.store.Get(key)
-	return kv.Result{Rev: m.store.Rev(), Found: found, KV: kvp, Ok: true}
-}
-
-func (m *machine) Snapshot() []byte {
-	return m.store.Snapshot()
-}
-
-func (m *machine) Lease(id uint64) (kv.LeaseInfo, bool) {
-	return m.store.Lease(id)
-}
-
-func (m *machine) Leases() []kv.LeaseInfo {
-	return m.store.Leases()
-}
-
-func (m *machine) Restore(index uint64, data []byte) error {
-	st, err := kv.Restore(data, m.maxSessions)
-	if err != nil {
-		return err
-	}
-	if st.Rev() != index {
-		return fmt.Errorf("snapshot %d holds a store at revision %d", index, st.Rev())
-	}
-	m.store = st
-	return nil
 }

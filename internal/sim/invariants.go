@@ -5,6 +5,7 @@ import (
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/watch"
 )
 
 type entryKey struct {
@@ -49,6 +50,7 @@ type checker struct {
 	disks        []*disk
 	conf         raft.ConfState
 	onExpire     func(uint64)
+	onEvents     func(uint64, []kv.Event)
 }
 
 func newChecker(nodes int) *checker {
@@ -228,14 +230,14 @@ func (c *checker) logMatching(a, b *raft.Raft) {
 }
 
 type recorder struct {
-	chk   *checker
-	idx   int
-	last  uint64
-	store *kv.Store
+	*watch.Machine
+	chk  *checker
+	idx  int
+	last uint64
 }
 
-func newRecorder(chk *checker, idx int) *recorder {
-	return &recorder{chk: chk, idx: idx, store: kv.NewStore(0)}
+func newRecorder(chk *checker, idx int, history int, bugs raft.Bug) *recorder {
+	return &recorder{chk: chk, idx: idx, Machine: watch.NewMachine(0, history, bugs)}
 }
 
 func (r *recorder) Apply(e raft.Entry) kv.Result {
@@ -246,34 +248,17 @@ func (r *recorder) Apply(e raft.Entry) kv.Result {
 		}
 	}
 	r.last = e.Index
-	return r.store.Apply(e)
-}
-
-func (r *recorder) Get(key string) kv.Result {
-	kvp, found := r.store.Get(key)
-	return kv.Result{Rev: r.store.Rev(), Found: found, KV: kvp, Ok: true}
-}
-
-func (r *recorder) Snapshot() []byte {
-	return r.store.Snapshot()
-}
-
-func (r *recorder) Lease(id uint64) (kv.LeaseInfo, bool) {
-	return r.store.Lease(id)
-}
-
-func (r *recorder) Leases() []kv.LeaseInfo {
-	return r.store.Leases()
+	res := r.Machine.Apply(e)
+	if r.chk.onEvents != nil {
+		r.chk.onEvents(e.Index, r.LastEvents())
+	}
+	return res
 }
 
 func (r *recorder) Restore(index uint64, data []byte) error {
-	s, err := kv.Restore(data, 0)
-	if err != nil {
+	if err := r.Machine.Restore(index, data); err != nil {
 		return err
 	}
-	if s.Rev() != index {
-		return fmt.Errorf("snapshot at %d holds a store at revision %d", index, s.Rev())
-	}
-	r.store, r.last = s, index
+	r.last = index
 	return nil
 }

@@ -234,11 +234,11 @@ func (s *Sim) checkLeasesExpired() {
 	if l == nil {
 		return
 	}
-	for _, info := range l.sm.store.Leases() {
+	for _, info := range l.sm.Store.Leases() {
 		s.chk.report(CatLiveness, "liveness: lease %d (TTL %vms) is still alive %v after every holder stopped", info.ID, info.TTL, s.now-s.holdersStopAt())
 		return
 	}
-	for _, kv := range l.sm.store.Range("lease/", 1) {
+	for _, kv := range l.sm.Store.Range("lease/", 1) {
 		s.chk.report(CatLiveness, "liveness: key %s outlived its lease", kv.Key)
 		return
 	}

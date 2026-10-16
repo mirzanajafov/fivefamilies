@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ func usage() {
   status
   member add|promote|remove ID
   lease grant TTL | revoke ID | keepalive ID | ttl ID
+  watch PREFIX [REV]     (runs until interrupted)
   transfer ID`)
 	os.Exit(2)
 }
@@ -70,6 +72,14 @@ func main() {
 		rev, err := c.Put(ctx, args[1], []byte(args[2]), opts...)
 		check(err)
 		fmt.Println("rev", rev)
+	case args[0] == "watch" && (len(args) == 2 || len(args) == 3):
+		var from uint64
+		if len(args) == 3 {
+			from = nodeID(args[2])
+		}
+		wctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		watchPrefix(wctx, c, args[1], from)
 	case args[0] == "lease" && len(args) == 3:
 		lease(ctx, c, args[1], args[2])
 	case args[0] == "get" && len(args) == 2:
@@ -214,4 +224,19 @@ func check(err error) {
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
+}
+
+func watchPrefix(ctx context.Context, c *client.Client, prefix string, from uint64) {
+	for r := range c.Watch(ctx, prefix, true, from) {
+		if r.CompactRev != 0 {
+			fail(fmt.Errorf("revisions before %d are no longer kept; read the keys again and watch from there", r.CompactRev))
+		}
+		for _, ev := range r.Events {
+			if ev.Type == client.EventDelete {
+				fmt.Println(ev.KV.ModRev, "delete", ev.KV.Key)
+				continue
+			}
+			fmt.Println(ev.KV.ModRev, "put", ev.KV.Key, strconv.Quote(string(ev.KV.Value)))
+		}
+	}
 }

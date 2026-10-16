@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package fivefamilies.v1;
+
+import "fivefamilies/v1/kv.proto";
+
+option go_package = "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1";
+
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_PUT = 1;
+  EVENT_TYPE_DELETE = 2;
+}
+
+message WatchRequest {
+  string key = 1;
+  bool prefix = 2;
+  uint64 start_rev = 3;
+}
+
+message WatchEvent {
+  EventType type = 1;
+  KeyValue kv = 2;
+}
+
+message WatchResponse {
+  repeated WatchEvent events = 1;
+  uint64 rev = 2;
+  bool progress = 3;
+  uint64 compact_rev = 4;
+}
+
+service Watch {
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+}

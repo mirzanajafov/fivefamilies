@@ -63,6 +63,28 @@ type Result struct {
 	TTL    uint64
 }
 
+type EventType uint8
+
+const (
+	EventPut EventType = iota + 1
+	EventDelete
+)
+
+func (t EventType) String() string {
+	switch t {
+	case EventPut:
+		return "put"
+	case EventDelete:
+		return "delete"
+	}
+	return fmt.Sprintf("EventType(%d)", uint8(t))
+}
+
+type Event struct {
+	Type EventType
+	KV   KeyValue
+}
+
 type lease struct {
 	ttl  uint64
 	keys map[string]struct{}
@@ -91,6 +113,17 @@ type Store struct {
 	sessions    map[uint64]*session
 	maxSessions int
 	leases      map[uint64]*lease
+	observer    func(Event)
+}
+
+func (s *Store) Observe(fn func(Event)) {
+	s.observer = fn
+}
+
+func (s *Store) emit(t EventType, kv KeyValue) {
+	if s.observer != nil {
+		s.observer(Event{Type: t, KV: kv})
+	}
 }
 
 func lessKey(a, b KeyValue) bool {
@@ -221,7 +254,7 @@ func (s *Store) exec(cmd Command, rev uint64) Result {
 		return Result{Rev: rev, Ok: true, Found: found, KV: cur}
 	case OpDelete:
 		if found {
-			s.remove(cur)
+			s.remove(cur, rev)
 		}
 		return Result{Rev: rev, Ok: found, Found: found, KV: cur}
 	case OpCAS:
@@ -262,11 +295,13 @@ func (s *Store) put(key string, value []byte, leaseID, rev uint64) {
 		s.leases[leaseID].keys[key] = struct{}{}
 	}
 	s.tree.ReplaceOrInsert(kv)
+	s.emit(EventPut, kv)
 }
 
-func (s *Store) remove(kv KeyValue) {
+func (s *Store) remove(kv KeyValue, rev uint64) {
 	s.detach(kv)
 	s.tree.Delete(kv)
+	s.emit(EventDelete, KeyValue{Key: kv.Key, ModRev: rev})
 }
 
 func (s *Store) detach(kv KeyValue) {
@@ -287,6 +322,7 @@ func (s *Store) revoke(id, rev uint64) Result {
 	slices.Sort(keys)
 	for _, k := range keys {
 		s.tree.Delete(KeyValue{Key: k})
+		s.emit(EventDelete, KeyValue{Key: k, ModRev: rev})
 	}
 	delete(s.leases, id)
 	return Result{Rev: rev, Ok: true, Lease: id, TTL: l.ttl}

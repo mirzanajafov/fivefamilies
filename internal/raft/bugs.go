@@ -16,6 +16,8 @@ const (
 	BugFollowerRead
 	BugEarlyConf
 	BugLocalKeepAlive
+	BugWatchGap
+	BugWatchKeep
 )
 
 var bugNames = []struct {
@@ -30,6 +32,8 @@ var bugNames = []struct {
 	{BugFollowerRead, "followerread"},
 	{BugEarlyConf, "earlyconf"},
 	{BugLocalKeepAlive, "localkeepalive"},
+	{BugWatchGap, "watchgap"},
+	{BugWatchKeep, "watchkeep"},
 }
 
 func (b Bug) Has(x Bug) bool {

@@ -220,7 +220,7 @@ func TestCheckerAllowsALateLeaderOfAnOldTerm(t *testing.T) {
 
 func TestCheckerCatchesOutOfOrderApply(t *testing.T) {
 	c := newChecker(1)
-	rec := newRecorder(c, 0)
+	rec := newRecorder(c, 0, 0, 0)
 	rec.Apply(raft.Entry{Term: 1, Index: 1})
 	rec.Apply(raft.Entry{Term: 1, Index: 3})
 	if !c.failed() {

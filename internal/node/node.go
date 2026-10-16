@@ -110,6 +110,7 @@ type Node struct {
 	leases     map[uint64]*leaseClock
 	leaseTerm  uint64
 	nextExpiry uint64
+	leaderless uint64
 }
 
 func New(r *raft.Raft, env Env, sm StateMachine, cfg Config) *Node {
@@ -130,11 +131,20 @@ func (n *Node) Raft() *raft.Raft {
 func (n *Node) Tick() {
 	n.ticks++
 	n.r.Tick()
+	if n.r.LeaderFresh() {
+		n.leaderless = 0
+	} else {
+		n.leaderless++
+	}
 	if n.ticks%16 == 0 {
 		n.expireReads(func(w readWaiter) bool { return w.tick+readExpiry < n.ticks })
 	}
 	n.syncLessor()
 	n.expireLeases()
+}
+
+func (n *Node) LeaderlessTicks() uint64 {
+	return n.leaderless
 }
 
 func (n *Node) Read(key string, lease bool, done Done) {
