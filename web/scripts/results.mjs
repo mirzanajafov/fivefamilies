@@ -64,5 +64,67 @@ function lab() {
   })
 }
 
+function point(step) {
+  if (!step) return null
+  const r = step.report
+  const s = r.summary
+  return {
+    rate: step.rate,
+    achieved: s.achieved_per_s,
+    valid: s.valid && !step.error,
+    kept: s.valid && !step.error && s.achieved_per_s >= 0.9 * step.rate && s.all.p99_ns <= 1e9 && s.all.errors <= 0.01 * s.scheduled,
+    errors: s.all.errors,
+    p50: s.all.p50_ns,
+    p99: s.all.p99_ns,
+    p999: s.all.p999_ns,
+    readP50: s.reads.p50_ns,
+    readP99: s.reads.p99_ns,
+    writeP50: s.writes.p50_ns,
+    writeP99: s.writes.p99_ns,
+    fsyncsPerOp: r.fsyncs_per_op,
+    msgsPerOp: r.msgs_per_op,
+    entriesPerFsync: r.entries_per_fsync,
+    elections: r.elections,
+  }
+}
+
+function curves(kind) {
+  const run = runs(kind).at(-1)
+  const f = run && read(kind, run, `${kind}.json`)
+  if (!f) return null
+  return {
+    run,
+    curves: f.map((c) => {
+      const steps = c.steps.filter((s) => s.report.summary.scheduled > 0).map(point).sort((a, b) => a.rate - b.rate)
+      const knee = Math.max(0, ...steps.filter((p) => p.kept).map((p) => p.achieved))
+      const below = steps.filter((p) => p.rate <= 0.8 * knee).reverse()
+      return {
+        name: c.name,
+        nodes: c.nodes,
+        knee,
+        latency: [point(c.at_80_percent), ...below, point(c.at_50_percent)].find((p) => p?.kept) ?? null,
+        steps,
+      }
+    }),
+  }
+}
+
+function e1b() {
+  const run = runs('e1b').at(-1)
+  const f = run && read('e1b', run, 'e1b.json')
+  if (!f) return null
+  return {
+    run,
+    rows: f.map((r) => ({
+      election: r.election_ns,
+      sync: r.sync_storage,
+      faults: r.faults.map((x) => ({ kind: x.kind, target: x.target, duration: x.duration_ns, injections: x.injections, elected: x.followed_by_an_election })),
+    })),
+  }
+}
+
 mkdirSync(path.dirname(out), { recursive: true })
-writeFileSync(out, JSON.stringify({ failover: failover(), registry: registry(), lab: lab() }, null, 2) + '\n')
+writeFileSync(
+  out,
+  JSON.stringify({ failover: failover(), registry: registry(), lab: lab(), e1b: e1b(), e2: curves('e2'), e3: curves('e3'), e4: curves('e4'), e5: curves('e5') }, null, 2) + '\n',
+)

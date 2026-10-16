@@ -89,13 +89,21 @@ func (c *cluster) close() {
 }
 
 func (c *cluster) statuses(ctx context.Context, timeout time.Duration) []*pb.StatusResponse {
+	return c.ask(ctx, timeout, &pb.StatusRequest{Hash: true})
+}
+
+func (c *cluster) progress(ctx context.Context, timeout time.Duration) []*pb.StatusResponse {
+	return c.ask(ctx, timeout, &pb.StatusRequest{})
+}
+
+func (c *cluster) ask(ctx context.Context, timeout time.Duration, req *pb.StatusRequest) []*pb.StatusResponse {
 	out := make([]*pb.StatusResponse, len(c.conns))
 	var wg sync.WaitGroup
 	for i, conn := range c.conns {
 		wg.Go(func() {
 			cctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
-			st, err := pb.NewAdminClient(conn).Status(cctx, &pb.StatusRequest{Hash: true})
+			st, err := pb.NewAdminClient(conn).Status(cctx, req)
 			if err == nil {
 				out[i] = st
 			}

@@ -84,21 +84,52 @@ func (e *EtcdCluster) Up(ctx context.Context) error {
 	return fmt.Errorf("etcd did not elect a leader within 60 s")
 }
 
-func (e *EtcdCluster) Leader(ctx context.Context) (string, error) {
+type etcdStatus struct {
+	Endpoint string `json:"Endpoint"`
+	Status   struct {
+		Header struct {
+			MemberID json.Number `json:"member_id"`
+		} `json:"header"`
+		Leader       json.Number `json:"leader"`
+		Index        uint64      `json:"raftIndex"`
+		AppliedIndex uint64      `json:"raftAppliedIndex"`
+	} `json:"Status"`
+}
+
+func (e *EtcdCluster) statuses(ctx context.Context) ([]etcdStatus, error) {
 	out, err := e.d.cmd(ctx, nil, "exec", e.d.container("e1"), "etcdctl", "--endpoints", strings.Join(e.endpoints(), ","), "endpoint", "status", "-w", "json")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	var sts []struct {
-		Endpoint string `json:"Endpoint"`
-		Status   struct {
-			Header struct {
-				MemberID json.Number `json:"member_id"`
-			} `json:"header"`
-			Leader json.Number `json:"leader"`
-		} `json:"Status"`
-	}
+	var sts []etcdStatus
 	if err := json.Unmarshal([]byte(out), &sts); err != nil {
+		return nil, err
+	}
+	return sts, nil
+}
+
+func (e *EtcdCluster) Quiet(ctx context.Context) error {
+	return settle(ctx, func(ctx context.Context) (uint64, bool) {
+		sts, err := e.statuses(ctx)
+		if err != nil || len(sts) != e.Nodes {
+			return 0, false
+		}
+		var top uint64
+		for _, st := range sts {
+			top = max(top, st.Status.Index)
+		}
+		for _, st := range sts {
+			if st.Status.AppliedIndex != top {
+				return top, false
+			}
+		}
+		return top, true
+	})
+}
+
+func (e *EtcdCluster) Leader(ctx context.Context) (string, error) {
+	sts, err := e.statuses(ctx)
+	if err != nil {
 		return "", err
 	}
 	for _, st := range sts {
@@ -163,6 +194,7 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 	for _, sp := range specs {
 		o.Log("%s: starting", sp.name)
 		var gen generator
+		var quiet quieter
 		var down func()
 		c := Curve{Name: sp.name, Nodes: sp.nodes, NodeFlags: sp.node, GenFlags: sp.gen}
 		if sp.etcd {
@@ -171,7 +203,7 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 				ec.Down()
 				return curves, fmt.Errorf("%s: %w", sp.name, err)
 			}
-			gen, down = ec.Generate, ec.Down
+			gen, quiet, down = ec.Generate, ec.Quiet, ec.Down
 			if sp.leader {
 				l, err := ec.Leader(ctx)
 				if err != nil {
@@ -186,9 +218,9 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 				b.Down()
 				return curves, fmt.Errorf("%s: %w", sp.name, err)
 			}
-			gen, down = b.Generate, b.Down
+			gen, quiet, down = b.Generate, b.Quiet, b.Down
 		}
-		c = sweep(ctx, gen, c, o.sweep())
+		c = sweep(ctx, gen, quiet, c, o.sweep())
 		down()
 		o.Log("%s: knee %.0f/s over %d steps", sp.name, c.Knee, len(c.Steps))
 		curves = append(curves, c)
