@@ -69,6 +69,9 @@ func outcome(res kv.Result) error {
 }
 
 func (k *kvService) submit(ctx context.Context, cmd kv.Command) (kv.Result, error) {
+	if cmd.Op != kv.OpGet && cmd.Op != kv.OpRange {
+		k.s.counts.writes.Add(1)
+	}
 	res, err := k.s.Submit(ctx, cmd)
 	if err != nil {
 		return res, k.fail(ctx, err)
@@ -89,6 +92,7 @@ func (k *kvService) Register(ctx context.Context, _ *pb.RegisterRequest) (*pb.Re
 }
 
 func (k *kvService) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
+	k.s.counts.reads.Add(1)
 	var res kv.Result
 	var err error
 	if req.GetMode() == pb.ReadMode_READ_MODE_LOG {
@@ -197,6 +201,35 @@ func (a *adminService) ChangeMembers(ctx context.Context, req *pb.ChangeMembersR
 		return nil, fail(ctx, a.s, err)
 	}
 	return &pb.ChangeMembersResponse{Index: index, Voters: ids64(conf.Voters), Learners: ids64(conf.Learners)}, nil
+}
+
+const maxChaos = time.Minute
+
+func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.ChaosResponse, error) {
+	if !a.s.cfg.Chaos {
+		return nil, status.Error(codes.PermissionDenied, "chaos is off on this node")
+	}
+	d := time.Duration(req.GetDurationMs()) * time.Millisecond
+	if d <= 0 || d > maxChaos {
+		return nil, status.Errorf(codes.InvalidArgument, "chaos lasts between 1 ms and %v", maxChaos)
+	}
+	switch req.GetAction() {
+	case "stall-disk":
+		a.s.stall.Store(time.Now().Add(d).UnixNano())
+	case "pause":
+		select {
+		case a.s.calls <- func() { time.Sleep(d) }:
+		case <-ctx.Done():
+			return nil, status.FromContextError(ctx.Err()).Err()
+		}
+	case "isolate":
+		a.s.isolate(d)
+	case "crash":
+		go a.s.cfg.Crash()
+	default:
+		return nil, status.Errorf(codes.InvalidArgument, "unknown chaos action %q", req.GetAction())
+	}
+	return &pb.ChaosResponse{}, nil
 }
 
 func (a *adminService) TransferLeadership(ctx context.Context, req *pb.TransferLeadershipRequest) (*pb.TransferLeadershipResponse, error) {

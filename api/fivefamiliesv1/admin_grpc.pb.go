@@ -13,12 +13,14 @@ const (
 	Admin_Status_FullMethodName             = "/fivefamilies.v1.Admin/Status"
 	Admin_ChangeMembers_FullMethodName      = "/fivefamilies.v1.Admin/ChangeMembers"
 	Admin_TransferLeadership_FullMethodName = "/fivefamilies.v1.Admin/TransferLeadership"
+	Admin_Chaos_FullMethodName              = "/fivefamilies.v1.Admin/Chaos"
 )
 
 type AdminClient interface {
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	ChangeMembers(ctx context.Context, in *ChangeMembersRequest, opts ...grpc.CallOption) (*ChangeMembersResponse, error)
 	TransferLeadership(ctx context.Context, in *TransferLeadershipRequest, opts ...grpc.CallOption) (*TransferLeadershipResponse, error)
+	Chaos(ctx context.Context, in *ChaosRequest, opts ...grpc.CallOption) (*ChaosResponse, error)
 }
 
 type adminClient struct {
@@ -59,10 +61,21 @@ func (c *adminClient) TransferLeadership(ctx context.Context, in *TransferLeader
 	return out, nil
 }
 
+func (c *adminClient) Chaos(ctx context.Context, in *ChaosRequest, opts ...grpc.CallOption) (*ChaosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChaosResponse)
+	err := c.cc.Invoke(ctx, Admin_Chaos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 type AdminServer interface {
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	ChangeMembers(context.Context, *ChangeMembersRequest) (*ChangeMembersResponse, error)
 	TransferLeadership(context.Context, *TransferLeadershipRequest) (*TransferLeadershipResponse, error)
+	Chaos(context.Context, *ChaosRequest) (*ChaosResponse, error)
 	mustEmbedUnimplementedAdminServer()
 }
 
@@ -76,6 +89,9 @@ func (UnimplementedAdminServer) ChangeMembers(context.Context, *ChangeMembersReq
 }
 func (UnimplementedAdminServer) TransferLeadership(context.Context, *TransferLeadershipRequest) (*TransferLeadershipResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TransferLeadership not implemented")
+}
+func (UnimplementedAdminServer) Chaos(context.Context, *ChaosRequest) (*ChaosResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Chaos not implemented")
 }
 func (UnimplementedAdminServer) mustEmbedUnimplementedAdminServer() {}
 func (UnimplementedAdminServer) testEmbeddedByValue()               {}
@@ -146,6 +162,24 @@ func _Admin_TransferLeadership_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Admin_Chaos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChaosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).Chaos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_Chaos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).Chaos(ctx, req.(*ChaosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var Admin_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "fivefamilies.v1.Admin",
 	HandlerType: (*AdminServer)(nil),
@@ -161,6 +195,10 @@ var Admin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TransferLeadership",
 			Handler:    _Admin_TransferLeadership_Handler,
+		},
+		{
+			MethodName: "Chaos",
+			Handler:    _Admin_Chaos_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -27,10 +27,11 @@ func leaseErr(err error) error {
 }
 
 func (c *Client) Grant(ctx context.Context, ttl time.Duration) (Lease, error) {
-	session, seq, err := c.nextSeq(ctx)
+	session, seq, done, err := c.nextSeq(ctx)
 	if err != nil {
 		return Lease{}, err
 	}
+	defer done()
 	res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.LeaseGrantResponse, error) {
 		return pb.NewLeaseClient(cc).Grant(ctx, &pb.LeaseGrantRequest{Client: session, Seq: seq, TtlMs: uint64(ttl / time.Millisecond)}, opts...)
 	})
@@ -41,10 +42,11 @@ func (c *Client) Grant(ctx context.Context, ttl time.Duration) (Lease, error) {
 }
 
 func (c *Client) Revoke(ctx context.Context, id uint64) error {
-	session, seq, err := c.nextSeq(ctx)
+	session, seq, done, err := c.nextSeq(ctx)
 	if err != nil {
 		return err
 	}
+	defer done()
 	_, err = do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.LeaseRevokeResponse, error) {
 		return pb.NewLeaseClient(cc).Revoke(ctx, &pb.LeaseRevokeRequest{Client: session, Seq: seq, Id: id}, opts...)
 	})

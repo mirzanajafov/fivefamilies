@@ -44,7 +44,22 @@ type Config struct {
 	Bugs          raft.Bug
 	Logger        *slog.Logger
 	Fatal         func(error)
+
+	FsyncMode       string
+	SyncStorage     bool
+	WriteBeforeSend bool
+	MaxInflight     int
+	MaxMsgBytes     int
+	Chaos           bool
+	Crash           func()
 }
+
+const (
+	FsyncGroup = "group"
+	FsyncReady = "ready"
+	FsyncEntry = "entry"
+	FsyncOff   = "off"
+)
 
 func (c *Config) defaults() error {
 	if c.ID == raft.None || c.Nodes[c.ID] == "" {
@@ -73,6 +88,16 @@ func (c *Config) defaults() error {
 	if c.Logger == nil {
 		c.Logger = slog.Default()
 	}
+	switch c.FsyncMode {
+	case "":
+		c.FsyncMode = FsyncGroup
+	case FsyncGroup, FsyncReady, FsyncEntry, FsyncOff:
+	default:
+		return fmt.Errorf("server: unknown fsync mode %q", c.FsyncMode)
+	}
+	if c.Crash == nil {
+		c.Crash = func() { os.Exit(137) }
+	}
 	if c.WatchProgress <= 0 {
 		c.WatchProgress = time.Second
 	}
@@ -83,6 +108,10 @@ func (c *Config) defaults() error {
 		}
 	}
 	return nil
+}
+
+type counters struct {
+	fsyncs, batches, entries, sent, received, reads, writes, elections atomic.Uint64
 }
 
 type diskJob struct {
@@ -107,6 +136,9 @@ type Server struct {
 	lastTick  time.Time
 	lastWatch time.Time
 	status    atomic.Pointer[pb.StatusResponse]
+	counts    counters
+	stall     atomic.Int64
+	lastTerm  uint64
 	log       *slog.Logger
 	fatalled  atomic.Bool
 }
@@ -164,6 +196,8 @@ func New(cfg Config) (*Server, error) {
 		PreVote:       true,
 		CheckQuorum:   true,
 		LeaseTicks:    cfg.LeaseTicks,
+		MaxInflight:   cfg.MaxInflight,
+		MaxMsgBytes:   cfg.MaxMsgBytes,
 		Rand:          rngSource{},
 		Bugs:          cfg.Bugs,
 	}, st)
@@ -171,7 +205,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	s.raft = r
-	s.node = node.New(r, s, s.sm, node.Config{SnapshotEvery: cfg.SnapshotEvery, Retain: cfg.Retain, Tick: cfg.Tick})
+	s.node = node.New(r, s, s.sm, node.Config{SnapshotEvery: cfg.SnapshotEvery, Retain: cfg.Retain, Tick: cfg.Tick, WriteBeforeSend: cfg.WriteBeforeSend})
 	tr, err := transport.New(cfg.ID, cfg.Nodes, s.deliver, s.Filter, s.log)
 	if err != nil {
 		return nil, err
@@ -212,6 +246,7 @@ func (s *Server) die(err error) {
 }
 
 func (s *Server) deliver(m raft.Message) {
+	s.counts.received.Add(1)
 	select {
 	case s.inbound <- m:
 	case <-s.stopped:
@@ -250,8 +285,33 @@ func (s *Server) loop(ctx context.Context) {
 			s.node.WriteDone(seq)
 		}
 		s.node.Process()
+		if s.cfg.SyncStorage {
+			s.waitForDisk(ctx)
+		}
 		s.publish()
 	}
+}
+
+func (s *Server) waitForDisk(ctx context.Context) {
+	for s.node.PendingWrites() > 0 {
+		select {
+		case seq := <-s.written:
+			s.node.WriteDone(seq)
+			s.node.Process()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *Server) isolate(d time.Duration) {
+	for id := range s.cfg.Nodes {
+		if id != s.cfg.ID {
+			s.Filter.Block(s.cfg.ID, id)
+			s.Filter.Block(id, s.cfg.ID)
+		}
+	}
+	time.AfterFunc(d, s.Filter.Clear)
 }
 
 func (s *Server) leaderless() bool {
@@ -273,6 +333,7 @@ func (s *Server) tendWatches() {
 }
 
 func (s *Server) Send(m raft.Message) {
+	s.counts.sent.Add(1)
 	s.tr.Send(m)
 }
 
@@ -305,17 +366,19 @@ func (s *Server) writer(ctx context.Context) {
 		case first = <-s.jobs:
 		}
 		jobs := []diskJob{first}
-	drain:
-		for {
-			select {
-			case j := <-s.jobs:
-				jobs = append(jobs, j)
-			default:
-				break drain
+		if s.cfg.FsyncMode == FsyncGroup {
+		drain:
+			for {
+				select {
+				case j := <-s.jobs:
+					jobs = append(jobs, j)
+				default:
+					break drain
+				}
 			}
 		}
 		var last uint64
-		sync := false
+		pending := false
 		var compacts []*raft.Snapshot
 		for _, j := range jobs {
 			if j.compact != nil {
@@ -327,18 +390,36 @@ func (s *Server) writer(ctx context.Context) {
 			if w.Snapshot != nil {
 				b.Snapshot = &raft.Snapshot{Index: w.Snapshot.Index, Term: w.Snapshot.Term}
 			}
-			if err := s.wal.WriteBatch(b); err != nil {
-				s.die(fmt.Errorf("writing the log: %w", err))
-				return
+			parts := []wal.Batch{b}
+			if s.cfg.FsyncMode == FsyncEntry && len(b.Entries) > 1 {
+				parts = parts[:0]
+				for i, e := range b.Entries {
+					p := wal.Batch{Entries: []raft.Entry{e}}
+					if i == 0 {
+						p.HardState, p.Snapshot, p.Reset = b.HardState, b.Snapshot, b.Reset
+					}
+					parts = append(parts, p)
+				}
+			}
+			for _, p := range parts {
+				if err := s.wal.WriteBatch(p); err != nil {
+					s.die(fmt.Errorf("writing the log: %w", err))
+					return
+				}
+				s.counts.batches.Add(1)
+				s.counts.entries.Add(uint64(len(p.Entries)))
+				pending = pending || w.Sync
+				if s.cfg.FsyncMode != FsyncGroup && pending {
+					if !s.sync() {
+						return
+					}
+					pending = false
+				}
 			}
 			last = w.Seq
-			sync = sync || w.Sync
 		}
-		if sync {
-			if err := s.wal.Sync(); err != nil {
-				s.die(fmt.Errorf("syncing the log: %w", err))
-				return
-			}
+		if pending && !s.sync() {
+			return
 		}
 		if last > 0 {
 			select {
@@ -360,6 +441,21 @@ func (s *Server) writer(ctx context.Context) {
 	}
 }
 
+func (s *Server) sync() bool {
+	if d := time.Until(time.Unix(0, s.stall.Load())); d > 0 {
+		time.Sleep(d)
+	}
+	if s.cfg.FsyncMode == FsyncOff {
+		return true
+	}
+	if err := s.wal.Sync(); err != nil {
+		s.die(fmt.Errorf("syncing the log: %w", err))
+		return false
+	}
+	s.counts.fsyncs.Add(1)
+	return true
+}
+
 func (s *Server) publish() {
 	r := s.raft
 	st := &pb.StatusResponse{
@@ -377,6 +473,16 @@ func (s *Server) publish() {
 	}
 	conf := r.Conf()
 	st.Voters, st.Learners, st.Transferee = ids64(conf.Voters), ids64(conf.Learners), uint64(r.Transferring())
+	if r.Term() > s.lastTerm {
+		if s.lastTerm > 0 {
+			s.counts.elections.Add(r.Term() - s.lastTerm)
+		}
+		s.lastTerm = r.Term()
+	}
+	c := &s.counts
+	st.Fsyncs, st.WalBatches, st.EntriesWritten = c.fsyncs.Load(), c.batches.Load(), c.entries.Load()
+	st.MsgsSent, st.MsgsReceived = c.sent.Load(), c.received.Load()
+	st.Reads, st.Writes, st.Elections = c.reads.Load(), c.writes.Load(), c.elections.Load()
 	s.status.Store(st)
 }
 

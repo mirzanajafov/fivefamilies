@@ -100,23 +100,31 @@ func (*StatusRequest) Descriptor() ([]byte, []int) {
 }
 
 type StatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	State         string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
-	Term          uint64                 `protobuf:"varint,3,opt,name=term,proto3" json:"term,omitempty"`
-	Leader        uint64                 `protobuf:"varint,4,opt,name=leader,proto3" json:"leader,omitempty"`
-	Commit        uint64                 `protobuf:"varint,5,opt,name=commit,proto3" json:"commit,omitempty"`
-	Applied       uint64                 `protobuf:"varint,6,opt,name=applied,proto3" json:"applied,omitempty"`
-	FirstIndex    uint64                 `protobuf:"varint,7,opt,name=first_index,json=firstIndex,proto3" json:"first_index,omitempty"`
-	LastIndex     uint64                 `protobuf:"varint,8,opt,name=last_index,json=lastIndex,proto3" json:"last_index,omitempty"`
-	SnapshotIndex uint64                 `protobuf:"varint,9,opt,name=snapshot_index,json=snapshotIndex,proto3" json:"snapshot_index,omitempty"`
-	StateHash     uint64                 `protobuf:"varint,10,opt,name=state_hash,json=stateHash,proto3" json:"state_hash,omitempty"`
-	HashIndex     uint64                 `protobuf:"varint,11,opt,name=hash_index,json=hashIndex,proto3" json:"hash_index,omitempty"`
-	Voters        []uint64               `protobuf:"varint,12,rep,packed,name=voters,proto3" json:"voters,omitempty"`
-	Learners      []uint64               `protobuf:"varint,13,rep,packed,name=learners,proto3" json:"learners,omitempty"`
-	Transferee    uint64                 `protobuf:"varint,14,opt,name=transferee,proto3" json:"transferee,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	State          string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	Term           uint64                 `protobuf:"varint,3,opt,name=term,proto3" json:"term,omitempty"`
+	Leader         uint64                 `protobuf:"varint,4,opt,name=leader,proto3" json:"leader,omitempty"`
+	Commit         uint64                 `protobuf:"varint,5,opt,name=commit,proto3" json:"commit,omitempty"`
+	Applied        uint64                 `protobuf:"varint,6,opt,name=applied,proto3" json:"applied,omitempty"`
+	FirstIndex     uint64                 `protobuf:"varint,7,opt,name=first_index,json=firstIndex,proto3" json:"first_index,omitempty"`
+	LastIndex      uint64                 `protobuf:"varint,8,opt,name=last_index,json=lastIndex,proto3" json:"last_index,omitempty"`
+	SnapshotIndex  uint64                 `protobuf:"varint,9,opt,name=snapshot_index,json=snapshotIndex,proto3" json:"snapshot_index,omitempty"`
+	StateHash      uint64                 `protobuf:"varint,10,opt,name=state_hash,json=stateHash,proto3" json:"state_hash,omitempty"`
+	HashIndex      uint64                 `protobuf:"varint,11,opt,name=hash_index,json=hashIndex,proto3" json:"hash_index,omitempty"`
+	Voters         []uint64               `protobuf:"varint,12,rep,packed,name=voters,proto3" json:"voters,omitempty"`
+	Learners       []uint64               `protobuf:"varint,13,rep,packed,name=learners,proto3" json:"learners,omitempty"`
+	Transferee     uint64                 `protobuf:"varint,14,opt,name=transferee,proto3" json:"transferee,omitempty"`
+	Fsyncs         uint64                 `protobuf:"varint,15,opt,name=fsyncs,proto3" json:"fsyncs,omitempty"`
+	WalBatches     uint64                 `protobuf:"varint,16,opt,name=wal_batches,json=walBatches,proto3" json:"wal_batches,omitempty"`
+	EntriesWritten uint64                 `protobuf:"varint,17,opt,name=entries_written,json=entriesWritten,proto3" json:"entries_written,omitempty"`
+	MsgsSent       uint64                 `protobuf:"varint,18,opt,name=msgs_sent,json=msgsSent,proto3" json:"msgs_sent,omitempty"`
+	MsgsReceived   uint64                 `protobuf:"varint,19,opt,name=msgs_received,json=msgsReceived,proto3" json:"msgs_received,omitempty"`
+	Reads          uint64                 `protobuf:"varint,20,opt,name=reads,proto3" json:"reads,omitempty"`
+	Writes         uint64                 `protobuf:"varint,21,opt,name=writes,proto3" json:"writes,omitempty"`
+	Elections      uint64                 `protobuf:"varint,22,opt,name=elections,proto3" json:"elections,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
@@ -246,28 +254,84 @@ func (x *StatusResponse) GetTransferee() uint64 {
 	return 0
 }
 
-type ChangeMembersRequest struct {
+func (x *StatusResponse) GetFsyncs() uint64 {
+	if x != nil {
+		return x.Fsyncs
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetWalBatches() uint64 {
+	if x != nil {
+		return x.WalBatches
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetEntriesWritten() uint64 {
+	if x != nil {
+		return x.EntriesWritten
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetMsgsSent() uint64 {
+	if x != nil {
+		return x.MsgsSent
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetMsgsReceived() uint64 {
+	if x != nil {
+		return x.MsgsReceived
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetReads() uint64 {
+	if x != nil {
+		return x.Reads
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetWrites() uint64 {
+	if x != nil {
+		return x.Writes
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetElections() uint64 {
+	if x != nil {
+		return x.Elections
+	}
+	return 0
+}
+
+type ChaosRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Change        MemberChange           `protobuf:"varint,1,opt,name=change,proto3,enum=fivefamilies.v1.MemberChange" json:"change,omitempty"`
-	Node          uint64                 `protobuf:"varint,2,opt,name=node,proto3" json:"node,omitempty"`
+	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	DurationMs    uint64                 `protobuf:"varint,2,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ChangeMembersRequest) Reset() {
-	*x = ChangeMembersRequest{}
+func (x *ChaosRequest) Reset() {
+	*x = ChaosRequest{}
 	mi := &file_fivefamilies_v1_admin_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ChangeMembersRequest) String() string {
+func (x *ChaosRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ChangeMembersRequest) ProtoMessage() {}
+func (*ChaosRequest) ProtoMessage() {}
 
-func (x *ChangeMembersRequest) ProtoReflect() protoreflect.Message {
+func (x *ChaosRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_fivefamilies_v1_admin_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -279,8 +343,94 @@ func (x *ChangeMembersRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-func (*ChangeMembersRequest) Descriptor() ([]byte, []int) {
+func (*ChaosRequest) Descriptor() ([]byte, []int) {
 	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ChaosRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ChaosRequest) GetDurationMs() uint64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+type ChaosResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChaosResponse) Reset() {
+	*x = ChaosResponse{}
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChaosResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChaosResponse) ProtoMessage() {}
+
+func (x *ChaosResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*ChaosResponse) Descriptor() ([]byte, []int) {
+	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{3}
+}
+
+type ChangeMembersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Change        MemberChange           `protobuf:"varint,1,opt,name=change,proto3,enum=fivefamilies.v1.MemberChange" json:"change,omitempty"`
+	Node          uint64                 `protobuf:"varint,2,opt,name=node,proto3" json:"node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeMembersRequest) Reset() {
+	*x = ChangeMembersRequest{}
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeMembersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeMembersRequest) ProtoMessage() {}
+
+func (x *ChangeMembersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*ChangeMembersRequest) Descriptor() ([]byte, []int) {
+	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ChangeMembersRequest) GetChange() MemberChange {
@@ -308,7 +458,7 @@ type ChangeMembersResponse struct {
 
 func (x *ChangeMembersResponse) Reset() {
 	*x = ChangeMembersResponse{}
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[3]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -320,7 +470,7 @@ func (x *ChangeMembersResponse) String() string {
 func (*ChangeMembersResponse) ProtoMessage() {}
 
 func (x *ChangeMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[3]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -332,7 +482,7 @@ func (x *ChangeMembersResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (*ChangeMembersResponse) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{3}
+	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ChangeMembersResponse) GetIndex() uint64 {
@@ -365,7 +515,7 @@ type TransferLeadershipRequest struct {
 
 func (x *TransferLeadershipRequest) Reset() {
 	*x = TransferLeadershipRequest{}
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[4]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -377,7 +527,7 @@ func (x *TransferLeadershipRequest) String() string {
 func (*TransferLeadershipRequest) ProtoMessage() {}
 
 func (x *TransferLeadershipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[4]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -389,7 +539,7 @@ func (x *TransferLeadershipRequest) ProtoReflect() protoreflect.Message {
 }
 
 func (*TransferLeadershipRequest) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{4}
+	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *TransferLeadershipRequest) GetTo() uint64 {
@@ -409,7 +559,7 @@ type TransferLeadershipResponse struct {
 
 func (x *TransferLeadershipResponse) Reset() {
 	*x = TransferLeadershipResponse{}
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[5]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -421,7 +571,7 @@ func (x *TransferLeadershipResponse) String() string {
 func (*TransferLeadershipResponse) ProtoMessage() {}
 
 func (x *TransferLeadershipResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[5]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -433,7 +583,7 @@ func (x *TransferLeadershipResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (*TransferLeadershipResponse) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{5}
+	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *TransferLeadershipResponse) GetLeader() uint64 {
@@ -455,7 +605,7 @@ var File_fivefamilies_v1_admin_proto protoreflect.FileDescriptor
 const file_fivefamilies_v1_admin_proto_rawDesc = "" +
 	"\n" +
 	"\x1bfivefamilies/v1/admin.proto\x12\x0ffivefamilies.v1\"\x0f\n" +
-	"\rStatusRequest\"\x8d\x03\n" +
+	"\rStatusRequest\"\xfd\x04\n" +
 	"\x0eStatusResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x12\n" +
@@ -477,7 +627,21 @@ const file_fivefamilies_v1_admin_proto_rawDesc = "" +
 	"\blearners\x18\r \x03(\x04R\blearners\x12\x1e\n" +
 	"\n" +
 	"transferee\x18\x0e \x01(\x04R\n" +
-	"transferee\"a\n" +
+	"transferee\x12\x16\n" +
+	"\x06fsyncs\x18\x0f \x01(\x04R\x06fsyncs\x12\x1f\n" +
+	"\vwal_batches\x18\x10 \x01(\x04R\n" +
+	"walBatches\x12'\n" +
+	"\x0fentries_written\x18\x11 \x01(\x04R\x0eentriesWritten\x12\x1b\n" +
+	"\tmsgs_sent\x18\x12 \x01(\x04R\bmsgsSent\x12#\n" +
+	"\rmsgs_received\x18\x13 \x01(\x04R\fmsgsReceived\x12\x14\n" +
+	"\x05reads\x18\x14 \x01(\x04R\x05reads\x12\x16\n" +
+	"\x06writes\x18\x15 \x01(\x04R\x06writes\x12\x1c\n" +
+	"\telections\x18\x16 \x01(\x04R\telections\"G\n" +
+	"\fChaosRequest\x12\x16\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\x12\x1f\n" +
+	"\vduration_ms\x18\x02 \x01(\x04R\n" +
+	"durationMs\"\x0f\n" +
+	"\rChaosResponse\"a\n" +
 	"\x14ChangeMembersRequest\x125\n" +
 	"\x06change\x18\x01 \x01(\x0e2\x1d.fivefamilies.v1.MemberChangeR\x06change\x12\x12\n" +
 	"\x04node\x18\x02 \x01(\x04R\x04node\"a\n" +
@@ -494,11 +658,12 @@ const file_fivefamilies_v1_admin_proto_rawDesc = "" +
 	"\x19MEMBER_CHANGE_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19MEMBER_CHANGE_ADD_LEARNER\x10\x01\x12\x19\n" +
 	"\x15MEMBER_CHANGE_PROMOTE\x10\x02\x12\x18\n" +
-	"\x14MEMBER_CHANGE_REMOVE\x10\x032\xa1\x02\n" +
+	"\x14MEMBER_CHANGE_REMOVE\x10\x032\xe9\x02\n" +
 	"\x05Admin\x12I\n" +
 	"\x06Status\x12\x1e.fivefamilies.v1.StatusRequest\x1a\x1f.fivefamilies.v1.StatusResponse\x12^\n" +
 	"\rChangeMembers\x12%.fivefamilies.v1.ChangeMembersRequest\x1a&.fivefamilies.v1.ChangeMembersResponse\x12m\n" +
-	"\x12TransferLeadership\x12*.fivefamilies.v1.TransferLeadershipRequest\x1a+.fivefamilies.v1.TransferLeadershipResponseBHZFgithub.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1b\x06proto3"
+	"\x12TransferLeadership\x12*.fivefamilies.v1.TransferLeadershipRequest\x1a+.fivefamilies.v1.TransferLeadershipResponse\x12F\n" +
+	"\x05Chaos\x12\x1d.fivefamilies.v1.ChaosRequest\x1a\x1e.fivefamilies.v1.ChaosResponseBHZFgithub.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1b\x06proto3"
 
 var (
 	file_fivefamilies_v1_admin_proto_rawDescOnce sync.Once
@@ -513,11 +678,13 @@ func file_fivefamilies_v1_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_fivefamilies_v1_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_fivefamilies_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_fivefamilies_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_fivefamilies_v1_admin_proto_goTypes = []any{
 	(MemberChange)(0),
 	(*StatusRequest)(nil),
 	(*StatusResponse)(nil),
+	(*ChaosRequest)(nil),
+	(*ChaosResponse)(nil),
 	(*ChangeMembersRequest)(nil),
 	(*ChangeMembersResponse)(nil),
 	(*TransferLeadershipRequest)(nil),
@@ -526,12 +693,14 @@ var file_fivefamilies_v1_admin_proto_goTypes = []any{
 var file_fivefamilies_v1_admin_proto_depIdxs = []int32{
 	0,
 	1,
-	3,
 	5,
+	7,
+	3,
 	2,
-	4,
 	6,
+	8,
 	4,
+	5,
 	1,
 	1,
 	1,
@@ -549,7 +718,7 @@ func file_fivefamilies_v1_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fivefamilies_v1_admin_proto_rawDesc), len(file_fivefamilies_v1_admin_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
