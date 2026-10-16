@@ -308,3 +308,18 @@ func TestTheAdminCheck(t *testing.T) {
 		}
 	}
 }
+
+func TestThePollerSlowsDownWithNobodyWatching(t *testing.T) {
+	c := &Controller{cfg: Config{Poll: 100 * time.Millisecond, IdlePoll: time.Second}}
+	if got := c.pollEvery(); got != time.Second {
+		t.Fatalf("idle: %v", got)
+	}
+	c.viewers = 1
+	if got := c.pollEvery(); got != 100*time.Millisecond {
+		t.Fatalf("watched: %v", got)
+	}
+	c.viewers, c.fault = 0, &Fault{}
+	if got := c.pollEvery(); got != 100*time.Millisecond {
+		t.Fatalf("during a fault: %v", got)
+	}
+}
