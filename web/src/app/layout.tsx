@@ -27,6 +27,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" className="muted hover:text-[var(--ink)]">
               Live
             </Link>
+            <Link href="/results" className="muted hover:text-[var(--ink)]">
+              Results
+            </Link>
             <Link href="/admin" className="muted hover:text-[var(--ink)]">
               Admin
             </Link>
