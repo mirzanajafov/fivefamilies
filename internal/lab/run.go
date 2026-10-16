@@ -95,7 +95,7 @@ func (c *cluster) statuses(ctx context.Context, timeout time.Duration) []*pb.Sta
 		wg.Go(func() {
 			cctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
-			st, err := pb.NewAdminClient(conn).Status(cctx, &pb.StatusRequest{})
+			st, err := pb.NewAdminClient(conn).Status(cctx, &pb.StatusRequest{Hash: true})
 			if err == nil {
 				out[i] = st
 			}

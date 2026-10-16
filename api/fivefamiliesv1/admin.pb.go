@@ -66,6 +66,7 @@ func (MemberChange) EnumDescriptor() ([]byte, []int) {
 
 type StatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hash          bool                   `protobuf:"varint,1,opt,name=hash,proto3" json:"hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -97,6 +98,13 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 func (*StatusRequest) Descriptor() ([]byte, []int) {
 	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *StatusRequest) GetHash() bool {
+	if x != nil {
+		return x.Hash
+	}
+	return false
 }
 
 type StatusResponse struct {
@@ -706,8 +714,9 @@ var File_fivefamilies_v1_admin_proto protoreflect.FileDescriptor
 
 const file_fivefamilies_v1_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x1bfivefamilies/v1/admin.proto\x12\x0ffivefamilies.v1\"\x0f\n" +
-	"\rStatusRequest\"\xfd\x04\n" +
+	"\x1bfivefamilies/v1/admin.proto\x12\x0ffivefamilies.v1\"#\n" +
+	"\rStatusRequest\x12\x12\n" +
+	"\x04hash\x18\x01 \x01(\bR\x04hash\"\xfd\x04\n" +
 	"\x0eStatusResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x12\n" +

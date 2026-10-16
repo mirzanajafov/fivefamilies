@@ -173,8 +173,11 @@ type adminService struct {
 	s *Server
 }
 
-func (a *adminService) Status(ctx context.Context, _ *pb.StatusRequest) (*pb.StatusResponse, error) {
+func (a *adminService) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusResponse, error) {
 	st := *a.s.Status()
+	if !req.GetHash() {
+		return &st, nil
+	}
 	hash, rev, err := a.s.StateHash(ctx)
 	if err != nil {
 		return nil, status.FromContextError(err).Err()

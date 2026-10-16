@@ -168,7 +168,7 @@ func status(ctx context.Context, addrs []string) {
 			continue
 		}
 		cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		st, err := pb.NewAdminClient(conn).Status(cctx, &pb.StatusRequest{})
+		st, err := pb.NewAdminClient(conn).Status(cctx, &pb.StatusRequest{Hash: true})
 		cancel()
 		conn.Close()
 		if err != nil {

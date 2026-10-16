@@ -154,7 +154,7 @@ func (c *testCluster) status(id raft.NodeID) *pb.StatusResponse {
 	defer conn.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	st, err := pb.NewAdminClient(conn).Status(ctx, &pb.StatusRequest{})
+	st, err := pb.NewAdminClient(conn).Status(ctx, &pb.StatusRequest{Hash: true})
 	if err != nil {
 		c.t.Fatal(err)
 	}
