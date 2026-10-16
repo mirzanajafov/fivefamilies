@@ -88,6 +88,65 @@ func registry(args []string) {
 	}
 }
 
+func bench(args []string) {
+	fs := flag.NewFlagSet("bench", flag.ExitOnError)
+	experiments := fs.String("experiment", "e1b,e2,e3,e4,e5", "experiments to run, comma separated")
+	label := fs.String("label", time.Now().Format("20060102")+"-laptop", "results go to bench/results/<experiment>/<label>")
+	nodeCPUs := fs.String("node-cpus", "4,5,6,7,8,9,10", "one cpuset per node, comma separated")
+	genCPUs := fs.String("gen-cpus", "12-15", "the generator's cpuset")
+	quick := fs.Bool("quick", false, "one short configuration per experiment, to check the harness")
+	build := fs.Bool("build", false, "build the lab image first")
+	fs.Parse(args)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if *build {
+		buildImage(ctx)
+		if strings.Contains(*experiments, "e5") {
+			buildEtcd(ctx)
+		}
+	}
+	logf := func(format string, args ...any) {
+		fmt.Printf("%s "+format+"\n", append([]any{time.Now().Format("15:04:05")}, args...)...)
+	}
+	for e := range strings.SplitSeq(*experiments, ",") {
+		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Log: logf}
+		var err error
+		switch e {
+		case "e1b":
+			_, err = lab.E1b(ctx, o)
+		case "e2":
+			_, err = lab.E2(ctx, o)
+		case "e3":
+			_, err = lab.E3(ctx, o)
+		case "e4":
+			_, err = lab.E4(ctx, o)
+		case "e5":
+			_, err = lab.E5(ctx, o)
+		default:
+			err = fmt.Errorf("unknown experiment %q", e)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, e+":", err)
+			os.Exit(1)
+		}
+		logf("%s done: %s", e, o.Out)
+	}
+}
+
+func buildEtcd(ctx context.Context) {
+	for _, args := range [][]string{
+		{"build", "-q", "-f", filepath.Join("bench", "etcd", "Dockerfile"), "-t", lab.EtcdGenImage, "."},
+		{"pull", "-q", lab.EtcdImage},
+	} {
+		cmd := exec.CommandContext(ctx, "docker", args...)
+		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "etcd images:", err)
+			os.Exit(1)
+		}
+	}
+}
+
 func buildImage(ctx context.Context) {
 	cmd := exec.CommandContext(ctx, "docker", "build", "-q", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", ".")
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
@@ -104,6 +163,10 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "registry" {
 		registry(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "bench" {
+		bench(os.Args[2:])
 		return
 	}
 	seed := flag.Uint64("seed", uint64(time.Now().UnixNano()), "fault schedule and workload seed")
