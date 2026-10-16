@@ -1,0 +1,92 @@
+services:
+  n1:
+    ports: !reset []
+    cpus: 0.25
+    mem_limit: 64m
+    environment:
+      FF_CHAOS_TOKEN: ${FF_CHAOS_TOKEN:?set FF_CHAOS_TOKEN}
+      GOMEMLIMIT: 48MiB
+  n2:
+    ports: !reset []
+    cpus: 0.25
+    mem_limit: 64m
+    environment:
+      FF_CHAOS_TOKEN: ${FF_CHAOS_TOKEN:?set FF_CHAOS_TOKEN}
+      GOMEMLIMIT: 48MiB
+  n3:
+    ports: !reset []
+    cpus: 0.25
+    mem_limit: 64m
+    environment:
+      FF_CHAOS_TOKEN: ${FF_CHAOS_TOKEN:?set FF_CHAOS_TOKEN}
+      GOMEMLIMIT: 48MiB
+  n4:
+    ports: !reset []
+    cpus: 0.25
+    mem_limit: 64m
+    environment:
+      FF_CHAOS_TOKEN: ${FF_CHAOS_TOKEN:?set FF_CHAOS_TOKEN}
+      GOMEMLIMIT: 48MiB
+  n5:
+    ports: !reset []
+    cpus: 0.25
+    mem_limit: 64m
+    environment:
+      FF_CHAOS_TOKEN: ${FF_CHAOS_TOKEN:?set FF_CHAOS_TOKEN}
+      GOMEMLIMIT: 48MiB
+  controller:
+    ports: !reset []
+    cpus: 0.25
+    mem_limit: 128m
+    command: ["-nodes", "n1:3161,n2:3161,n3:3161,n4:3161,n5:3161", "-supervisors", "http://n1:3170,http://n2:3170,http://n3:3170,http://n4:3170,http://n5:3170", "-listen", "0.0.0.0:3159", "-trusted-hops", "1"]
+    environment:
+      FF_CHAOS_TOKEN: ${FF_CHAOS_TOKEN:?set FF_CHAOS_TOKEN}
+      FF_ADMIN_TOKEN: ${FF_ADMIN_TOKEN:?set FF_ADMIN_TOKEN}
+      GOMEMLIMIT: 100MiB
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    image: fivefamilies-web
+    container_name: fivefamilies-web
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 256
+    read_only: true
+    tmpfs: ["/app/.next/cache"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      CONTROLLER_URL: http://controller:3159
+    depends_on: [controller]
+    networks:
+      - default
+      - edge
+
+  backup:
+    image: fivefamilies-node
+    container_name: fivefamilies-backup
+    restart: unless-stopped
+    cpus: 0.1
+    mem_limit: 32m
+    pids_limit: 32
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "${BACKUP_UID:-1000}:${BACKUP_GID:-1000}"
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      ENDPOINTS: n1:3161,n2:3161,n3:3161,n4:3161,n5:3161
+      RUN_AT: ${BACKUP_AT:-04:00}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./deploy/backup/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    depends_on: [n1, n2, n3, n4, n5]
+
+networks:
+  edge:
+    name: ${EDGE_NETWORK:?set EDGE_NETWORK}
+    external: true

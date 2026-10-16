@@ -3,3 +3,7 @@ bin
 docs
 *.md
 !README.md
+web
+backups
+bench/results
+**/raw

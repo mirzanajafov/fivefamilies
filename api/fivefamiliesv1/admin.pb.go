@@ -396,28 +396,26 @@ func (*ChaosResponse) Descriptor() ([]byte, []int) {
 	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{3}
 }
 
-type ChangeMembersRequest struct {
+type BackupRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Change        MemberChange           `protobuf:"varint,1,opt,name=change,proto3,enum=fivefamilies.v1.MemberChange" json:"change,omitempty"`
-	Node          uint64                 `protobuf:"varint,2,opt,name=node,proto3" json:"node,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ChangeMembersRequest) Reset() {
-	*x = ChangeMembersRequest{}
+func (x *BackupRequest) Reset() {
+	*x = BackupRequest{}
 	mi := &file_fivefamilies_v1_admin_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ChangeMembersRequest) String() string {
+func (x *BackupRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ChangeMembersRequest) ProtoMessage() {}
+func (*BackupRequest) ProtoMessage() {}
 
-func (x *ChangeMembersRequest) ProtoReflect() protoreflect.Message {
+func (x *BackupRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_fivefamilies_v1_admin_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -429,8 +427,112 @@ func (x *ChangeMembersRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-func (*ChangeMembersRequest) Descriptor() ([]byte, []int) {
+func (*BackupRequest) Descriptor() ([]byte, []int) {
 	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{4}
+}
+
+type BackupChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rev           uint64                 `protobuf:"varint,1,opt,name=rev,proto3" json:"rev,omitempty"`
+	Hash          uint64                 `protobuf:"varint,2,opt,name=hash,proto3" json:"hash,omitempty"`
+	Size          uint64                 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BackupChunk) Reset() {
+	*x = BackupChunk{}
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackupChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackupChunk) ProtoMessage() {}
+
+func (x *BackupChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*BackupChunk) Descriptor() ([]byte, []int) {
+	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *BackupChunk) GetRev() uint64 {
+	if x != nil {
+		return x.Rev
+	}
+	return 0
+}
+
+func (x *BackupChunk) GetHash() uint64 {
+	if x != nil {
+		return x.Hash
+	}
+	return 0
+}
+
+func (x *BackupChunk) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *BackupChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type ChangeMembersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Change        MemberChange           `protobuf:"varint,1,opt,name=change,proto3,enum=fivefamilies.v1.MemberChange" json:"change,omitempty"`
+	Node          uint64                 `protobuf:"varint,2,opt,name=node,proto3" json:"node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeMembersRequest) Reset() {
+	*x = ChangeMembersRequest{}
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeMembersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeMembersRequest) ProtoMessage() {}
+
+func (x *ChangeMembersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*ChangeMembersRequest) Descriptor() ([]byte, []int) {
+	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ChangeMembersRequest) GetChange() MemberChange {
@@ -458,7 +560,7 @@ type ChangeMembersResponse struct {
 
 func (x *ChangeMembersResponse) Reset() {
 	*x = ChangeMembersResponse{}
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[5]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -470,7 +572,7 @@ func (x *ChangeMembersResponse) String() string {
 func (*ChangeMembersResponse) ProtoMessage() {}
 
 func (x *ChangeMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[5]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -482,7 +584,7 @@ func (x *ChangeMembersResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (*ChangeMembersResponse) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{5}
+	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ChangeMembersResponse) GetIndex() uint64 {
@@ -515,7 +617,7 @@ type TransferLeadershipRequest struct {
 
 func (x *TransferLeadershipRequest) Reset() {
 	*x = TransferLeadershipRequest{}
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[6]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -527,7 +629,7 @@ func (x *TransferLeadershipRequest) String() string {
 func (*TransferLeadershipRequest) ProtoMessage() {}
 
 func (x *TransferLeadershipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[6]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -539,7 +641,7 @@ func (x *TransferLeadershipRequest) ProtoReflect() protoreflect.Message {
 }
 
 func (*TransferLeadershipRequest) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{6}
+	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TransferLeadershipRequest) GetTo() uint64 {
@@ -559,7 +661,7 @@ type TransferLeadershipResponse struct {
 
 func (x *TransferLeadershipResponse) Reset() {
 	*x = TransferLeadershipResponse{}
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[7]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -571,7 +673,7 @@ func (x *TransferLeadershipResponse) String() string {
 func (*TransferLeadershipResponse) ProtoMessage() {}
 
 func (x *TransferLeadershipResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_admin_proto_msgTypes[7]
+	mi := &file_fivefamilies_v1_admin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -583,7 +685,7 @@ func (x *TransferLeadershipResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (*TransferLeadershipResponse) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{7}
+	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TransferLeadershipResponse) GetLeader() uint64 {
@@ -641,7 +743,13 @@ const file_fivefamilies_v1_admin_proto_rawDesc = "" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x1f\n" +
 	"\vduration_ms\x18\x02 \x01(\x04R\n" +
 	"durationMs\"\x0f\n" +
-	"\rChaosResponse\"a\n" +
+	"\rChaosResponse\"\x0f\n" +
+	"\rBackupRequest\"[\n" +
+	"\vBackupChunk\x12\x10\n" +
+	"\x03rev\x18\x01 \x01(\x04R\x03rev\x12\x12\n" +
+	"\x04hash\x18\x02 \x01(\x04R\x04hash\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x04R\x04size\x12\x12\n" +
+	"\x04data\x18\x04 \x01(\fR\x04data\"a\n" +
 	"\x14ChangeMembersRequest\x125\n" +
 	"\x06change\x18\x01 \x01(\x0e2\x1d.fivefamilies.v1.MemberChangeR\x06change\x12\x12\n" +
 	"\x04node\x18\x02 \x01(\x04R\x04node\"a\n" +
@@ -658,12 +766,13 @@ const file_fivefamilies_v1_admin_proto_rawDesc = "" +
 	"\x19MEMBER_CHANGE_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19MEMBER_CHANGE_ADD_LEARNER\x10\x01\x12\x19\n" +
 	"\x15MEMBER_CHANGE_PROMOTE\x10\x02\x12\x18\n" +
-	"\x14MEMBER_CHANGE_REMOVE\x10\x032\xe9\x02\n" +
+	"\x14MEMBER_CHANGE_REMOVE\x10\x032\xb3\x03\n" +
 	"\x05Admin\x12I\n" +
 	"\x06Status\x12\x1e.fivefamilies.v1.StatusRequest\x1a\x1f.fivefamilies.v1.StatusResponse\x12^\n" +
 	"\rChangeMembers\x12%.fivefamilies.v1.ChangeMembersRequest\x1a&.fivefamilies.v1.ChangeMembersResponse\x12m\n" +
 	"\x12TransferLeadership\x12*.fivefamilies.v1.TransferLeadershipRequest\x1a+.fivefamilies.v1.TransferLeadershipResponse\x12F\n" +
-	"\x05Chaos\x12\x1d.fivefamilies.v1.ChaosRequest\x1a\x1e.fivefamilies.v1.ChaosResponseBHZFgithub.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1b\x06proto3"
+	"\x05Chaos\x12\x1d.fivefamilies.v1.ChaosRequest\x1a\x1e.fivefamilies.v1.ChaosResponse\x12H\n" +
+	"\x06Backup\x12\x1e.fivefamilies.v1.BackupRequest\x1a\x1c.fivefamilies.v1.BackupChunk0\x01BHZFgithub.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1b\x06proto3"
 
 var (
 	file_fivefamilies_v1_admin_proto_rawDescOnce sync.Once
@@ -678,13 +787,15 @@ func file_fivefamilies_v1_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_fivefamilies_v1_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_fivefamilies_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_fivefamilies_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_fivefamilies_v1_admin_proto_goTypes = []any{
 	(MemberChange)(0),
 	(*StatusRequest)(nil),
 	(*StatusResponse)(nil),
 	(*ChaosRequest)(nil),
 	(*ChaosResponse)(nil),
+	(*BackupRequest)(nil),
+	(*BackupChunk)(nil),
 	(*ChangeMembersRequest)(nil),
 	(*ChangeMembersResponse)(nil),
 	(*TransferLeadershipRequest)(nil),
@@ -693,14 +804,16 @@ var file_fivefamilies_v1_admin_proto_goTypes = []any{
 var file_fivefamilies_v1_admin_proto_depIdxs = []int32{
 	0,
 	1,
-	5,
 	7,
+	9,
 	3,
-	2,
-	6,
-	8,
-	4,
 	5,
+	2,
+	8,
+	10,
+	4,
+	6,
+	6,
 	1,
 	1,
 	1,
@@ -718,7 +831,7 @@ func file_fivefamilies_v1_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fivefamilies_v1_admin_proto_rawDesc), len(file_fivefamilies_v1_admin_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

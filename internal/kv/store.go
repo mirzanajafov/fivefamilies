@@ -381,3 +381,20 @@ func (s *Store) Hash() uint64 {
 	}
 	return h.Sum64()
 }
+
+func ContentHash(kvs []KeyValue) uint64 {
+	h := fnv.New64a()
+	var buf []byte
+	for _, kv := range kvs {
+		buf = binary.AppendUvarint(buf[:0], uint64(len(kv.Key)))
+		buf = append(buf, kv.Key...)
+		buf = binary.AppendUvarint(buf, uint64(len(kv.Value)))
+		buf = append(buf, kv.Value...)
+		buf = binary.AppendUvarint(buf, kv.CreateRev)
+		buf = binary.AppendUvarint(buf, kv.ModRev)
+		buf = binary.AppendUvarint(buf, kv.Version)
+		buf = binary.AppendUvarint(buf, kv.Lease)
+		h.Write(buf)
+	}
+	return h.Sum64()
+}

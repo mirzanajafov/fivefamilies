@@ -38,6 +38,15 @@ message ChaosRequest {
 
 message ChaosResponse {}
 
+message BackupRequest {}
+
+message BackupChunk {
+  uint64 rev = 1;
+  uint64 hash = 2;
+  uint64 size = 3;
+  bytes data = 4;
+}
+
 enum MemberChange {
   MEMBER_CHANGE_UNSPECIFIED = 0;
   MEMBER_CHANGE_ADD_LEARNER = 1;
@@ -70,4 +79,5 @@ service Admin {
   rpc ChangeMembers(ChangeMembersRequest) returns (ChangeMembersResponse);
   rpc TransferLeadership(TransferLeadershipRequest) returns (TransferLeadershipResponse);
   rpc Chaos(ChaosRequest) returns (ChaosResponse);
+  rpc Backup(BackupRequest) returns (stream BackupChunk);
 }

@@ -14,6 +14,7 @@ const (
 	Admin_ChangeMembers_FullMethodName      = "/fivefamilies.v1.Admin/ChangeMembers"
 	Admin_TransferLeadership_FullMethodName = "/fivefamilies.v1.Admin/TransferLeadership"
 	Admin_Chaos_FullMethodName              = "/fivefamilies.v1.Admin/Chaos"
+	Admin_Backup_FullMethodName             = "/fivefamilies.v1.Admin/Backup"
 )
 
 type AdminClient interface {
@@ -21,6 +22,7 @@ type AdminClient interface {
 	ChangeMembers(ctx context.Context, in *ChangeMembersRequest, opts ...grpc.CallOption) (*ChangeMembersResponse, error)
 	TransferLeadership(ctx context.Context, in *TransferLeadershipRequest, opts ...grpc.CallOption) (*TransferLeadershipResponse, error)
 	Chaos(ctx context.Context, in *ChaosRequest, opts ...grpc.CallOption) (*ChaosResponse, error)
+	Backup(ctx context.Context, in *BackupRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[BackupChunk], error)
 }
 
 type adminClient struct {
@@ -71,11 +73,30 @@ func (c *adminClient) Chaos(ctx context.Context, in *ChaosRequest, opts ...grpc.
 	return out, nil
 }
 
+func (c *adminClient) Backup(ctx context.Context, in *BackupRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[BackupChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Admin_ServiceDesc.Streams[0], Admin_Backup_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[BackupRequest, BackupChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Admin_BackupClient = grpc.ServerStreamingClient[BackupChunk]
+
 type AdminServer interface {
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	ChangeMembers(context.Context, *ChangeMembersRequest) (*ChangeMembersResponse, error)
 	TransferLeadership(context.Context, *TransferLeadershipRequest) (*TransferLeadershipResponse, error)
 	Chaos(context.Context, *ChaosRequest) (*ChaosResponse, error)
+	Backup(*BackupRequest, grpc.ServerStreamingServer[BackupChunk]) error
 	mustEmbedUnimplementedAdminServer()
 }
 
@@ -92,6 +113,9 @@ func (UnimplementedAdminServer) TransferLeadership(context.Context, *TransferLea
 }
 func (UnimplementedAdminServer) Chaos(context.Context, *ChaosRequest) (*ChaosResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Chaos not implemented")
+}
+func (UnimplementedAdminServer) Backup(*BackupRequest, grpc.ServerStreamingServer[BackupChunk]) error {
+	return status.Error(codes.Unimplemented, "method Backup not implemented")
 }
 func (UnimplementedAdminServer) mustEmbedUnimplementedAdminServer() {}
 func (UnimplementedAdminServer) testEmbeddedByValue()               {}
@@ -180,6 +204,16 @@ func _Admin_Chaos_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Admin_Backup_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(BackupRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AdminServer).Backup(m, &grpc.GenericServerStream[BackupRequest, BackupChunk]{ServerStream: stream})
+}
+
+type Admin_BackupServer = grpc.ServerStreamingServer[BackupChunk]
+
 var Admin_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "fivefamilies.v1.Admin",
 	HandlerType: (*AdminServer)(nil),
@@ -201,6 +235,12 @@ var Admin_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Admin_Chaos_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Backup",
+			Handler:       _Admin_Backup_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "fivefamilies/v1/admin.proto",
 }
