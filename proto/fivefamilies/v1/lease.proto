@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package fivefamilies.v1;
+
+option go_package = "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1";
+
+message LeaseGrantRequest {
+  uint64 client = 1;
+  uint64 seq = 2;
+  uint64 ttl_ms = 3;
+}
+
+message LeaseGrantResponse {
+  uint64 id = 1;
+  uint64 ttl_ms = 2;
+  uint64 rev = 3;
+}
+
+message LeaseRevokeRequest {
+  uint64 client = 1;
+  uint64 seq = 2;
+  uint64 id = 3;
+}
+
+message LeaseRevokeResponse {
+  uint64 rev = 1;
+}
+
+message LeaseKeepAliveRequest {
+  uint64 id = 1;
+}
+
+message LeaseKeepAliveResponse {
+  uint64 id = 1;
+  uint64 ttl_ms = 2;
+}
+
+message LeaseTimeToLiveRequest {
+  uint64 id = 1;
+}
+
+message LeaseTimeToLiveResponse {
+  uint64 id = 1;
+  uint64 ttl_ms = 2;
+  uint64 remaining_ms = 3;
+  uint64 keys = 4;
+}
+
+service Lease {
+  rpc Grant(LeaseGrantRequest) returns (LeaseGrantResponse);
+  rpc Revoke(LeaseRevokeRequest) returns (LeaseRevokeResponse);
+  rpc KeepAlive(LeaseKeepAliveRequest) returns (LeaseKeepAliveResponse);
+  rpc TimeToLive(LeaseTimeToLiveRequest) returns (LeaseTimeToLiveResponse);
+}

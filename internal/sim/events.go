@@ -14,6 +14,7 @@ const (
 	evWriteDone
 	evRequest
 	evCall
+	evNodeCall
 )
 
 type event struct {
@@ -26,6 +27,7 @@ type event struct {
 	wseq uint64
 	req  *clientReq
 	call func()
+	on   func(*simNode)
 }
 
 type eventQueue []event

@@ -16,6 +16,7 @@ message KeyValue {
   uint64 create_rev = 3;
   uint64 mod_rev = 4;
   uint64 version = 5;
+  uint64 lease = 6;
 }
 
 message RegisterRequest {}
@@ -50,6 +51,7 @@ message PutRequest {
   uint64 seq = 2;
   string key = 3;
   bytes value = 4;
+  uint64 lease = 5;
 }
 
 message PutResponse {
@@ -79,6 +81,7 @@ message CompareAndSwapRequest {
     bool missing = 6;
     uint64 mod_rev = 7;
   }
+  uint64 lease = 8;
 }
 
 message CompareAndSwapResponse {

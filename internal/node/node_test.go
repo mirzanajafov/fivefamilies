@@ -42,6 +42,14 @@ func (a *recApp) Snapshot() []byte {
 	return []byte(fmt.Sprintf("at %d", a.at))
 }
 
+func (a *recApp) Lease(uint64) (kv.LeaseInfo, bool) {
+	return kv.LeaseInfo{}, false
+}
+
+func (a *recApp) Leases() []kv.LeaseInfo {
+	return nil
+}
+
 func (a *recApp) Restore(index uint64, data []byte) error {
 	a.restored, a.at = data, index
 	return nil

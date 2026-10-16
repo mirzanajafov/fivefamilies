@@ -48,6 +48,7 @@ type checker struct {
 	overwrites   int
 	disks        []*disk
 	conf         raft.ConfState
+	onExpire     func(uint64)
 }
 
 func newChecker(nodes int) *checker {
@@ -239,6 +240,11 @@ func newRecorder(chk *checker, idx int) *recorder {
 
 func (r *recorder) Apply(e raft.Entry) kv.Result {
 	r.chk.apply(r.idx, r.last, e)
+	if e.Type == raft.EntryNormal && len(e.Data) > 0 && kv.Op(e.Data[0]) == kv.OpLeaseExpire && r.chk.onExpire != nil {
+		if cmd, err := kv.Decode(e.Data); err == nil {
+			r.chk.onExpire(cmd.Lease)
+		}
+	}
 	r.last = e.Index
 	return r.store.Apply(e)
 }
@@ -250,6 +256,14 @@ func (r *recorder) Get(key string) kv.Result {
 
 func (r *recorder) Snapshot() []byte {
 	return r.store.Snapshot()
+}
+
+func (r *recorder) Lease(id uint64) (kv.LeaseInfo, bool) {
+	return r.store.Lease(id)
+}
+
+func (r *recorder) Leases() []kv.LeaseInfo {
+	return r.store.Leases()
 }
 
 func (r *recorder) Restore(index uint64, data []byte) error {

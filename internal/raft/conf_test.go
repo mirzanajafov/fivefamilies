@@ -492,3 +492,15 @@ func TestAnEarlyChangeLetsTwoMajoritiesCommitDifferentEntries(t *testing.T) {
 		}
 	}
 }
+
+func TestSelfRemovalIsRefusedEvenBeforeTheFirstCommit(t *testing.T) {
+	r := newNode(t, 1, []NodeID{1, 2, 3}, Restore{}, func(cfg *Config) { cfg.PreVote = false })
+	r.Campaign()
+	for _, m := range r.Ready().AfterPersist {
+		r.Step(m)
+	}
+	r.Step(Message{Type: MsgVoteResp, From: 2, To: 1, Term: 1})
+	if _, err := r.ProposeConfChange(ConfChange{ConfRemove, 1}); !errors.Is(err, ErrBadConfChange) {
+		t.Fatalf("a request that can never succeed should say so, not ask to try again: %v", err)
+	}
+}

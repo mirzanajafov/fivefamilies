@@ -163,6 +163,10 @@ func (r *Raft) Stabled() uint64    { return r.log.stabled }
 func (r *Raft) FirstIndex() uint64 { return r.log.firstIndex() }
 func (r *Raft) LastIndex() uint64  { return r.log.lastIndex() }
 
+func (r *Raft) Planted(b Bug) bool {
+	return r.cfg.Bugs.Has(b)
+}
+
 func (r *Raft) HardState() HardState {
 	return r.hardState()
 }
@@ -226,14 +230,14 @@ func (r *Raft) ProposeConfChange(cc ConfChange) (uint64, error) {
 	switch {
 	case r.state != StateLeader:
 		return 0, ErrNotLeader
+	case cc.Type == ConfRemove && cc.Node == r.id:
+		return 0, fmt.Errorf("%w: the leader cannot remove itself, transfer leadership first", ErrBadConfChange)
 	case r.transferee != None:
 		return 0, ErrTransferring
 	case !r.committedInTerm() && !r.cfg.Bugs.Has(BugEarlyConf):
 		return 0, ErrConfNotReady
 	case r.pendingConf():
 		return 0, ErrConfPending
-	case cc.Type == ConfRemove && cc.Node == r.id:
-		return 0, fmt.Errorf("%w: the leader cannot remove itself, transfer leadership first", ErrBadConfChange)
 	}
 	if _, err := r.conf().Apply(cc); err != nil {
 		return 0, fmt.Errorf("%w: %v", ErrBadConfChange, err)

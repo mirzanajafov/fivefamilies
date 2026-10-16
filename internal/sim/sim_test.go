@@ -329,7 +329,7 @@ func TestCheckerCatchesALeaderLeadingTheSameTermAfterARestart(t *testing.T) {
 }
 
 func TestRegressionSeeds(t *testing.T) {
-	seeds := []uint64{39, 263, 281, 742, 894, 2888, 4107, 4851, 4961}
+	seeds := []uint64{35, 39, 263, 281, 742, 894, 2888, 4107, 4851, 4961}
 	for _, seed := range seeds {
 		if r := Run(seed, DefaultOptions()); !r.OK() {
 			t.Errorf("seed %d failed at %v: %s\n  swarm: %s", r.Seed, r.At, r.Violation, r.Swarm)

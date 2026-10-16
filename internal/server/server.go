@@ -164,7 +164,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	s.raft = r
-	s.node = node.New(r, s, s.sm, node.Config{SnapshotEvery: cfg.SnapshotEvery, Retain: cfg.Retain})
+	s.node = node.New(r, s, s.sm, node.Config{SnapshotEvery: cfg.SnapshotEvery, Retain: cfg.Retain, Tick: cfg.Tick})
 	tr, err := transport.New(cfg.ID, cfg.Nodes, s.deliver, s.Filter, s.log)
 	if err != nil {
 		return nil, err
@@ -182,6 +182,7 @@ func (s *Server) Register(g *grpc.Server) {
 	pb.RegisterPeerServer(g, s.tr.Server())
 	pb.RegisterKVServer(g, &kvService{s: s})
 	pb.RegisterAdminServer(g, &adminService{s: s})
+	pb.RegisterLeaseServer(g, &leaseService{s: s})
 }
 
 func (s *Server) Run(ctx context.Context) {
@@ -455,6 +456,35 @@ func (s *Server) inLoop(ctx context.Context, f func()) error {
 	}
 }
 
+func (s *Server) MinLeaseTTL() time.Duration {
+	return time.Duration(s.cfg.ElectionTick) * s.cfg.Tick * 3 / 2
+}
+
+func (s *Server) KeepAlive(ctx context.Context, id uint64) (kv.Result, error) {
+	return s.run(ctx, func(done node.Done) { s.node.KeepAlive(id, done) })
+}
+
+func (s *Server) TimeToLive(ctx context.Context, id uint64) (remaining time.Duration, info kv.LeaseInfo, err error) {
+	var leader, tracked, exists bool
+	var hint raft.NodeID
+	if lerr := s.inLoop(ctx, func() {
+		leader, hint = s.raft.State() == raft.StateLeader, s.raft.Leader()
+		remaining, tracked = s.node.LeaseRemaining(id)
+		info, exists = s.sm.store.Lease(id)
+	}); lerr != nil {
+		return 0, info, lerr
+	}
+	switch {
+	case !leader:
+		return 0, info, &node.NotLeaderError{Leader: hint}
+	case !exists || !tracked:
+		return 0, info, errLeaseNotFound
+	}
+	return remaining, info, nil
+}
+
+var errLeaseNotFound = errors.New("server: lease not found")
+
 func (s *Server) StateHash(ctx context.Context) (uint64, uint64, error) {
 	type hashed struct{ hash, rev uint64 }
 	ch := make(chan hashed, 1)
@@ -487,6 +517,14 @@ func (m *machine) Get(key string) kv.Result {
 
 func (m *machine) Snapshot() []byte {
 	return m.store.Snapshot()
+}
+
+func (m *machine) Lease(id uint64) (kv.LeaseInfo, bool) {
+	return m.store.Lease(id)
+}
+
+func (m *machine) Leases() []kv.LeaseInfo {
+	return m.store.Leases()
 }
 
 func (m *machine) Restore(index uint64, data []byte) error {
