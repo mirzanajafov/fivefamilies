@@ -33,6 +33,7 @@ type Options struct {
 	ClockSkew     float64
 	Reads         string
 	NoCatchUp     bool
+	Membership    bool
 	Trace         io.Writer
 }
 
@@ -49,6 +50,7 @@ func DefaultOptions() Options {
 		PreVote:       true,
 		CheckQuorum:   true,
 		LeaseTicks:    12,
+		Membership:    true,
 	}
 }
 
@@ -79,6 +81,9 @@ type Stats struct {
 	SnapshotsSent  int
 	Installs       int
 	Compactions    int
+	ConfChanges    int
+	ConfCommitted  int
+	Transfers      int
 }
 
 type Result struct {
@@ -113,6 +118,7 @@ type simNode struct {
 	disk        *disk
 	rate        float64
 	sm          *recorder
+	ledTerm     uint64
 }
 
 type nodeEnv struct {
@@ -129,6 +135,8 @@ type Sim struct {
 	opts    Options
 	seed    uint64
 	rng     *rand.Rand
+	mrng    *rand.Rand
+	ms      memberSwarm
 	now     time.Duration
 	seq     uint64
 	queue   eventQueue
@@ -186,9 +194,15 @@ func newSim(seed uint64, opts Options) *Sim {
 	s.net.loss, s.net.dup, s.net.base, s.net.jitter = s.sw.loss, s.sw.dup, s.sw.base, s.sw.jitter
 	s.chk = newChecker(opts.Nodes)
 	s.chk.mute = opts.MuteSafety
-	for i := range opts.Nodes {
+	s.mrng = rand.New(rand.NewPCG(seed^0x6d656d62657273, seed))
+	s.ms = memberSwarm{voters: opts.Nodes}
+	if opts.Membership {
+		s.ms = newMemberSwarm(s.mrng, opts.Nodes)
+	}
+	for i := range s.ms.voters {
 		s.voters = append(s.voters, raft.NodeID(i+1))
 	}
+	s.chk.conf = raft.ConfState{Voters: s.voters}
 	skewed := -1
 	if opts.ClockSkew != 0 {
 		skewed = rng.IntN(opts.Nodes)
@@ -202,7 +216,6 @@ func newSim(seed uint64, opts Options) *Sim {
 		s.nodes = append(s.nodes, sn)
 		s.chk.disks = append(s.chk.disks, sn.disk)
 	}
-	s.chk.quorum = opts.Nodes/2 + 1
 	s.net.reorder = s.sw.reorder
 	return s
 }
@@ -218,7 +231,7 @@ func (s *Sim) result() Result {
 	}
 	return Result{
 		Seed:      s.seed,
-		Swarm:     s.sw.String(),
+		Swarm:     s.sw.String() + s.ms.String(),
 		Violation: s.chk.failure,
 		Category:  s.chk.category,
 		Muted:     s.chk.muted,
@@ -258,11 +271,12 @@ func (s *Sim) start() {
 	for _, sn := range s.nodes {
 		s.boot(sn)
 	}
-	s.tracef("swarm: %s", s.sw)
+	s.tracef("swarm: %s%s", s.sw, s.ms)
 	if len(s.nodes) < 3 {
 		s.sw.partitionMean = 0
 	}
 	s.startFaults()
+	s.startMembership()
 	s.startClients()
 	if s.sw.proposalRate > 0 {
 		s.after(exponential(s.rng, time.Duration(float64(time.Second)/s.sw.proposalRate)), s.proposeLoop)
@@ -407,6 +421,10 @@ func (s *Sim) observe(sn *simNode) {
 	}
 	r := sn.n.Raft()
 	s.chk.observe(sn.idx, r)
+	if r.State() == raft.StateLeader && r.Term() != sn.ledTerm {
+		sn.ledTerm = r.Term()
+		s.newLeader(sn)
+	}
 	if s.stats.Events%512 == 0 {
 		s.checkLogMatching()
 	}
@@ -665,8 +683,12 @@ func (s *Sim) checkLiveness() {
 		s.chk.report(CatLiveness, "liveness: leader %d of term %d has not committed an entry of its term", lr.ID(), lr.Term())
 		return
 	}
+	conf := lr.Conf()
 	for _, sn := range s.nodes {
 		r := sn.n.Raft()
+		if !conf.IsMember(r.ID()) {
+			continue
+		}
 		if r.Term() != lr.Term() || r.Leader() != lr.ID() {
 			s.chk.report(CatLiveness, "liveness: node %d is in term %d following %d, leader %d is in term %d", r.ID(), r.Term(), r.Leader(), lr.ID(), lr.Term())
 			return

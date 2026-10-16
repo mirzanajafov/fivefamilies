@@ -18,8 +18,40 @@ message StatusResponse {
   uint64 snapshot_index = 9;
   uint64 state_hash = 10;
   uint64 hash_index = 11;
+  repeated uint64 voters = 12;
+  repeated uint64 learners = 13;
+  uint64 transferee = 14;
+}
+
+enum MemberChange {
+  MEMBER_CHANGE_UNSPECIFIED = 0;
+  MEMBER_CHANGE_ADD_LEARNER = 1;
+  MEMBER_CHANGE_PROMOTE = 2;
+  MEMBER_CHANGE_REMOVE = 3;
+}
+
+message ChangeMembersRequest {
+  MemberChange change = 1;
+  uint64 node = 2;
+}
+
+message ChangeMembersResponse {
+  uint64 index = 1;
+  repeated uint64 voters = 2;
+  repeated uint64 learners = 3;
+}
+
+message TransferLeadershipRequest {
+  uint64 to = 1;
+}
+
+message TransferLeadershipResponse {
+  uint64 leader = 1;
+  uint64 term = 2;
 }
 
 service Admin {
   rpc Status(StatusRequest) returns (StatusResponse);
+  rpc ChangeMembers(ChangeMembersRequest) returns (ChangeMembersResponse);
+  rpc TransferLeadership(TransferLeadershipRequest) returns (TransferLeadershipResponse);
 }

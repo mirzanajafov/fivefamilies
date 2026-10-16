@@ -179,6 +179,26 @@ func (n *Node) Submit(cmd kv.Command, done Done) {
 	}
 }
 
+func (n *Node) ProposeConfChange(cc raft.ConfChange, done Done) {
+	if n.r.State() != raft.StateLeader {
+		done(kv.Result{}, &NotLeaderError{Leader: n.r.Leader()})
+		return
+	}
+	idx, err := n.r.ProposeConfChange(cc)
+	if err != nil {
+		done(kv.Result{}, err)
+		return
+	}
+	n.waiters[idx] = waiter{term: n.r.Term(), done: done}
+}
+
+func (n *Node) TransferLeadership(to raft.NodeID) error {
+	if n.r.State() != raft.StateLeader {
+		return &NotLeaderError{Leader: n.r.Leader()}
+	}
+	return n.r.TransferLeadership(to)
+}
+
 func (n *Node) Waiting() int {
 	return len(n.waiters)
 }
@@ -289,7 +309,7 @@ func (n *Node) maybeSnapshot() {
 	if !ok {
 		return
 	}
-	s := raft.Snapshot{Index: applied, Term: term, Data: n.sm.Snapshot()}
+	s := raft.Snapshot{Index: applied, Term: term, Data: n.sm.Snapshot(), Conf: n.r.ConfAt(applied)}
 	n.env.SaveSnapshot(s)
 	n.lastSnap = applied
 	n.taking = true

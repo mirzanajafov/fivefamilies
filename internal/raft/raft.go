@@ -1,12 +1,22 @@
 package raft
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"slices"
 )
 
-var ErrNotLeader = errors.New("raft: not the leader")
+var (
+	ErrNotLeader     = errors.New("raft: not the leader")
+	ErrTransferring  = errors.New("raft: leadership is being transferred")
+	ErrConfPending   = errors.New("raft: a membership change is still in progress")
+	ErrConfNotReady  = errors.New("raft: the leader has not committed an entry of its own term yet")
+	ErrLearnerBehind = errors.New("raft: the learner has not caught up yet")
+	ErrBadConfChange = errors.New("raft: invalid membership change")
+)
+
+const campaignTransfer = 1
 
 type Source interface {
 	Uint64() uint64
@@ -21,6 +31,7 @@ type Config struct {
 	CheckQuorum   bool
 	MaxMsgBytes   int
 	MaxInflight   int
+	MaxLearnerLag uint64
 	LeaseTicks    int
 	Rand          Source
 	Bugs          Bug
@@ -49,6 +60,9 @@ func (c *Config) validate() error {
 	if c.MaxInflight <= 0 {
 		c.MaxInflight = 256
 	}
+	if c.MaxLearnerLag == 0 {
+		c.MaxLearnerLag = 1000
+	}
 	return nil
 }
 
@@ -67,9 +81,14 @@ type Raft struct {
 	lead  NodeID
 	log   *raftLog
 
-	voters []NodeID
-	prs    []*progress
-	votes  map[NodeID]bool
+	confs []confAt
+	prs   []*progress
+	votes map[NodeID]bool
+
+	transferee      NodeID
+	transferElapsed int
+	transferTerm    uint64
+	confRound       uint64
 
 	electionElapsed           int
 	heartbeatElapsed          int
@@ -108,21 +127,27 @@ func New(cfg Config, st Restore) (*Raft, error) {
 	voters := slices.Clone(cfg.Voters)
 	slices.Sort(voters)
 	voters = slices.Compact(voters)
+	base := confAt{conf: ConfState{Voters: voters}}
+	if st.Snapshot != nil {
+		base.index = st.Snapshot.Index
+		if len(st.Snapshot.Conf.Voters) > 0 {
+			base.conf = st.Snapshot.Conf.clone()
+		}
+	}
 	r := &Raft{
 		cfg:      cfg,
 		id:       cfg.ID,
 		term:     st.HardState.Term,
 		vote:     st.HardState.Vote,
 		log:      l,
-		voters:   voters,
 		votes:    make(map[NodeID]bool, len(voters)),
 		prevHS:   HardState{Term: st.HardState.Term, Vote: st.HardState.Vote, Commit: l.committed},
 		snapshot: st.Snapshot,
+		confs:    []confAt{base},
 	}
-	r.prs = make([]*progress, len(voters))
-	for i, id := range voters {
-		r.prs[i] = &progress{id: id}
-	}
+	r.onAppend(l.firstIndex(), st.Entries)
+	r.applyConf()
+	l.onAppend = r.onAppend
 	r.becomeFollower(r.term, None)
 	return r, nil
 }
@@ -156,8 +181,11 @@ func (r *Raft) Compact(s Snapshot, retain uint64) error {
 	if t, ok := r.log.term(s.Index); !ok || t != s.Term {
 		return fmt.Errorf("raft: snapshot at %d has term %d, the log has %d", s.Index, s.Term, t)
 	}
+	s.Conf = r.ConfAt(s.Index)
 	r.snapshot = &s
-	r.log.compact(s.Index - min(retain, s.Index))
+	point := s.Index - min(retain, s.Index)
+	r.log.compact(point)
+	r.compactConfs(point)
 	return nil
 }
 
@@ -182,6 +210,9 @@ func (r *Raft) Propose(data []byte) (uint64, error) {
 	if r.state != StateLeader {
 		return 0, ErrNotLeader
 	}
+	if r.transferee != None {
+		return 0, ErrTransferring
+	}
 	e := r.appendEntry(EntryNormal, data)
 	r.pendingBcast = true
 	return e.Index, nil
@@ -191,14 +222,67 @@ func (r *Raft) Campaign() {
 	r.hup()
 }
 
+func (r *Raft) ProposeConfChange(cc ConfChange) (uint64, error) {
+	switch {
+	case r.state != StateLeader:
+		return 0, ErrNotLeader
+	case r.transferee != None:
+		return 0, ErrTransferring
+	case !r.committedInTerm() && !r.cfg.Bugs.Has(BugEarlyConf):
+		return 0, ErrConfNotReady
+	case r.pendingConf():
+		return 0, ErrConfPending
+	case cc.Type == ConfRemove && cc.Node == r.id:
+		return 0, fmt.Errorf("%w: the leader cannot remove itself, transfer leadership first", ErrBadConfChange)
+	}
+	if _, err := r.conf().Apply(cc); err != nil {
+		return 0, fmt.Errorf("%w: %v", ErrBadConfChange, err)
+	}
+	if cc.Type == ConfPromote {
+		if pr := r.progress(cc.Node); pr == nil || pr.match+r.cfg.MaxLearnerLag < r.log.lastIndex() {
+			return 0, ErrLearnerBehind
+		}
+	}
+	e := r.appendEntry(EntryConfig, cc.Marshal())
+	r.pendingBcast = true
+	return e.Index, nil
+}
+
+func (r *Raft) TransferLeadership(to NodeID) error {
+	if r.state != StateLeader {
+		return ErrNotLeader
+	}
+	if to == r.id {
+		return nil
+	}
+	if !r.conf().IsVoter(to) {
+		return fmt.Errorf("%w: node %d is not a voter", ErrBadConfChange, to)
+	}
+	r.transferee, r.transferElapsed, r.transferTerm = to, 0, r.term
+	pr := r.progress(to)
+	if pr.match == r.log.lastIndex() {
+		r.send(Message{Type: MsgTimeoutNow, To: to, Term: r.term})
+	} else {
+		r.maybeSendAppend(pr, true)
+	}
+	return nil
+}
+
+func (r *Raft) Transferring() NodeID {
+	return r.transferee
+}
+
 func (r *Raft) Step(m Message) {
 	if m.Type == MsgStorageAck {
 		r.handleStorageAck(m)
 		return
 	}
+	if (m.Type == MsgVote || m.Type == MsgPreVote) && !r.conf().IsMember(m.From) {
+		return
+	}
 	switch {
 	case m.Term > r.term:
-		if (m.Type == MsgVote || m.Type == MsgPreVote) && r.inLease() {
+		if (m.Type == MsgVote || m.Type == MsgPreVote) && r.inLease() && !(m.Type == MsgVote && m.Context == campaignTransfer) {
 			return
 		}
 		switch {
@@ -219,6 +303,8 @@ func (r *Raft) Step(m Message) {
 			r.send(Message{Type: MsgAppResp, To: m.From, Term: r.term})
 		case m.Type == MsgPreVote:
 			r.send(Message{Type: MsgPreVoteResp, To: m.From, Term: r.term, Reject: true})
+		case m.Type == MsgReadIndex:
+			r.send(Message{Type: MsgReadIndexResp, To: m.From, Term: r.term, Context: m.Context, Reject: true})
 		}
 		return
 	}
@@ -323,16 +409,15 @@ func (r *Raft) sendAfterPersist(m Message) {
 }
 
 func (r *Raft) quorum() int {
-	return len(r.voters)/2 + 1
+	return len(r.conf().Voters)/2 + 1
 }
 
 func (r *Raft) isVoter(id NodeID) bool {
-	_, ok := slices.BinarySearch(r.voters, id)
-	return ok
+	return r.conf().IsVoter(id)
 }
 
 func (r *Raft) progress(id NodeID) *progress {
-	i, ok := slices.BinarySearch(r.voters, id)
+	i, ok := slices.BinarySearchFunc(r.prs, id, func(p *progress, id NodeID) int { return cmp.Compare(p.id, id) })
 	if !ok {
 		return nil
 	}
@@ -360,6 +445,12 @@ func (r *Raft) tickElection() {
 func (r *Raft) tickHeartbeat() {
 	r.heartbeatElapsed++
 	r.electionElapsed++
+	if r.transferee != None {
+		r.transferElapsed++
+		if r.transferElapsed >= r.cfg.ElectionTick {
+			r.transferee = None
+		}
+	}
 	if r.electionElapsed >= r.cfg.ElectionTick {
 		r.electionElapsed = 0
 		if r.cfg.CheckQuorum && !r.quorumActive() {
@@ -376,7 +467,7 @@ func (r *Raft) tickHeartbeat() {
 func (r *Raft) quorumActive() bool {
 	active := 0
 	for _, pr := range r.prs {
-		if pr.id == r.id || pr.active {
+		if !pr.learner && (pr.id == r.id || pr.active) {
 			active++
 		}
 		pr.active = false
@@ -388,10 +479,10 @@ func (r *Raft) hup() {
 	if r.state == StateLeader || !r.isVoter(r.id) {
 		return
 	}
-	r.campaign(r.cfg.PreVote)
+	r.campaign(r.cfg.PreVote, 0)
 }
 
-func (r *Raft) campaign(pre bool) {
+func (r *Raft) campaign(pre bool, ctx uint64) {
 	var typ MessageType
 	var term uint64
 	if pre {
@@ -401,11 +492,11 @@ func (r *Raft) campaign(pre bool) {
 		r.becomeCandidate()
 		typ, term = MsgVote, r.term
 	}
-	for _, id := range r.voters {
+	for _, id := range r.conf().Voters {
 		if id == r.id {
 			continue
 		}
-		r.send(Message{Type: typ, To: id, Term: term, Index: r.log.lastIndex(), LogTerm: r.log.lastTerm()})
+		r.send(Message{Type: typ, To: id, Term: term, Index: r.log.lastIndex(), LogTerm: r.log.lastTerm(), Context: ctx})
 	}
 	if pre || r.cfg.Bugs.Has(BugNoFsync) {
 		r.recordVote(r.id, true)
@@ -422,7 +513,8 @@ func (r *Raft) recordVote(id NodeID, granted bool) {
 		r.votes[id] = granted
 	}
 	yes, no := 0, 0
-	for _, v := range r.voters {
+	voters := r.conf().Voters
+	for _, v := range voters {
 		g, seen := r.votes[v]
 		switch {
 		case !seen:
@@ -435,11 +527,11 @@ func (r *Raft) recordVote(id NodeID, granted bool) {
 	switch {
 	case yes >= r.quorum():
 		if r.state == StatePreCandidate {
-			r.campaign(false)
+			r.campaign(false, 0)
 		} else if r.votes[r.id] {
 			r.becomeLeader()
 		}
-	case no > len(r.voters)-r.quorum():
+	case no > len(voters)-r.quorum():
 		r.becomeFollower(r.term, None)
 	}
 }
@@ -452,6 +544,7 @@ func (r *Raft) reset(term uint64) {
 		r.vote = None
 	}
 	r.lead = None
+	r.transferee, r.transferElapsed = None, 0
 	r.electionElapsed = 0
 	r.heartbeatElapsed = 0
 	r.randomizedElectionTimeout = r.cfg.ElectionTick + int(r.cfg.Rand.Uint64()%uint64(r.cfg.ElectionTick))
@@ -531,6 +624,10 @@ func (r *Raft) stepFollower(m Message) {
 		r.handleSnapshot(m)
 	case MsgReadIndexResp:
 		r.readStates = append(r.readStates, ReadState{Index: m.Index, Ctx: m.Context, Ok: !m.Reject})
+	case MsgTimeoutNow:
+		if r.isVoter(r.id) {
+			r.campaign(false, campaignTransfer)
+		}
 	}
 }
 
@@ -558,6 +655,10 @@ func (r *Raft) stepCandidate(m Message) {
 
 func (r *Raft) stepLeader(m Message) {
 	pr := r.progress(m.From)
+	if pr == nil && m.Type == MsgReadIndex {
+		r.answerRead(m.From, m.Context, 0, false)
+		return
+	}
 	if pr == nil || pr.id == r.id {
 		return
 	}
@@ -612,6 +713,9 @@ func (r *Raft) handleSnapshot(m Message) {
 		r.sendAfterPersist(Message{Type: MsgAppResp, To: m.From, Term: r.term, Index: s.Index})
 	default:
 		r.log.restore(s)
+		if len(s.Conf.Voters) > 0 {
+			r.resetConfs(confAt{index: s.Index, conf: s.Conf.clone()})
+		}
 		r.snapshot = s
 		r.pendingSnapshot = s
 		r.sendAfterPersist(Message{Type: MsgAppResp, To: m.From, Term: r.term, Index: s.Index})
@@ -666,6 +770,9 @@ func (r *Raft) handleAppendResp(pr *progress, m Message) {
 	}
 	for r.maybeSendAppend(pr, false) {
 	}
+	if pr.id == r.transferee && pr.match == r.log.lastIndex() {
+		r.send(Message{Type: MsgTimeoutNow, To: pr.id, Term: r.term})
+	}
 }
 
 func (r *Raft) handleHeartbeatResp(pr *progress) {
@@ -689,6 +796,9 @@ func (r *Raft) handleHeartbeatResp(pr *progress) {
 func (r *Raft) maybeCommit() bool {
 	matches := make([]uint64, 0, len(r.prs))
 	for _, pr := range r.prs {
+		if pr.learner {
+			continue
+		}
 		if pr.id == r.id {
 			matches = append(matches, r.log.stabled)
 		} else {

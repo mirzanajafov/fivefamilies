@@ -64,11 +64,11 @@ func (d *disk) open(chk *checker, idx int) (raft.Restore, wal.Recovery, error) {
 		return st, rec, err
 	}
 	if st.Snapshot != nil {
-		data, err := snap.Load(d.fs, st.Snapshot.Index, st.Snapshot.Term)
+		sn, err := snap.Load(d.fs, st.Snapshot.Index, st.Snapshot.Term)
 		if err != nil {
 			return st, rec, err
 		}
-		st.Snapshot = &raft.Snapshot{Index: st.Snapshot.Index, Term: st.Snapshot.Term, Data: data}
+		st.Snapshot = &sn
 	}
 	if !recoveredPrefix(d.durable, d.inflight, st) {
 		chk.safetyf("durability: node %d recovered %d entries after snapshot %v in term %d, which is not its synced state (%d entries after %d, term %d) plus a prefix of the %d writes in flight",

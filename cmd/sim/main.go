@@ -27,11 +27,13 @@ func main() {
 	chaos := flag.Duration("chaos", 0, "simulated time with faults (default from the simulator)")
 	heal := flag.Duration("heal", 0, "simulated time after every fault stops")
 	nodes := flag.Int("nodes", 0, "cluster size")
+	noPreVote := flag.Bool("no-prevote", false, "run elections without PreVote")
+	noMembers := flag.Bool("no-membership", false, "never change membership or hand over leadership")
 	noCatchUp := flag.Bool("no-catchup", false, "do not replay the ticks a paused node missed, to show what a lease measured in ticks does under pauses")
 	reads := flag.String("reads", "", "force one read path for every seed: log, index, lease or follower")
 	skew := flag.Float64("clock-skew", 0, "make one node's clock run this much faster (0.5 = 50%), to break the lease assumption")
 	checkTimeout := flag.Duration("check-timeout", 0, "time limit for one linearizability check")
-	bugs := flag.String("bug", "", "planted bugs to switch on, comma separated: figure8, staleterm, prevterm, anyvote, nofsync")
+	bugs := flag.String("bug", "", "planted bugs to switch on, comma separated: figure8, staleterm, prevterm, anyvote, nofsync, followerread, earlyconf")
 	mute := flag.Bool("mute-safety", false, "record protocol invariant violations without stopping, to see what the other checks catch")
 	first := flag.Bool("first", false, "stop handing out seeds after the first failure and report the lowest failing seed")
 	catch := flag.String("catch", "", "count a seed as failing only when this check fires (safety, liveness, linearizability, state, client, panic)")
@@ -50,6 +52,8 @@ func main() {
 	opts.ClockSkew = *skew
 	opts.Reads = *reads
 	opts.NoCatchUp = *noCatchUp
+	opts.PreVote = !*noPreVote
+	opts.Membership = !*noMembers
 	if *checkTimeout > 0 {
 		opts.CheckTimeout = *checkTimeout
 	}
@@ -200,5 +204,8 @@ func addStats(a, b sim.Stats) sim.Stats {
 	a.SnapshotsSent += b.SnapshotsSent
 	a.Installs += b.Installs
 	a.Compactions += b.Compactions
+	a.ConfChanges += b.ConfChanges
+	a.ConfCommitted += b.ConfCommitted
+	a.Transfers += b.Transfers
 	return a
 }

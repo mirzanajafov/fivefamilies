@@ -9,11 +9,12 @@ import (
 
 type entryKey struct {
 	term uint64
+	typ  raft.EntryType
 	data string
 }
 
 func keyOf(e raft.Entry) entryKey {
-	return entryKey{term: e.Term, data: string(e.Data)}
+	return entryKey{term: e.Term, typ: e.Type, data: string(e.Data)}
 }
 
 type Category string
@@ -46,7 +47,7 @@ type checker struct {
 	detected     map[Category]string
 	overwrites   int
 	disks        []*disk
-	quorum       int
+	conf         raft.ConfState
 }
 
 func newChecker(nodes int) *checker {
@@ -119,8 +120,15 @@ func (c *checker) observe(idx int, r *raft.Raft) {
 		default:
 			c.committed = append(c.committed, k)
 			c.commitTerm = append(c.commitTerm, r.Term())
-			if n := c.durableOn(i); n < c.quorum {
-				c.safetyf("durability: node %d sees entry %d committed while it is durable on %d disks, fewer than a quorum of %d", r.ID(), i, n, c.quorum)
+			if e.Type == raft.EntryConfig {
+				if cc, err := raft.UnmarshalConfChange(e.Data); err == nil {
+					if next, err := c.conf.Apply(cc); err == nil {
+						c.conf = next
+					}
+				}
+			}
+			if n, need := c.durableOn(i); n < need {
+				c.safetyf("durability: node %d sees entry %d committed while it is durable on %d of the voters %v, and every quorum of them needs to meet %d", r.ID(), i, n, c.conf.Voters, need)
 				return
 			}
 		}
@@ -162,20 +170,22 @@ func (c *checker) apply(idx int, last uint64, e raft.Entry) {
 	}
 }
 
-func (c *checker) durableOn(index uint64) int {
+func (c *checker) durableOn(index uint64) (int, int) {
+	need := len(c.conf.Voters) - (len(c.conf.Voters)/2 + 1) + 1
 	if index == 0 || index > uint64(len(c.committed)) {
-		return 0
+		return 0, need
 	}
 	want := c.committed[index-1]
 	n := 0
-	for _, d := range c.disks {
+	for _, id := range c.conf.Voters {
+		d := c.disks[id-1]
 		if index <= d.durable.offset() {
 			n++
 		} else if e, ok := d.durable.entry(index); ok && keyOf(e) == want {
 			n++
 		}
 	}
-	return n
+	return n, need
 }
 
 func (c *checker) overwrote(idx int, old []raft.Entry) {
@@ -187,8 +197,8 @@ func (c *checker) overwrote(idx int, old []raft.Entry) {
 		if keyOf(e) != c.committed[e.Index-1] {
 			continue
 		}
-		if n := c.durableOn(e.Index); n < c.quorum {
-			c.safetyf("durability: node %d overwrote committed entry %d, which is now durable on %d disks, fewer than a quorum of %d", idx+1, e.Index, n, c.quorum)
+		if n, need := c.durableOn(e.Index); n < need {
+			c.safetyf("durability: node %d overwrote committed entry %d, which is now durable on %d of the voters %v, and every quorum of them needs to meet %d", idx+1, e.Index, n, c.conf.Voters, need)
 			return
 		}
 	}

@@ -65,6 +65,9 @@ func (r *Raft) committedInTerm() bool {
 func (r *Raft) confirmedRound() uint64 {
 	rounds := make([]uint64, 0, len(r.prs))
 	for _, pr := range r.prs {
+		if pr.learner {
+			continue
+		}
 		if pr.id == r.id {
 			rounds = append(rounds, r.hbRound)
 		} else {
@@ -84,13 +87,13 @@ func (r *Raft) releaseReads() {
 		i++
 	}
 	r.reads = r.reads[i:]
-	if c > 0 && r.hbRound-c < roundRing && (!r.leaseOK || r.roundTicks[c%roundRing] > r.leaseStart) {
+	if c > r.confRound && r.hbRound-c < roundRing && (!r.leaseOK || r.roundTicks[c%roundRing] > r.leaseStart) {
 		r.leaseStart, r.leaseOK = r.roundTicks[c%roundRing], true
 	}
 }
 
 func (r *Raft) leaseValid() bool {
-	return r.cfg.LeaseTicks > 0 && r.leaseOK && r.ticks-r.leaseStart < uint64(r.cfg.LeaseTicks)
+	return r.cfg.LeaseTicks > 0 && r.leaseOK && r.transferTerm != r.term && r.ticks-r.leaseStart < uint64(r.cfg.LeaseTicks)
 }
 
 func (r *Raft) dropReads() {

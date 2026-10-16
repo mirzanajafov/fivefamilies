@@ -7,17 +7,19 @@ import (
 )
 
 var canaries = []struct {
-	bug   raft.Bug
-	reads string
-	nets  []Category
-	seeds []uint64
+	bug       raft.Bug
+	reads     string
+	noPreVote bool
+	nets      []Category
+	seeds     []uint64
 }{
-	{raft.BugFigure8, "", []Category{CatSafety, CatPanic}, []uint64{853}},
-	{raft.BugStaleTerm, "", []Category{CatSafety, CatPanic}, []uint64{667}},
-	{raft.BugPrevTerm, "", []Category{CatSafety, CatPanic}, []uint64{10}},
-	{raft.BugAnyVote, "", []Category{CatSafety, CatPanic}, []uint64{3}},
-	{raft.BugNoFsync, "", []Category{CatSafety, CatPanic}, []uint64{1}},
-	{raft.BugFollowerRead, "follower", []Category{CatLinearizability}, []uint64{1}},
+	{raft.BugFigure8, "", false, []Category{CatSafety, CatPanic}, []uint64{853}},
+	{raft.BugStaleTerm, "", false, []Category{CatSafety, CatPanic}, []uint64{667}},
+	{raft.BugPrevTerm, "", false, []Category{CatSafety, CatPanic}, []uint64{19}},
+	{raft.BugAnyVote, "", false, []Category{CatSafety, CatPanic}, []uint64{3}},
+	{raft.BugNoFsync, "", false, []Category{CatSafety, CatPanic}, []uint64{1}},
+	{raft.BugFollowerRead, "follower", false, []Category{CatLinearizability}, []uint64{1}},
+	{raft.BugEarlyConf, "", true, []Category{CatSafety}, []uint64{7622}},
 }
 
 func TestPlantedBugsAreCaught(t *testing.T) {
@@ -27,6 +29,7 @@ func TestPlantedBugsAreCaught(t *testing.T) {
 			opts := DefaultOptions()
 			opts.Bugs = c.bug
 			opts.Reads = c.reads
+			opts.PreVote = !c.noPreVote
 			for _, seed := range c.seeds {
 				r := Run(seed, opts)
 				if r.OK() {
@@ -49,6 +52,7 @@ func TestCanarySeedsPassWithoutTheBug(t *testing.T) {
 	for _, c := range canaries {
 		opts := DefaultOptions()
 		opts.Reads = c.reads
+		opts.PreVote = !c.noPreVote
 		for _, seed := range c.seeds {
 			if r := Run(seed, opts); !r.OK() {
 				t.Errorf("seed %d fails on the real code: %s", seed, r.Violation)

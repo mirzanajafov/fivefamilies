@@ -24,6 +24,7 @@ type Snapshot struct {
 	Index uint64
 	Term  uint64
 	Data  []byte
+	Conf  ConfState
 }
 
 type HardState struct {
@@ -51,6 +52,7 @@ const (
 	MsgSnap
 	MsgReadIndex
 	MsgReadIndexResp
+	MsgTimeoutNow
 )
 
 var messageTypeNames = [...]string{
@@ -66,6 +68,7 @@ var messageTypeNames = [...]string{
 	MsgSnap:          "Snap",
 	MsgReadIndex:     "ReadIndex",
 	MsgReadIndexResp: "ReadIndexResp",
+	MsgTimeoutNow:    "TimeoutNow",
 }
 
 func (t MessageType) String() string {

@@ -20,9 +20,11 @@ const (
 	FaultBridge     FaultKind = "bridge"
 	FaultOneWay     FaultKind = "one-way"
 	FaultNetem      FaultKind = "netem"
+	FaultMember     FaultKind = "member"
+	FaultTransfer   FaultKind = "transfer"
 )
 
-var AllFaults = []FaultKind{FaultKill, FaultKillLeader, FaultPause, FaultIsolate, FaultSplit, FaultBridge, FaultOneWay, FaultNetem}
+var AllFaults = []FaultKind{FaultKill, FaultKillLeader, FaultPause, FaultIsolate, FaultSplit, FaultBridge, FaultOneWay, FaultNetem, FaultMember, FaultTransfer}
 
 type FaultRecord struct {
 	Kind     FaultKind     `json:"kind"`
@@ -36,6 +38,7 @@ type FaultRecord struct {
 
 type nemesis struct {
 	d      *Docker
+	adm    *cluster
 	rng    *rand.Rand
 	kinds  []FaultKind
 	mean   time.Duration
@@ -125,6 +128,26 @@ func (n *nemesis) inject(ctx context.Context, kind FaultKind) FaultRecord {
 		spec := fmt.Sprintf("delay %dms %dms loss %d%%", 5+n.rng.IntN(60), 1+n.rng.IntN(20), n.rng.IntN(10))
 		rec.Detail = fmt.Sprintf("netem %s on node %d", spec, order[0])
 		err = n.d.Netem(ctx, order[0], spec)
+	case FaultMember, FaultTransfer:
+		l := n.leader()
+		if l == 0 {
+			err = fmt.Errorf("no leader to ask")
+			break
+		}
+		target := order[0]
+		if target == l {
+			target = order[1]
+		}
+		rec.leader = target
+		if kind == FaultTransfer {
+			rec.duration = n.between(500*time.Millisecond, 2*time.Second)
+			rec.Detail = fmt.Sprintf("hand leadership from node %d to %d", l, target)
+			err = n.adm.transfer(ctx, l, target)
+			break
+		}
+		rec.duration = n.between(time.Second, 6*time.Second)
+		rec.Detail = fmt.Sprintf("remove node %d, then add it back as a learner and promote it", target)
+		err = n.adm.removeVoter(ctx, target)
 	}
 	if err != nil {
 		rec.Err = err.Error()
@@ -138,6 +161,13 @@ func (n *nemesis) clear(ctx context.Context, rec *FaultRecord) error {
 		return n.d.Start(ctx, rec.leader)
 	case FaultPause:
 		return n.d.Unpause(ctx, rec.leader)
+	case FaultMember:
+		if rec.leader == 0 {
+			return nil
+		}
+		return n.adm.restoreVoter(ctx, rec.leader)
+	case FaultTransfer:
+		return nil
 	}
 	return n.d.Heal(ctx)
 }

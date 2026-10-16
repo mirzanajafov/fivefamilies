@@ -14,6 +14,8 @@ message Entry {
 message SnapshotMeta {
   uint64 index = 1;
   uint64 term = 2;
+  repeated uint64 voters = 3;
+  repeated uint64 learners = 4;
 }
 
 message RaftMessage {

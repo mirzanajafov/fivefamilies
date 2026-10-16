@@ -18,7 +18,8 @@ const (
 )
 
 var (
-	magic      = [8]byte{'F', 'F', 'S', 'N', 'A', 'P', 0, 1}
+	magic      = [8]byte{'F', 'F', 'S', 'N', 'A', 'P', 0, 2}
+	magicV1    = [8]byte{'F', 'F', 'S', 'N', 'A', 'P', 0, 1}
 	castagnoli = crc32.MakeTable(crc32.Castagnoli)
 	ErrCorrupt = errors.New("snap: corrupt snapshot")
 )
@@ -37,13 +38,14 @@ func Save(fs vfs.FS, s raft.Snapshot) error {
 	if err != nil {
 		return err
 	}
+	body := append(appendConf(nil, s.Conf), s.Data...)
 	hdr := make([]byte, headerSize)
 	copy(hdr, magic[:])
 	binary.LittleEndian.PutUint64(hdr[8:], s.Index)
 	binary.LittleEndian.PutUint64(hdr[16:], s.Term)
-	binary.LittleEndian.PutUint64(hdr[24:], uint64(len(s.Data)))
-	binary.LittleEndian.PutUint32(hdr[32:], crc32.Checksum(s.Data, castagnoli))
-	if _, err := f.Write(append(hdr, s.Data...)); err != nil {
+	binary.LittleEndian.PutUint64(hdr[24:], uint64(len(body)))
+	binary.LittleEndian.PutUint32(hdr[32:], crc32.Checksum(body, castagnoli))
+	if _, err := f.Write(append(hdr, body...)); err != nil {
 		f.Close()
 		return err
 	}
@@ -60,25 +62,62 @@ func Save(fs vfs.FS, s raft.Snapshot) error {
 	return fs.SyncDir()
 }
 
-func Load(fs vfs.FS, index, term uint64) ([]byte, error) {
+func Load(fs vfs.FS, index, term uint64) (raft.Snapshot, error) {
 	b, err := fs.ReadFile(Name(index, term))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrCorrupt, err)
+		return raft.Snapshot{}, fmt.Errorf("%w: %v", ErrCorrupt, err)
 	}
-	if len(b) < headerSize || [8]byte(b[:8]) != magic {
-		return nil, fmt.Errorf("%w: bad header", ErrCorrupt)
+	if len(b) < headerSize || ([8]byte(b[:8]) != magic && [8]byte(b[:8]) != magicV1) {
+		return raft.Snapshot{}, fmt.Errorf("%w: bad header", ErrCorrupt)
 	}
 	if binary.LittleEndian.Uint64(b[8:]) != index || binary.LittleEndian.Uint64(b[16:]) != term {
-		return nil, fmt.Errorf("%w: the header names another snapshot", ErrCorrupt)
+		return raft.Snapshot{}, fmt.Errorf("%w: the header names another snapshot", ErrCorrupt)
 	}
-	data := b[headerSize:]
-	if binary.LittleEndian.Uint64(b[24:]) != uint64(len(data)) {
-		return nil, fmt.Errorf("%w: %d bytes, the header says %d", ErrCorrupt, len(data), binary.LittleEndian.Uint64(b[24:]))
+	body := b[headerSize:]
+	if binary.LittleEndian.Uint64(b[24:]) != uint64(len(body)) {
+		return raft.Snapshot{}, fmt.Errorf("%w: %d bytes, the header says %d", ErrCorrupt, len(body), binary.LittleEndian.Uint64(b[24:]))
 	}
-	if binary.LittleEndian.Uint32(b[32:]) != crc32.Checksum(data, castagnoli) {
-		return nil, fmt.Errorf("%w: checksum mismatch", ErrCorrupt)
+	if binary.LittleEndian.Uint32(b[32:]) != crc32.Checksum(body, castagnoli) {
+		return raft.Snapshot{}, fmt.Errorf("%w: checksum mismatch", ErrCorrupt)
 	}
-	return data, nil
+	if [8]byte(b[:8]) == magicV1 {
+		return raft.Snapshot{Index: index, Term: term, Data: body}, nil
+	}
+	conf, data, ok := readConf(body)
+	if !ok {
+		return raft.Snapshot{}, fmt.Errorf("%w: bad configuration", ErrCorrupt)
+	}
+	return raft.Snapshot{Index: index, Term: term, Data: data, Conf: conf}, nil
+}
+
+func appendConf(b []byte, c raft.ConfState) []byte {
+	for _, ids := range [][]raft.NodeID{c.Voters, c.Learners} {
+		b = binary.AppendUvarint(b, uint64(len(ids)))
+		for _, id := range ids {
+			b = binary.AppendUvarint(b, uint64(id))
+		}
+	}
+	return b
+}
+
+func readConf(b []byte) (raft.ConfState, []byte, bool) {
+	var lists [2][]raft.NodeID
+	for i := range lists {
+		n, k := binary.Uvarint(b)
+		if k <= 0 || n > uint64(len(b)) {
+			return raft.ConfState{}, nil, false
+		}
+		b = b[k:]
+		for range n {
+			id, k := binary.Uvarint(b)
+			if k <= 0 || id == 0 {
+				return raft.ConfState{}, nil, false
+			}
+			lists[i] = append(lists[i], raft.NodeID(id))
+			b = b[k:]
+		}
+	}
+	return raft.ConfState{Voters: lists[0], Learners: lists[1]}, b, true
 }
 
 func Clean(fs vfs.FS, keep raft.Snapshot) error {

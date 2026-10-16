@@ -85,6 +85,8 @@ type SnapshotMeta struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Index         uint64                 `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
 	Term          uint64                 `protobuf:"varint,2,opt,name=term,proto3" json:"term,omitempty"`
+	Voters        []uint64               `protobuf:"varint,3,rep,packed,name=voters,proto3" json:"voters,omitempty"`
+	Learners      []uint64               `protobuf:"varint,4,rep,packed,name=learners,proto3" json:"learners,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -130,6 +132,20 @@ func (x *SnapshotMeta) GetTerm() uint64 {
 		return x.Term
 	}
 	return 0
+}
+
+func (x *SnapshotMeta) GetVoters() []uint64 {
+	if x != nil {
+		return x.Voters
+	}
+	return nil
+}
+
+func (x *SnapshotMeta) GetLearners() []uint64 {
+	if x != nil {
+		return x.Learners
+	}
+	return nil
 }
 
 type RaftMessage struct {
@@ -401,10 +417,12 @@ const file_fivefamilies_v1_peer_proto_rawDesc = "" +
 	"\x04term\x18\x01 \x01(\x04R\x04term\x12\x14\n" +
 	"\x05index\x18\x02 \x01(\x04R\x05index\x12\x12\n" +
 	"\x04type\x18\x03 \x01(\rR\x04type\x12\x12\n" +
-	"\x04data\x18\x04 \x01(\fR\x04data\"8\n" +
+	"\x04data\x18\x04 \x01(\fR\x04data\"l\n" +
 	"\fSnapshotMeta\x12\x14\n" +
 	"\x05index\x18\x01 \x01(\x04R\x05index\x12\x12\n" +
-	"\x04term\x18\x02 \x01(\x04R\x04term\"\xd5\x02\n" +
+	"\x04term\x18\x02 \x01(\x04R\x04term\x12\x16\n" +
+	"\x06voters\x18\x03 \x03(\x04R\x06voters\x12\x1a\n" +
+	"\blearners\x18\x04 \x03(\x04R\blearners\"\xd5\x02\n" +
 	"\vRaftMessage\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\rR\x04type\x12\x12\n" +
 	"\x04from\x18\x02 \x01(\x04R\x04from\x12\x0e\n" +

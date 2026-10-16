@@ -170,7 +170,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	stopWork := make(chan struct{})
 	bg.Go(func() { w.run(stopWork) })
 	nctx, stopFaults := context.WithTimeout(ctx, opts.Duration)
-	nem := &nemesis{d: d, rng: rand.New(rand.NewPCG(opts.Seed, 7)), kinds: opts.Faults, mean: opts.FaultMean, start: start,
+	nem := &nemesis{d: d, adm: adm, rng: rand.New(rand.NewPCG(opts.Seed, 7)), kinds: opts.Faults, mean: opts.FaultMean, start: start,
 		leader: func() int { mu.Lock(); defer mu.Unlock(); return current }}
 	if len(opts.Faults) > 0 {
 		nem.run(nctx)
