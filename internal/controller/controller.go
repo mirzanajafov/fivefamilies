@@ -210,6 +210,13 @@ func (c *Controller) Handler() http.Handler {
 	mux.HandleFunc("GET /api/snapshot", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, c.Snapshot()) })
 	mux.HandleFunc("GET /api/events", c.serveEvents)
 	mux.HandleFunc("POST /api/chaos", c.serveChaos)
+	mux.HandleFunc("GET /api/admin", func(w http.ResponseWriter, r *http.Request) {
+		if !c.admin(r) {
+			writeJSON(w, http.StatusForbidden, map[string]bool{"admin": false})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"admin": true})
+	})
 	mux.HandleFunc("POST /api/heal", func(w http.ResponseWriter, r *http.Request) {
 		if !c.admin(r) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "healing early needs the admin token"})

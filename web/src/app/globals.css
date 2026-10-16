@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+
+:root {
+  --bg: #f4efe6;
+  --panel: #fffaf2;
+  --ink: #1d1a17;
+  --muted: #6e6458;
+  --line: #e2d8c8;
+  --gold: #a87b16;
+  --gold-soft: #f1e2bb;
+  --blood: #a3242c;
+  --ok: #2f7d4f;
+  --seat: #fffdf8;
+  --silent: #d8d1c6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12100e;
+    --panel: #1b1815;
+    --ink: #efe7da;
+    --muted: #a39a8c;
+    --line: #2f2a24;
+    --gold: #d9ac43;
+    --gold-soft: #3a2f17;
+    --blood: #e0515a;
+    --ok: #5cc28a;
+    --seat: #24201b;
+    --silent: #3a352f;
+  }
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.serif {
+  font-family: ui-serif, Georgia, 'Times New Roman', serif;
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.flow {
+  stroke-dasharray: 4 8;
+  animation: flow 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow {
+    animation: none;
+  }
+}

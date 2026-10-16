@@ -292,3 +292,19 @@ func TestAWindowWithAStaleReadIsCaught(t *testing.T) {
 		t.Fatal("the unchecked window does not say why")
 	}
 }
+
+func TestTheAdminCheck(t *testing.T) {
+	c := &Controller{cfg: Config{AdminToken: "admin-token"}}
+	h := c.Handler()
+	for token, want := range map[string]int{"": http.StatusForbidden, "Bearer nope": http.StatusForbidden, "Bearer admin-token": http.StatusOK} {
+		req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+		if token != "" {
+			req.Header.Set("Authorization", token)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != want {
+			t.Fatalf("%q: %d, want %d", token, w.Code, want)
+		}
+	}
+}
