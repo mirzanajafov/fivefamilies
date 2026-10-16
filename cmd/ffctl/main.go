@@ -20,13 +20,14 @@ import (
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: ffctl [-endpoints a,b,c] [-read index|lease|log] command
-  put KEY VALUE
+  put KEY VALUE [LEASE]
   get KEY
   del KEY
   cas KEY OLD NEW        (OLD "-" means the key must not exist)
   range PREFIX
   status
   member add|promote|remove ID
+  lease grant TTL | revoke ID | keepalive ID | ttl ID
   transfer ID`)
 	os.Exit(2)
 }
@@ -61,10 +62,16 @@ func main() {
 	defer c.Close()
 	mode := map[string]client.ReadMode{"index": client.ReadIndex, "lease": client.ReadLease, "log": client.ReadLog}[*read]
 	switch {
-	case args[0] == "put" && len(args) == 3:
-		rev, err := c.Put(ctx, args[1], []byte(args[2]))
+	case args[0] == "put" && (len(args) == 3 || len(args) == 4):
+		var opts []client.WriteOption
+		if len(args) == 4 {
+			opts = append(opts, client.WithLease(nodeID(args[3])))
+		}
+		rev, err := c.Put(ctx, args[1], []byte(args[2]), opts...)
 		check(err)
 		fmt.Println("rev", rev)
+	case args[0] == "lease" && len(args) == 3:
+		lease(ctx, c, args[1], args[2])
 	case args[0] == "get" && len(args) == 2:
 		kv, found, err := c.Get(ctx, args[1], mode)
 		check(err)
@@ -172,6 +179,30 @@ func transfer(ctx context.Context, addrs []string, id string) {
 		}
 		return err
 	})
+}
+
+func lease(ctx context.Context, c *client.Client, op, arg string) {
+	switch op {
+	case "grant":
+		ttl, err := time.ParseDuration(arg)
+		check(err)
+		l, err := c.Grant(ctx, ttl)
+		check(err)
+		fmt.Println("lease", l.ID, "ttl", l.TTL)
+	case "revoke":
+		check(c.Revoke(ctx, nodeID(arg)))
+		fmt.Println("revoked")
+	case "keepalive":
+		ttl, err := c.KeepAliveOnce(ctx, nodeID(arg))
+		check(err)
+		fmt.Println("kept alive for", ttl)
+	case "ttl":
+		remaining, ttl, keys, err := c.TimeToLive(ctx, nodeID(arg))
+		check(err)
+		fmt.Printf("%v left of %v, %d keys\n", remaining.Round(time.Millisecond), ttl, keys)
+	default:
+		usage()
+	}
 }
 
 func check(err error) {

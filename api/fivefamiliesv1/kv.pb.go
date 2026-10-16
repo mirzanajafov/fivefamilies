@@ -68,6 +68,7 @@ type KeyValue struct {
 	CreateRev     uint64                 `protobuf:"varint,3,opt,name=create_rev,json=createRev,proto3" json:"create_rev,omitempty"`
 	ModRev        uint64                 `protobuf:"varint,4,opt,name=mod_rev,json=modRev,proto3" json:"mod_rev,omitempty"`
 	Version       uint64                 `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
+	Lease         uint64                 `protobuf:"varint,6,opt,name=lease,proto3" json:"lease,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -132,6 +133,13 @@ func (x *KeyValue) GetModRev() uint64 {
 func (x *KeyValue) GetVersion() uint64 {
 	if x != nil {
 		return x.Version
+	}
+	return 0
+}
+
+func (x *KeyValue) GetLease() uint64 {
+	if x != nil {
+		return x.Lease
 	}
 	return 0
 }
@@ -432,6 +440,7 @@ type PutRequest struct {
 	Seq           uint64                 `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
 	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
 	Value         []byte                 `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
+	Lease         uint64                 `protobuf:"varint,5,opt,name=lease,proto3" json:"lease,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -491,6 +500,13 @@ func (x *PutRequest) GetValue() []byte {
 		return x.Value
 	}
 	return nil
+}
+
+func (x *PutRequest) GetLease() uint64 {
+	if x != nil {
+		return x.Lease
+	}
+	return 0
 }
 
 type PutResponse struct {
@@ -670,6 +686,7 @@ type CompareAndSwapRequest struct {
 	Value  []byte                 `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
 
 	Expect        isCompareAndSwapRequest_Expect `protobuf_oneof:"expect"`
+	Lease         uint64                         `protobuf:"varint,8,opt,name=lease,proto3" json:"lease,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -761,6 +778,13 @@ func (x *CompareAndSwapRequest) GetModRev() uint64 {
 		if x, ok := x.Expect.(*CompareAndSwapRequest_ModRev); ok {
 			return x.ModRev
 		}
+	}
+	return 0
+}
+
+func (x *CompareAndSwapRequest) GetLease() uint64 {
+	if x != nil {
+		return x.Lease
 	}
 	return 0
 }
@@ -858,14 +882,15 @@ var File_fivefamilies_v1_kv_proto protoreflect.FileDescriptor
 
 const file_fivefamilies_v1_kv_proto_rawDesc = "" +
 	"\n" +
-	"\x18fivefamilies/v1/kv.proto\x12\x0ffivefamilies.v1\"\x84\x01\n" +
+	"\x18fivefamilies/v1/kv.proto\x12\x0ffivefamilies.v1\"\x9a\x01\n" +
 	"\bKeyValue\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value\x12\x1d\n" +
 	"\n" +
 	"create_rev\x18\x03 \x01(\x04R\tcreateRev\x12\x17\n" +
 	"\amod_rev\x18\x04 \x01(\x04R\x06modRev\x12\x18\n" +
-	"\aversion\x18\x05 \x01(\x04R\aversion\"\x11\n" +
+	"\aversion\x18\x05 \x01(\x04R\aversion\x12\x14\n" +
+	"\x05lease\x18\x06 \x01(\x04R\x05lease\"\x11\n" +
 	"\x0fRegisterRequest\"*\n" +
 	"\x10RegisterResponse\x12\x16\n" +
 	"\x06client\x18\x01 \x01(\x04R\x06client\"M\n" +
@@ -882,13 +907,14 @@ const file_fivefamilies_v1_kv_proto_rawDesc = "" +
 	"\x05limit\x18\x02 \x01(\x04R\x05limit\"N\n" +
 	"\rRangeResponse\x12+\n" +
 	"\x03kvs\x18\x01 \x03(\v2\x19.fivefamilies.v1.KeyValueR\x03kvs\x12\x10\n" +
-	"\x03rev\x18\x02 \x01(\x04R\x03rev\"^\n" +
+	"\x03rev\x18\x02 \x01(\x04R\x03rev\"t\n" +
 	"\n" +
 	"PutRequest\x12\x16\n" +
 	"\x06client\x18\x01 \x01(\x04R\x06client\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x10\n" +
 	"\x03key\x18\x03 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x04 \x01(\fR\x05value\"i\n" +
+	"\x05value\x18\x04 \x01(\fR\x05value\x12\x14\n" +
+	"\x05lease\x18\x05 \x01(\x04R\x05lease\"i\n" +
 	"\vPutResponse\x12\x10\n" +
 	"\x03rev\x18\x01 \x01(\x04R\x03rev\x12\x19\n" +
 	"\bhad_prev\x18\x02 \x01(\bR\ahadPrev\x12-\n" +
@@ -899,7 +925,7 @@ const file_fivefamilies_v1_kv_proto_rawDesc = "" +
 	"\x03key\x18\x03 \x01(\tR\x03key\"<\n" +
 	"\x0eDeleteResponse\x12\x10\n" +
 	"\x03rev\x18\x01 \x01(\x04R\x03rev\x12\x18\n" +
-	"\adeleted\x18\x02 \x01(\bR\adeleted\"\xc7\x01\n" +
+	"\adeleted\x18\x02 \x01(\bR\adeleted\"\xdd\x01\n" +
 	"\x15CompareAndSwapRequest\x12\x16\n" +
 	"\x06client\x18\x01 \x01(\x04R\x06client\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x10\n" +
@@ -907,7 +933,8 @@ const file_fivefamilies_v1_kv_proto_rawDesc = "" +
 	"\x05value\x18\x04 \x01(\fR\x05value\x12\x1b\n" +
 	"\bvalue_is\x18\x05 \x01(\fH\x00R\avalueIs\x12\x1a\n" +
 	"\amissing\x18\x06 \x01(\bH\x00R\amissing\x12\x19\n" +
-	"\amod_rev\x18\a \x01(\x04H\x00R\x06modRevB\b\n" +
+	"\amod_rev\x18\a \x01(\x04H\x00R\x06modRev\x12\x14\n" +
+	"\x05lease\x18\b \x01(\x04R\x05leaseB\b\n" +
 	"\x06expect\"\x8f\x01\n" +
 	"\x16CompareAndSwapResponse\x12\x10\n" +
 	"\x03rev\x18\x01 \x01(\x04R\x03rev\x12\x18\n" +

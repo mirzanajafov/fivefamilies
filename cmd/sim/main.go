@@ -29,14 +29,15 @@ func main() {
 	nodes := flag.Int("nodes", 0, "cluster size")
 	noPreVote := flag.Bool("no-prevote", false, "run elections without PreVote")
 	noMembers := flag.Bool("no-membership", false, "never change membership or hand over leadership")
+	noLeases := flag.Bool("no-leases", false, "run no lease holders")
 	noCatchUp := flag.Bool("no-catchup", false, "do not replay the ticks a paused node missed, to show what a lease measured in ticks does under pauses")
 	reads := flag.String("reads", "", "force one read path for every seed: log, index, lease or follower")
 	skew := flag.Float64("clock-skew", 0, "make one node's clock run this much faster (0.5 = 50%), to break the lease assumption")
 	checkTimeout := flag.Duration("check-timeout", 0, "time limit for one linearizability check")
-	bugs := flag.String("bug", "", "planted bugs to switch on, comma separated: figure8, staleterm, prevterm, anyvote, nofsync, followerread, earlyconf")
+	bugs := flag.String("bug", "", "planted bugs to switch on, comma separated: figure8, staleterm, prevterm, anyvote, nofsync, followerread, earlyconf, localkeepalive")
 	mute := flag.Bool("mute-safety", false, "record protocol invariant violations without stopping, to see what the other checks catch")
 	first := flag.Bool("first", false, "stop handing out seeds after the first failure and report the lowest failing seed")
-	catch := flag.String("catch", "", "count a seed as failing only when this check fires (safety, liveness, linearizability, state, client, panic)")
+	catch := flag.String("catch", "", "count a seed as failing only when this check fires (safety, liveness, linearizability, lease, state, client, panic)")
 	flag.Parse()
 
 	opts := sim.DefaultOptions()
@@ -54,6 +55,7 @@ func main() {
 	opts.NoCatchUp = *noCatchUp
 	opts.PreVote = !*noPreVote
 	opts.Membership = !*noMembers
+	opts.Leases = !*noLeases
 	if *checkTimeout > 0 {
 		opts.CheckTimeout = *checkTimeout
 	}
@@ -170,7 +172,7 @@ func printResult(r sim.Result) {
 		status = fmt.Sprintf("FAIL (%s) at %v: %s", r.Category, r.At, r.Violation)
 	}
 	fmt.Printf("seed %d: %s\n  swarm: %s\n  stats: %+v\n  check: %s in %v\n", r.Seed, status, r.Swarm, r.Stats, r.Check, r.CheckTook.Round(time.Millisecond))
-	for _, cat := range []sim.Category{sim.CatSafety, sim.CatLiveness, sim.CatState, sim.CatLinearizability, sim.CatClient, sim.CatPanic} {
+	for _, cat := range []sim.Category{sim.CatSafety, sim.CatLiveness, sim.CatState, sim.CatLinearizability, sim.CatLease, sim.CatClient, sim.CatPanic} {
 		if msg, ok := r.Detected[cat]; ok {
 			fmt.Printf("  %s: %s\n", cat, msg)
 		}
@@ -207,5 +209,9 @@ func addStats(a, b sim.Stats) sim.Stats {
 	a.ConfChanges += b.ConfChanges
 	a.ConfCommitted += b.ConfCommitted
 	a.Transfers += b.Transfers
+	a.LeaseGrants += b.LeaseGrants
+	a.KeepAlives += b.KeepAlives
+	a.LeasesLost += b.LeasesLost
+	a.LeaseExpiries += b.LeaseExpiries
 	return a
 }

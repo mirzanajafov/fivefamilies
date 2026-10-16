@@ -34,6 +34,7 @@ type Options struct {
 	Reads         string
 	NoCatchUp     bool
 	Membership    bool
+	Leases        bool
 	Trace         io.Writer
 }
 
@@ -51,6 +52,7 @@ func DefaultOptions() Options {
 		CheckQuorum:   true,
 		LeaseTicks:    12,
 		Membership:    true,
+		Leases:        true,
 	}
 }
 
@@ -84,6 +86,10 @@ type Stats struct {
 	ConfChanges    int
 	ConfCommitted  int
 	Transfers      int
+	LeaseGrants    int
+	KeepAlives     int
+	LeasesLost     int
+	LeaseExpiries  int
 }
 
 type Result struct {
@@ -137,6 +143,9 @@ type Sim struct {
 	rng     *rand.Rand
 	mrng    *rand.Rand
 	ms      memberSwarm
+	lrng    *rand.Rand
+	ls      leaseSwarm
+	leases  map[uint64]*leaseTrack
 	now     time.Duration
 	seq     uint64
 	queue   eventQueue
@@ -203,6 +212,12 @@ func newSim(seed uint64, opts Options) *Sim {
 		s.voters = append(s.voters, raft.NodeID(i+1))
 	}
 	s.chk.conf = raft.ConfState{Voters: s.voters}
+	s.lrng = rand.New(rand.NewPCG(seed^0x6c6561736573, seed))
+	s.leases = map[uint64]*leaseTrack{}
+	if opts.Leases {
+		s.ls = newLeaseSwarm(s.lrng, time.Duration(opts.ElectionTick)*opts.Tick)
+	}
+	s.chk.onExpire = s.leaseExpired
 	skewed := -1
 	if opts.ClockSkew != 0 {
 		skewed = rng.IntN(opts.Nodes)
@@ -231,7 +246,7 @@ func (s *Sim) result() Result {
 	}
 	return Result{
 		Seed:      s.seed,
-		Swarm:     s.sw.String() + s.ms.String(),
+		Swarm:     s.sw.String() + s.ms.String() + s.ls.String(),
 		Violation: s.chk.failure,
 		Category:  s.chk.category,
 		Muted:     s.chk.muted,
@@ -271,12 +286,13 @@ func (s *Sim) start() {
 	for _, sn := range s.nodes {
 		s.boot(sn)
 	}
-	s.tracef("swarm: %s%s", s.sw, s.ms)
+	s.tracef("swarm: %s%s%s", s.sw, s.ms, s.ls)
 	if len(s.nodes) < 3 {
 		s.sw.partitionMean = 0
 	}
 	s.startFaults()
 	s.startMembership()
+	s.startLeaseHolders()
 	s.startClients()
 	if s.sw.proposalRate > 0 {
 		s.after(exponential(s.rng, time.Duration(float64(time.Second)/s.sw.proposalRate)), s.proposeLoop)
@@ -316,7 +332,7 @@ func (s *Sim) boot(sn *simNode) {
 			return
 		}
 	}
-	sn.n = node.New(r, nodeEnv{s: s, sn: sn}, sn.sm, node.Config{SnapshotEvery: s.sw.snapEvery, Retain: s.sw.retain})
+	sn.n = node.New(r, nodeEnv{s: s, sn: sn}, sn.sm, node.Config{SnapshotEvery: s.sw.snapEvery, Retain: s.sw.retain, Tick: s.opts.Tick})
 	s.chk.restarted(sn.idx)
 	sn.n.Process()
 	s.observe(sn)
@@ -410,6 +426,15 @@ func (s *Sim) dispatch(e event) {
 			return
 		}
 		s.handleRequest(sn, e.req)
+	case evNodeCall:
+		if sn.n == nil {
+			return
+		}
+		if sn.paused {
+			sn.backlog = append(sn.backlog, e)
+			return
+		}
+		e.on(sn)
 	}
 	sn.n.Process()
 	s.observe(sn)
@@ -656,6 +681,9 @@ func (s *Sim) finalChecks() {
 		return
 	}
 	s.checkLiveness()
+	if !s.chk.failed() {
+		s.checkLeasesExpired()
+	}
 	s.checkStates()
 	if s.chk.failed() && !s.opts.MuteSafety {
 		return

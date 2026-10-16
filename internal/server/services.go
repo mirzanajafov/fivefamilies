@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -59,6 +60,10 @@ func outcome(res kv.Result) error {
 		return status.Error(codes.FailedPrecondition, "session expired")
 	case kv.ErrStaleSequence:
 		return status.Error(codes.FailedPrecondition, "stale sequence number")
+	case kv.ErrLeaseNotFound:
+		return status.Error(codes.NotFound, "lease not found")
+	case kv.ErrTooManyLeases:
+		return status.Error(codes.ResourceExhausted, "too many leases")
 	}
 	return status.Error(codes.InvalidArgument, res.Code.String())
 }
@@ -72,7 +77,7 @@ func (k *kvService) submit(ctx context.Context, cmd kv.Command) (kv.Result, erro
 }
 
 func toKV(kvp kv.KeyValue) *pb.KeyValue {
-	return &pb.KeyValue{Key: kvp.Key, Value: kvp.Value, CreateRev: kvp.CreateRev, ModRev: kvp.ModRev, Version: kvp.Version}
+	return &pb.KeyValue{Key: kvp.Key, Value: kvp.Value, CreateRev: kvp.CreateRev, ModRev: kvp.ModRev, Version: kvp.Version, Lease: kvp.Lease}
 }
 
 func (k *kvService) Register(ctx context.Context, _ *pb.RegisterRequest) (*pb.RegisterResponse, error) {
@@ -117,7 +122,7 @@ func (k *kvService) Range(ctx context.Context, req *pb.RangeRequest) (*pb.RangeR
 }
 
 func (k *kvService) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
-	res, err := k.submit(ctx, kv.Command{Op: kv.OpPut, Client: req.GetClient(), Seq: req.GetSeq(), Key: req.GetKey(), Value: req.GetValue()})
+	res, err := k.submit(ctx, kv.Command{Op: kv.OpPut, Client: req.GetClient(), Seq: req.GetSeq(), Key: req.GetKey(), Value: req.GetValue(), Lease: req.GetLease()})
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +142,7 @@ func (k *kvService) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.Dele
 }
 
 func (k *kvService) CompareAndSwap(ctx context.Context, req *pb.CompareAndSwapRequest) (*pb.CompareAndSwapResponse, error) {
-	cmd := kv.Command{Op: kv.OpCAS, Client: req.GetClient(), Seq: req.GetSeq(), Key: req.GetKey(), Value: req.GetValue()}
+	cmd := kv.Command{Op: kv.OpCAS, Client: req.GetClient(), Seq: req.GetSeq(), Key: req.GetKey(), Value: req.GetValue(), Lease: req.GetLease()}
 	switch e := req.GetExpect().(type) {
 	case *pb.CompareAndSwapRequest_ValueIs:
 		cmd.Expect = e.ValueIs
@@ -200,4 +205,60 @@ func (a *adminService) TransferLeadership(ctx context.Context, req *pb.TransferL
 	}
 	st := a.s.Status()
 	return &pb.TransferLeadershipResponse{Leader: st.GetLeader(), Term: st.GetTerm()}, nil
+}
+
+type leaseService struct {
+	pb.UnimplementedLeaseServer
+	s *Server
+}
+
+const maxLeaseTTL = 24 * time.Hour
+
+func (l *leaseService) Grant(ctx context.Context, req *pb.LeaseGrantRequest) (*pb.LeaseGrantResponse, error) {
+	ttl := time.Duration(req.GetTtlMs()) * time.Millisecond
+	if ttl <= 0 || ttl > maxLeaseTTL {
+		return nil, status.Errorf(codes.InvalidArgument, "a lease needs a TTL between 1 ms and %v", maxLeaseTTL)
+	}
+	ttl = max(ttl, l.s.MinLeaseTTL())
+	res, err := l.s.Submit(ctx, kv.Command{Op: kv.OpLeaseGrant, Client: req.GetClient(), Seq: req.GetSeq(), TTL: uint64(ttl / time.Millisecond)})
+	if err != nil {
+		return nil, fail(ctx, l.s, err)
+	}
+	if err := outcome(res); err != nil {
+		return nil, err
+	}
+	return &pb.LeaseGrantResponse{Id: res.Lease, TtlMs: res.TTL, Rev: res.Rev}, nil
+}
+
+func (l *leaseService) Revoke(ctx context.Context, req *pb.LeaseRevokeRequest) (*pb.LeaseRevokeResponse, error) {
+	res, err := l.s.Submit(ctx, kv.Command{Op: kv.OpLeaseRevoke, Client: req.GetClient(), Seq: req.GetSeq(), Lease: req.GetId()})
+	if err != nil {
+		return nil, fail(ctx, l.s, err)
+	}
+	if err := outcome(res); err != nil {
+		return nil, err
+	}
+	return &pb.LeaseRevokeResponse{Rev: res.Rev}, nil
+}
+
+func (l *leaseService) KeepAlive(ctx context.Context, req *pb.LeaseKeepAliveRequest) (*pb.LeaseKeepAliveResponse, error) {
+	res, err := l.s.KeepAlive(ctx, req.GetId())
+	if err != nil {
+		return nil, fail(ctx, l.s, err)
+	}
+	if err := outcome(res); err != nil {
+		return nil, err
+	}
+	return &pb.LeaseKeepAliveResponse{Id: res.Lease, TtlMs: res.TTL}, nil
+}
+
+func (l *leaseService) TimeToLive(ctx context.Context, req *pb.LeaseTimeToLiveRequest) (*pb.LeaseTimeToLiveResponse, error) {
+	remaining, info, err := l.s.TimeToLive(ctx, req.GetId())
+	if errors.Is(err, errLeaseNotFound) {
+		return nil, status.Error(codes.NotFound, "lease not found")
+	}
+	if err != nil {
+		return nil, fail(ctx, l.s, err)
+	}
+	return &pb.LeaseTimeToLiveResponse{Id: info.ID, TtlMs: info.TTL, RemainingMs: uint64(remaining / time.Millisecond), Keys: uint64(info.Keys)}, nil
 }

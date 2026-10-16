@@ -20,6 +20,8 @@ const (
 	ErrSessionExpired
 	ErrStaleSequence
 	ErrBadCommand
+	ErrLeaseNotFound
+	ErrTooManyLeases
 )
 
 func (c Code) String() string {
@@ -32,6 +34,10 @@ func (c Code) String() string {
 		return "stale sequence"
 	case ErrBadCommand:
 		return "bad command"
+	case ErrLeaseNotFound:
+		return "lease not found"
+	case ErrTooManyLeases:
+		return "too many leases"
 	}
 	return fmt.Sprintf("Code(%d)", uint8(c))
 }
@@ -42,6 +48,7 @@ type KeyValue struct {
 	CreateRev uint64
 	ModRev    uint64
 	Version   uint64
+	Lease     uint64
 }
 
 type Result struct {
@@ -52,6 +59,19 @@ type Result struct {
 	Ok     bool
 	KV     KeyValue
 	Range  []KeyValue
+	Lease  uint64
+	TTL    uint64
+}
+
+type lease struct {
+	ttl  uint64
+	keys map[string]struct{}
+}
+
+type LeaseInfo struct {
+	ID   uint64
+	TTL  uint64
+	Keys int
 }
 
 type session struct {
@@ -60,13 +80,17 @@ type session struct {
 	last   uint64
 }
 
-const DefaultMaxSessions = 10000
+const (
+	DefaultMaxSessions = 10000
+	MaxLeases          = 10000
+)
 
 type Store struct {
 	tree        *btree.BTreeG[KeyValue]
 	rev         uint64
 	sessions    map[uint64]*session
 	maxSessions int
+	leases      map[uint64]*lease
 }
 
 func lessKey(a, b KeyValue) bool {
@@ -81,7 +105,35 @@ func NewStore(maxSessions int) *Store {
 		tree:        btree.NewG(32, lessKey),
 		sessions:    map[uint64]*session{},
 		maxSessions: maxSessions,
+		leases:      map[uint64]*lease{},
 	}
+}
+
+func (s *Store) Lease(id uint64) (LeaseInfo, bool) {
+	l, ok := s.leases[id]
+	if !ok {
+		return LeaseInfo{}, false
+	}
+	return LeaseInfo{ID: id, TTL: l.ttl, Keys: len(l.keys)}, true
+}
+
+func (s *Store) Leases() []LeaseInfo {
+	out := make([]LeaseInfo, 0, len(s.leases))
+	for id, l := range s.leases {
+		out = append(out, LeaseInfo{ID: id, TTL: l.ttl, Keys: len(l.keys)})
+	}
+	slices.SortFunc(out, func(a, b LeaseInfo) int { return cmpUint(a.ID, b.ID) })
+	return out
+}
+
+func cmpUint(a, b uint64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
 }
 
 func (s *Store) Rev() uint64 {
@@ -115,6 +167,9 @@ func (s *Store) Apply(e raft.Entry) Result {
 	if cmd.Op == OpRegister {
 		s.register(e.Index)
 		return Result{Rev: e.Index, Client: e.Index}
+	}
+	if cmd.Op == OpLeaseExpire {
+		return s.revoke(cmd.Lease, e.Index)
 	}
 	if cmd.Client == 0 {
 		return s.exec(cmd, e.Index)
@@ -150,6 +205,11 @@ func (s *Store) register(index uint64) {
 }
 
 func (s *Store) exec(cmd Command, rev uint64) Result {
+	if cmd.writes() && cmd.Lease != 0 {
+		if _, ok := s.leases[cmd.Lease]; !ok {
+			return Result{Code: ErrLeaseNotFound, Rev: rev}
+		}
+	}
 	cur, found := s.tree.Get(KeyValue{Key: cmd.Key})
 	switch cmd.Op {
 	case OpGet:
@@ -157,36 +217,83 @@ func (s *Store) exec(cmd Command, rev uint64) Result {
 	case OpRange:
 		return Result{Rev: rev, Range: s.rangePrefix(cmd.Key, cmd.Limit), Ok: true}
 	case OpPut:
-		s.put(cmd.Key, cmd.Value, rev)
+		s.put(cmd.Key, cmd.Value, cmd.Lease, rev)
 		return Result{Rev: rev, Ok: true, Found: found, KV: cur}
 	case OpDelete:
 		if found {
-			s.tree.Delete(cur)
+			s.remove(cur)
 		}
 		return Result{Rev: rev, Ok: found, Found: found, KV: cur}
 	case OpCAS:
 		match := (cmd.ExpectMissing && !found) || (!cmd.ExpectMissing && found && bytes.Equal(cur.Value, cmd.Expect))
 		if match {
-			s.put(cmd.Key, cmd.Value, rev)
+			s.put(cmd.Key, cmd.Value, cmd.Lease, rev)
 		}
 		return Result{Rev: rev, Ok: match, Found: found, KV: cur}
 	case OpCASRev:
 		match := (cmd.ExpectRev == 0 && !found) || (found && cur.ModRev == cmd.ExpectRev)
 		if match {
-			s.put(cmd.Key, cmd.Value, rev)
+			s.put(cmd.Key, cmd.Value, cmd.Lease, rev)
 		}
 		return Result{Rev: rev, Ok: match, Found: found, KV: cur}
+	case OpLeaseGrant:
+		switch {
+		case cmd.TTL == 0:
+			return Result{Code: ErrBadCommand, Rev: rev}
+		case len(s.leases) >= MaxLeases:
+			return Result{Code: ErrTooManyLeases, Rev: rev}
+		}
+		s.leases[rev] = &lease{ttl: cmd.TTL, keys: map[string]struct{}{}}
+		return Result{Rev: rev, Ok: true, Lease: rev, TTL: cmd.TTL}
+	case OpLeaseRevoke:
+		return s.revoke(cmd.Lease, rev)
 	}
 	return Result{Code: ErrBadCommand, Rev: rev}
 }
 
-func (s *Store) put(key string, value []byte, rev uint64) {
-	kv := KeyValue{Key: key, Value: value, CreateRev: rev, ModRev: rev, Version: 1}
+func (s *Store) put(key string, value []byte, leaseID, rev uint64) {
+	kv := KeyValue{Key: key, Value: value, CreateRev: rev, ModRev: rev, Version: 1, Lease: leaseID}
 	if cur, ok := s.tree.Get(KeyValue{Key: key}); ok {
 		kv.CreateRev = cur.CreateRev
 		kv.Version = cur.Version + 1
+		s.detach(cur)
+	}
+	if leaseID != 0 {
+		s.leases[leaseID].keys[key] = struct{}{}
 	}
 	s.tree.ReplaceOrInsert(kv)
+}
+
+func (s *Store) remove(kv KeyValue) {
+	s.detach(kv)
+	s.tree.Delete(kv)
+}
+
+func (s *Store) detach(kv KeyValue) {
+	if l, ok := s.leases[kv.Lease]; ok {
+		delete(l.keys, kv.Key)
+	}
+}
+
+func (s *Store) revoke(id, rev uint64) Result {
+	l, ok := s.leases[id]
+	if !ok {
+		return Result{Code: ErrLeaseNotFound, Rev: rev}
+	}
+	keys := make([]string, 0, len(l.keys))
+	for k := range l.keys {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		s.tree.Delete(KeyValue{Key: k})
+	}
+	delete(s.leases, id)
+	return Result{Rev: rev, Ok: true, Lease: id, TTL: l.ttl}
+}
+
+func (s *Store) Range(prefix string, limit uint64) []KeyValue {
+	return s.rangePrefix(prefix, limit)
 }
 
 func (s *Store) rangePrefix(prefix string, limit uint64) []KeyValue {
@@ -213,9 +320,16 @@ func (s *Store) Hash() uint64 {
 		buf = binary.AppendUvarint(buf, kv.CreateRev)
 		buf = binary.AppendUvarint(buf, kv.ModRev)
 		buf = binary.AppendUvarint(buf, kv.Version)
+		buf = binary.AppendUvarint(buf, kv.Lease)
 		h.Write(buf)
 		return true
 	})
+	for _, l := range s.Leases() {
+		buf = binary.AppendUvarint(buf[:0], l.ID)
+		buf = binary.AppendUvarint(buf, l.TTL)
+		buf = binary.AppendUvarint(buf, uint64(l.Keys))
+		h.Write(buf)
+	}
 	ids := make([]uint64, 0, len(s.sessions))
 	for id := range s.sessions {
 		ids = append(ids, id)

@@ -16,16 +16,22 @@ const (
 	OpDelete
 	OpCAS
 	OpCASRev
+	OpLeaseGrant
+	OpLeaseRevoke
+	OpLeaseExpire
 )
 
 var opNames = [...]string{
-	OpRegister: "register",
-	OpGet:      "get",
-	OpRange:    "range",
-	OpPut:      "put",
-	OpDelete:   "delete",
-	OpCAS:      "cas",
-	OpCASRev:   "casrev",
+	OpRegister:    "register",
+	OpGet:         "get",
+	OpRange:       "range",
+	OpPut:         "put",
+	OpDelete:      "delete",
+	OpCAS:         "cas",
+	OpCASRev:      "casrev",
+	OpLeaseGrant:  "lease-grant",
+	OpLeaseRevoke: "lease-revoke",
+	OpLeaseExpire: "lease-expire",
 }
 
 func (o Op) String() string {
@@ -45,6 +51,8 @@ type Command struct {
 	ExpectMissing bool
 	ExpectRev     uint64
 	Limit         uint64
+	Lease         uint64
+	TTL           uint64
 }
 
 var ErrMalformed = errors.New("kv: malformed command")
@@ -71,8 +79,19 @@ func Encode(c Command) []byte {
 		b = binary.AppendUvarint(b, c.ExpectRev)
 	case OpRange:
 		b = binary.AppendUvarint(b, c.Limit)
+	case OpLeaseGrant:
+		b = binary.AppendUvarint(b, c.TTL)
+	case OpLeaseRevoke, OpLeaseExpire:
+		b = binary.AppendUvarint(b, c.Lease)
+	}
+	if c.Lease != 0 && c.writes() {
+		b = binary.AppendUvarint(b, c.Lease)
 	}
 	return b
+}
+
+func (c Command) writes() bool {
+	return c.Op == OpPut || c.Op == OpCAS || c.Op == OpCASRev
 }
 
 func appendBytes(b, v []byte) []byte {
@@ -145,8 +164,17 @@ func Decode(data []byte) (Command, error) {
 		c.ExpectRev = d.uvarint()
 	case OpRange:
 		c.Limit = d.uvarint()
+	case OpLeaseGrant:
+		c.TTL = d.uvarint()
+	case OpLeaseRevoke, OpLeaseExpire:
+		c.Lease = d.uvarint()
 	default:
 		d.err = true
+	}
+	if c.writes() && len(d.b) > 0 {
+		if c.Lease = d.uvarint(); c.Lease == 0 {
+			d.err = true
+		}
 	}
 	if d.err || len(d.b) != 0 {
 		return Command{}, ErrMalformed

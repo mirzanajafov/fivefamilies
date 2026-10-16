@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
@@ -34,11 +35,14 @@ type StateMachine interface {
 	Get(key string) kv.Result
 	Snapshot() []byte
 	Restore(index uint64, data []byte) error
+	Lease(id uint64) (kv.LeaseInfo, bool)
+	Leases() []kv.LeaseInfo
 }
 
 type Config struct {
 	SnapshotEvery uint64
 	Retain        uint64
+	Tick          time.Duration
 }
 
 var (
@@ -70,16 +74,22 @@ type waiter struct {
 }
 
 type readWaiter struct {
-	key  string
-	done Done
-	term uint64
-	tick uint64
+	serve func() (kv.Result, error)
+	done  Done
+	term  uint64
+	tick  uint64
 }
 
 type confirmedRead struct {
 	index uint64
-	key   string
+	serve func() (kv.Result, error)
 	done  Done
+}
+
+type leaseClock struct {
+	ttl      uint64
+	deadline uint64
+	expiring bool
 }
 
 type Node struct {
@@ -96,9 +106,16 @@ type Node struct {
 	nextCtx  uint64
 	reads    map[uint64]readWaiter
 	ready    []confirmedRead
+
+	leases     map[uint64]*leaseClock
+	leaseTerm  uint64
+	nextExpiry uint64
 }
 
 func New(r *raft.Raft, env Env, sm StateMachine, cfg Config) *Node {
+	if cfg.Tick <= 0 {
+		cfg.Tick = 10 * time.Millisecond
+	}
 	n := &Node{r: r, env: env, sm: sm, cfg: cfg, waiters: map[uint64]waiter{}, reads: map[uint64]readWaiter{}}
 	if s := r.LatestSnapshot(); s != nil {
 		n.lastSnap = s.Index
@@ -116,12 +133,123 @@ func (n *Node) Tick() {
 	if n.ticks%16 == 0 {
 		n.expireReads(func(w readWaiter) bool { return w.tick+readExpiry < n.ticks })
 	}
+	n.syncLessor()
+	n.expireLeases()
 }
 
 func (n *Node) Read(key string, lease bool, done Done) {
+	n.readThen(lease, done, func() (kv.Result, error) { return n.sm.Get(key), nil })
+}
+
+func (n *Node) readThen(lease bool, done Done, serve func() (kv.Result, error)) {
 	n.nextCtx++
-	n.reads[n.nextCtx] = readWaiter{key: key, done: done, term: n.r.Term(), tick: n.ticks}
+	n.reads[n.nextCtx] = readWaiter{serve: serve, done: done, term: n.r.Term(), tick: n.ticks}
 	n.r.ReadIndex(n.nextCtx, lease)
+}
+
+func (n *Node) ttlTicks(ms uint64) uint64 {
+	return uint64((time.Duration(ms)*time.Millisecond+n.cfg.Tick-1)/n.cfg.Tick) + 1
+}
+
+func (n *Node) KeepAlive(id uint64, done Done) {
+	if n.r.State() != raft.StateLeader {
+		done(kv.Result{}, &NotLeaderError{Leader: n.r.Leader()})
+		return
+	}
+	term := n.r.Term()
+	renew := func() (kv.Result, error) {
+		if n.r.State() != raft.StateLeader || n.r.Term() != term || n.leaseTerm != term {
+			return kv.Result{}, &NotLeaderError{Leader: n.r.Leader()}
+		}
+		info, ok := n.sm.Lease(id)
+		lc := n.leases[id]
+		if !ok || lc == nil || lc.expiring {
+			return kv.Result{Code: kv.ErrLeaseNotFound, Rev: n.r.Applied()}, nil
+		}
+		lc.deadline = max(lc.deadline, n.ticks+lc.ttl)
+		return kv.Result{Ok: true, Rev: n.r.Applied(), Lease: id, TTL: info.TTL}, nil
+	}
+	if n.r.Planted(raft.BugLocalKeepAlive) {
+		n.syncLessor()
+		done(renew())
+		return
+	}
+	n.readThen(false, done, renew)
+}
+
+func (n *Node) LeaseRemaining(id uint64) (time.Duration, bool) {
+	lc := n.leases[id]
+	if lc == nil || n.leaseTerm != n.r.Term() {
+		return 0, false
+	}
+	if lc.deadline <= n.ticks {
+		return 0, true
+	}
+	return time.Duration(lc.deadline-n.ticks) * n.cfg.Tick, true
+}
+
+func (n *Node) syncLessor() {
+	if n.r.State() != raft.StateLeader {
+		n.leases, n.leaseTerm = nil, 0
+		return
+	}
+	if n.leaseTerm == n.r.Term() {
+		return
+	}
+	n.leaseTerm = n.r.Term()
+	n.leases = map[uint64]*leaseClock{}
+	n.nextExpiry = 0
+	for _, l := range n.sm.Leases() {
+		n.trackLease(l.ID, l.TTL)
+	}
+}
+
+func (n *Node) trackLease(id, ttlMs uint64) {
+	ttl := n.ttlTicks(ttlMs)
+	lc := &leaseClock{ttl: ttl, deadline: n.ticks + ttl}
+	n.leases[id] = lc
+	if n.nextExpiry == 0 || lc.deadline < n.nextExpiry {
+		n.nextExpiry = lc.deadline
+	}
+}
+
+func (n *Node) leaseApplied(id uint64) {
+	if n.leaseTerm == 0 || n.leaseTerm != n.r.Term() {
+		return
+	}
+	info, exists := n.sm.Lease(id)
+	_, tracked := n.leases[id]
+	switch {
+	case exists && !tracked:
+		n.trackLease(id, info.TTL)
+	case !exists && tracked:
+		delete(n.leases, id)
+	}
+}
+
+func (n *Node) expireLeases() {
+	if n.leaseTerm == 0 || n.leaseTerm != n.r.Term() || n.nextExpiry == 0 || n.ticks < n.nextExpiry {
+		return
+	}
+	var due []uint64
+	n.nextExpiry = 0
+	for id, lc := range n.leases {
+		switch {
+		case lc.expiring:
+		case lc.deadline <= n.ticks:
+			due = append(due, id)
+		case n.nextExpiry == 0 || lc.deadline < n.nextExpiry:
+			n.nextExpiry = lc.deadline
+		}
+	}
+	slices.Sort(due)
+	for _, id := range due {
+		if _, err := n.r.Propose(kv.Encode(kv.Command{Op: kv.OpLeaseExpire, Lease: id})); err != nil {
+			n.nextExpiry = n.ticks + 1
+			continue
+		}
+		n.leases[id].expiring = true
+	}
 }
 
 func (n *Node) expireReads(expired func(readWaiter) bool) {
@@ -144,7 +272,7 @@ func (n *Node) serveReads() {
 	kept := n.ready[:0]
 	for _, q := range n.ready {
 		if q.index <= applied {
-			q.done(n.sm.Get(q.key), nil)
+			q.done(q.serve())
 		} else {
 			kept = append(kept, q)
 		}
@@ -259,13 +387,17 @@ func (n *Node) Process() {
 			}
 			delete(n.reads, rs.Ctx)
 			if rs.Ok {
-				n.ready = append(n.ready, confirmedRead{index: rs.Index, key: w.key, done: w.done})
+				n.ready = append(n.ready, confirmedRead{index: rs.Index, serve: w.serve, done: w.done})
 			} else {
 				w.done(kv.Result{}, ErrNotReady)
 			}
 		}
+		n.syncLessor()
 		for _, e := range rd.Committed {
 			res := n.sm.Apply(e)
+			if res.Lease != 0 {
+				n.leaseApplied(res.Lease)
+			}
 			w, ok := n.waiters[e.Index]
 			if !ok {
 				continue

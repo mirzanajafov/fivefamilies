@@ -2,6 +2,7 @@ package kv
 
 import (
 	"bytes"
+	"encoding/binary"
 	"reflect"
 	"testing"
 
@@ -38,6 +39,12 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		{Op: OpCAS, Client: 3, Seq: 1, Key: "k", Value: []byte("new"), Expect: []byte("old")},
 		{Op: OpCAS, Client: 3, Seq: 2, Key: "k", Value: []byte("first"), ExpectMissing: true},
 		{Op: OpCASRev, Client: 4, Seq: 5, Key: "k", Value: []byte("x"), ExpectRev: 12345},
+		{Op: OpPut, Client: 7, Seq: 4, Key: "k", Value: []byte("v"), Lease: 99},
+		{Op: OpCAS, Client: 3, Seq: 3, Key: "k", Value: []byte("v"), ExpectMissing: true, Lease: 1 << 50},
+		{Op: OpCASRev, Client: 4, Seq: 6, Key: "k", Value: []byte("x"), ExpectRev: 7, Lease: 3},
+		{Op: OpLeaseGrant, Client: 5, Seq: 1, TTL: 10000},
+		{Op: OpLeaseRevoke, Client: 5, Seq: 2, Lease: 42},
+		{Op: OpLeaseExpire, Lease: 42},
 	}
 	for _, c := range cmds {
 		got, err := Decode(Encode(c))
@@ -46,7 +53,8 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		}
 		if got.Op != c.Op || got.Client != c.Client || got.Seq != c.Seq || got.Key != c.Key ||
 			!bytes.Equal(got.Value, c.Value) || !bytes.Equal(got.Expect, c.Expect) ||
-			got.ExpectMissing != c.ExpectMissing || got.ExpectRev != c.ExpectRev || got.Limit != c.Limit {
+			got.ExpectMissing != c.ExpectMissing || got.ExpectRev != c.ExpectRev || got.Limit != c.Limit ||
+			got.Lease != c.Lease || got.TTL != c.TTL {
 			t.Fatalf("round trip changed %+v into %+v", c, got)
 		}
 	}
@@ -66,6 +74,9 @@ func TestDecodeRejectsMalformedInput(t *testing.T) {
 		append(Encode(Command{Op: OpGet, Key: "k"}), 0),
 		{byte(OpPut), 0, 0, 1, 'k', 200, 1},
 		{byte(OpCAS), 0, 0, 0, 0, 2},
+		append(Encode(Command{Op: OpPut, Key: "k", Value: []byte("v")}), 0),
+		append(Encode(Command{Op: OpPut, Key: "k", Value: []byte("v"), Lease: 5}), 1),
+		append(Encode(Command{Op: OpDelete, Key: "k"}), 5),
 	}
 	for i, b := range bad {
 		if _, err := Decode(b); err == nil {
@@ -265,6 +276,9 @@ func populated() *applier {
 	a.do(Command{Op: OpRange, Client: id, Seq: 2, Key: ""})
 	a.do(Command{Op: OpDelete, Key: "a"})
 	a.do(Command{Op: OpRegister})
+	l := a.do(Command{Op: OpLeaseGrant, Client: id, Seq: 3, TTL: 5000}).Lease
+	a.do(Command{Op: OpPut, Key: "leased", Value: []byte("x"), Lease: l})
+	a.do(Command{Op: OpLeaseGrant, TTL: 700})
 	return a
 }
 
@@ -329,4 +343,120 @@ func FuzzRestore(f *testing.F) {
 			t.Fatalf("a restored store did not survive a second round trip: %v", err)
 		}
 	})
+}
+
+func TestALeaseTakesItsKeysWithIt(t *testing.T) {
+	a := newApplier(0)
+	g := a.do(Command{Op: OpLeaseGrant, TTL: 3000})
+	if !g.Ok || g.Lease != a.index || g.TTL != 3000 {
+		t.Fatalf("grant: %+v", g)
+	}
+	a.do(Command{Op: OpPut, Key: "/registry/api/1", Value: []byte("10.0.0.1"), Lease: g.Lease})
+	a.do(Command{Op: OpPut, Key: "/registry/api/2", Value: []byte("10.0.0.2"), Lease: g.Lease})
+	a.do(Command{Op: OpPut, Key: "/registry/api/3", Value: []byte("10.0.0.3"), Lease: g.Lease})
+	a.do(Command{Op: OpPut, Key: "/registry/api/3", Value: []byte("10.0.0.3")})
+	a.do(Command{Op: OpDelete, Key: "/registry/api/2"})
+	if info, _ := a.s.Lease(g.Lease); info.Keys != 1 {
+		t.Fatalf("lease holds %d keys, want 1 after one was overwritten without it and one deleted", info.Keys)
+	}
+	r := a.do(Command{Op: OpLeaseExpire, Lease: g.Lease})
+	if !r.Ok || r.Rev != a.index {
+		t.Fatalf("expire: %+v", r)
+	}
+	if _, ok := a.s.Get("/registry/api/1"); ok {
+		t.Fatal("a key outlived its lease")
+	}
+	if kv, ok := a.s.Get("/registry/api/3"); !ok || kv.Lease != 0 {
+		t.Fatalf("a key put again without the lease went with it: %+v %v", kv, ok)
+	}
+	if r := a.do(Command{Op: OpLeaseExpire, Lease: g.Lease}); r.Code != ErrLeaseNotFound {
+		t.Fatalf("expiring twice: %+v", r)
+	}
+	if r := a.do(Command{Op: OpLeaseRevoke, Lease: g.Lease}); r.Code != ErrLeaseNotFound {
+		t.Fatalf("revoking an expired lease: %+v", r)
+	}
+}
+
+func TestAWriteOnAMissingLeaseChangesNothing(t *testing.T) {
+	a := newApplier(0)
+	a.do(Command{Op: OpPut, Key: "k", Value: []byte("v")})
+	before := a.s.Hash()
+	for _, c := range []Command{
+		{Op: OpPut, Key: "k", Value: []byte("w"), Lease: 77},
+		{Op: OpCAS, Key: "k", Value: []byte("w"), Expect: []byte("v"), Lease: 77},
+		{Op: OpCASRev, Key: "k", Value: []byte("w"), ExpectRev: 1, Lease: 77},
+	} {
+		if r := a.do(c); r.Code != ErrLeaseNotFound {
+			t.Fatalf("%v on a missing lease: %+v", c.Op, r)
+		}
+	}
+	a.s.rev = 1
+	if a.s.Hash() != before {
+		t.Fatal("a refused write changed the store")
+	}
+}
+
+func TestAKeyMovesBetweenLeases(t *testing.T) {
+	a := newApplier(0)
+	one := a.do(Command{Op: OpLeaseGrant, TTL: 1000}).Lease
+	two := a.do(Command{Op: OpLeaseGrant, TTL: 1000}).Lease
+	a.do(Command{Op: OpPut, Key: "k", Value: []byte("v"), Lease: one})
+	a.do(Command{Op: OpCAS, Key: "k", Value: []byte("w"), Expect: []byte("v"), Lease: two})
+	a.do(Command{Op: OpLeaseRevoke, Lease: one})
+	if kv, ok := a.s.Get("k"); !ok || kv.Lease != two {
+		t.Fatalf("revoking the old lease took the key: %+v %v", kv, ok)
+	}
+	a.do(Command{Op: OpLeaseRevoke, Lease: two})
+	if _, ok := a.s.Get("k"); ok {
+		t.Fatal("revoking the new lease left the key")
+	}
+}
+
+func TestLeasesAreBounded(t *testing.T) {
+	a := newApplier(0)
+	for range MaxLeases {
+		a.do(Command{Op: OpLeaseGrant, TTL: 1})
+	}
+	if r := a.do(Command{Op: OpLeaseGrant, TTL: 1}); r.Code != ErrTooManyLeases {
+		t.Fatalf("lease %d: %+v", MaxLeases+1, r)
+	}
+	if r := a.do(Command{Op: OpLeaseGrant}); r.Code != ErrBadCommand {
+		t.Fatalf("a lease with no TTL: %+v", r)
+	}
+}
+
+func TestLeasesSurviveASnapshot(t *testing.T) {
+	a := populated()
+	r, err := Restore(a.s.Snapshot(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(r.Leases(), a.s.Leases()) {
+		t.Fatalf("leases %+v, want %+v", r.Leases(), a.s.Leases())
+	}
+	b := &applier{s: r, index: a.index}
+	id := a.s.Leases()[0].ID
+	b.do(Command{Op: OpLeaseExpire, Lease: id})
+	if _, ok := r.Get("leased"); ok {
+		t.Fatal("after a restore, the lease no longer knew its keys")
+	}
+}
+
+func TestAVersionOneSnapshotStillLoads(t *testing.T) {
+	b := []byte("FFKV1")
+	b = binary.AppendUvarint(b, 9)
+	b = binary.AppendUvarint(b, 0)
+	b = binary.AppendUvarint(b, 1)
+	b = appendBytes(b, []byte("k"))
+	b = appendBytes(b, []byte("v"))
+	for _, v := range []uint64{3, 8, 2} {
+		b = binary.AppendUvarint(b, v)
+	}
+	s, err := Restore(b, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kv, ok := s.Get("k"); !ok || string(kv.Value) != "v" || kv.ModRev != 8 || kv.Version != 2 || s.Rev() != 9 {
+		t.Fatalf("%+v %v rev %d", kv, ok, s.Rev())
+	}
 }
