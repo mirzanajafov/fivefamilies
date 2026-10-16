@@ -95,6 +95,7 @@ func bench(args []string) {
 	nodeCPUs := fs.String("node-cpus", "4,5,6,7,8,9,10", "one cpuset per node, comma separated")
 	genCPUs := fs.String("gen-cpus", "12-15", "the generator's cpuset")
 	quick := fs.Bool("quick", false, "one short configuration per experiment, to check the harness")
+	only := fs.String("only", "", "run only the curves with these names, separated by semicolons")
 	build := fs.Bool("build", false, "build the lab image first")
 	fs.Parse(args)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -110,6 +111,9 @@ func bench(args []string) {
 	}
 	for e := range strings.SplitSeq(*experiments, ",") {
 		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Log: logf}
+		if *only != "" {
+			o.Only = strings.Split(*only, ";")
+		}
 		var err error
 		switch e {
 		case "e1b":

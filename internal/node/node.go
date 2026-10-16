@@ -387,7 +387,15 @@ func (n *Node) Process() {
 		}
 		now, after := rd.Messages, rd.AfterPersist
 		if n.cfg.WriteBeforeSend && len(rd.Entries) > 0 && n.r.State() == raft.StateLeader {
-			now, after = nil, append(rd.Messages, rd.AfterPersist...)
+			now, after = nil, nil
+			for _, m := range rd.Messages {
+				if m.Type == raft.MsgApp {
+					after = append(after, m)
+				} else {
+					now = append(now, m)
+				}
+			}
+			after = append(after, rd.AfterPersist...)
 		}
 		if rd.NeedsWrite() || len(after) > 0 {
 			n.write(Write{HardState: rd.HardState, Snapshot: rd.Snapshot, Reset: rd.Snapshot != nil, Entries: rd.Entries, Sync: rd.MustSync}, after, rd.Snapshot)

@@ -31,6 +31,7 @@ func main() {
 	noMembers := flag.Bool("no-membership", false, "never change membership or hand over leadership")
 	noLeases := flag.Bool("no-leases", false, "run no lease holders")
 	noWatches := flag.Bool("no-watches", false, "run no watchers")
+	batch := flag.Bool("batch", false, "let a node take several events before it handles its Ready, as the server loop does")
 	noCatchUp := flag.Bool("no-catchup", false, "do not replay the ticks a paused node missed, to show what a lease measured in ticks does under pauses")
 	reads := flag.String("reads", "", "force one read path for every seed: log, index, lease or follower")
 	skew := flag.Float64("clock-skew", 0, "make one node's clock run this much faster (0.5 = 50%), to break the lease assumption")
@@ -58,6 +59,7 @@ func main() {
 	opts.Membership = !*noMembers
 	opts.Leases = !*noLeases
 	opts.Watches = !*noWatches
+	opts.Batch = *batch
 	if *checkTimeout > 0 {
 		opts.CheckTimeout = *checkTimeout
 	}

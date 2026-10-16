@@ -15,7 +15,20 @@ type ExperimentOptions struct {
 	NodeCPUs []string
 	GenCPUs  string
 	Quick    bool
+	Only     []string
 	Log      func(format string, args ...any)
+}
+
+func (o ExperimentOptions) wants(name string) bool {
+	if len(o.Only) == 0 {
+		return true
+	}
+	for _, w := range o.Only {
+		if name == w {
+			return true
+		}
+	}
+	return false
 }
 
 func (o ExperimentOptions) sweep() SweepOptions {
@@ -45,6 +58,9 @@ func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []cu
 	}
 	var curves []Curve
 	for _, sp := range specs {
+		if !o.wants(sp.name) {
+			continue
+		}
 		b := &BenchCluster{Nodes: sp.nodes, Flags: sp.node, NodeCPUs: o.NodeCPUs}
 		o.Log("%s: starting %d nodes", sp.name, sp.nodes)
 		if err := b.Up(ctx); err != nil {
@@ -73,6 +89,7 @@ func E2(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		{"7 nodes", 7, withBase(), writes},
 		{"5 nodes, one entry per append", 5, withBase("-max-msg-bytes", "1"), writes},
 		{"5 nodes, no pipelining", 5, withBase("-max-inflight", "1"), writes},
+		{"5 nodes, one event per Ready", 5, withBase("-batch", "1"), writes},
 		{"5 nodes, 1 KiB values", 5, withBase(), []string{"-reads", "0", "-value-bytes", "1024"}},
 	})
 }
@@ -95,6 +112,7 @@ func E4(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		for _, mode := range []string{"lease", "index", "follower", "log"} {
 			specs = append(specs, curveSpec{fmt.Sprintf("%s reads, %s", mode, share), 5, lease, []string{"-reads", share, "-read-mode", mode}})
 		}
+		specs = append(specs, curveSpec{fmt.Sprintf("index reads, %s, one event per Ready", share), 5, append(slices.Clone(lease), "-batch", "1"), []string{"-reads", share, "-read-mode", "index"}})
 		specs = append(specs, curveSpec{fmt.Sprintf("local reads (unsafe), %s", share), 5, append(slices.Clone(lease), "-bug", "followerread"), []string{"-reads", share, "-read-mode", "follower"}})
 	}
 	return runCurves(ctx, o, "e4.json", specs)

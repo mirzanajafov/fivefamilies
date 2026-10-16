@@ -10,6 +10,7 @@ import (
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
+	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
@@ -60,6 +61,44 @@ func TestFsyncModesDoWhatTheySay(t *testing.T) {
 				if st.GetFsyncs() == 0 || st.GetFsyncs() >= st.GetEntriesWritten() {
 					t.Fatalf("%d fsyncs for %d entries from ten writers at once: nothing was grouped", st.GetFsyncs(), st.GetEntriesWritten())
 				}
+			}
+		})
+	}
+}
+
+func TestTheLoopTakesEverythingQueuedIntoOneReady(t *testing.T) {
+	for _, batch := range []int{0, 1} {
+		t.Run(fmt.Sprintf("batch=%d", batch), func(t *testing.T) {
+			c := newTestCluster(t, 3, func(cfg *Config) { cfg.Batch = batch })
+			l := c.leader(5 * time.Second)
+			srv := c.running[l].srv
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			before := c.status(l)
+			blocked, release := make(chan struct{}), make(chan struct{})
+			go srv.inLoop(ctx, func() { close(blocked); <-release })
+			<-blocked
+			var wg sync.WaitGroup
+			for i := range 100 {
+				wg.Go(func() {
+					if _, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: fmt.Sprint(i), Value: []byte("v")}); err != nil {
+						t.Error(err)
+					}
+				})
+			}
+			for len(srv.calls) < 100 {
+				time.Sleep(time.Millisecond)
+			}
+			close(release)
+			wg.Wait()
+			after := c.status(l)
+			batches, sent := after.GetWalBatches()-before.GetWalBatches(), after.GetMsgsSent()-before.GetMsgsSent()
+			t.Logf("100 queued writes: %d log batches and %d messages on the leader", batches, sent)
+			if batch == 1 && batches < 100 {
+				t.Fatalf("one event per Ready wrote %d batches for 100 writes", batches)
+			}
+			if batch == 0 && batches > 10 {
+				t.Fatalf("100 writes queued at once went out in %d log batches", batches)
 			}
 		})
 	}

@@ -183,6 +183,41 @@ func TestSubmitAnswersWhenTheEntryApplies(t *testing.T) {
 	}
 }
 
+func TestWritingBeforeSendingHoldsBackOnlyTheAppends(t *testing.T) {
+	n, env, _ := newTestNodeConfig(t, 1, []raft.NodeID{1, 2, 3}, Config{WriteBeforeSend: true})
+	n.Raft().Campaign()
+	n.settle(env)
+	n.Receive(raft.Message{Type: raft.MsgVoteResp, From: 2, To: 1, Term: 1})
+	n.settle(env)
+	for _, from := range []raft.NodeID{2, 3} {
+		n.Receive(raft.Message{Type: raft.MsgAppResp, From: from, To: 1, Term: 1, Index: 1})
+	}
+	n.settle(env)
+	env.sent = nil
+	n.Submit(kv.Command{Op: kv.OpPut, Key: "k"}, nil)
+	n.Tick()
+	n.Process()
+	kinds := func() (apps, beats int) {
+		for _, m := range env.sent {
+			switch m.Type {
+			case raft.MsgApp:
+				apps++
+			case raft.MsgHeartbeat:
+				beats++
+			}
+		}
+		return apps, beats
+	}
+	if apps, beats := kinds(); apps != 0 || beats != 2 {
+		t.Fatalf("before the leader's write: %d appends and %d heartbeats sent, want 0 and 2", apps, beats)
+	}
+	n.WriteDone(env.writes[len(env.writes)-1].Seq)
+	n.Process()
+	if apps, _ := kinds(); apps != 2 {
+		t.Fatalf("after the leader's write: %d appends sent, want 2", apps)
+	}
+}
+
 func TestSubmitReportsAnEntryReplacedByAnotherLeader(t *testing.T) {
 	n, env, _ := newTestNode(t, 1, []raft.NodeID{1, 2, 3})
 	n.Raft().Campaign()

@@ -1,0 +1,2459 @@
+[
+  {
+    "name": "index reads, 0.95",
+    "nodes": 5,
+    "node_flags": [
+      "-election",
+      "1s",
+      "-heartbeat",
+      "100ms",
+      "-lease",
+      "800ms"
+    ],
+    "generator_flags": [
+      "-reads",
+      "0.95",
+      "-read-mode",
+      "index"
+    ],
+    "steps": [
+      {
+        "rate": 500,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 500,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 500,
+            "achieved_per_s": 500,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 4745,
+              "p50_ns": 540972,
+              "p90_ns": 878841,
+              "p99_ns": 1763600,
+              "p999_ns": 4777993,
+              "max_ns": 7391497,
+              "mean_ns": 633024,
+              "errors": 0
+            },
+            "writes": {
+              "n": 255,
+              "p50_ns": 7599662,
+              "p90_ns": 10141750,
+              "p99_ns": 13644193,
+              "p999_ns": 15243010,
+              "max_ns": 17471778,
+              "mean_ns": 7254346,
+              "errors": 0
+            },
+            "all": {
+              "n": 5000,
+              "p50_ns": 545453,
+              "p90_ns": 1152705,
+              "p99_ns": 8426689,
+              "p999_ns": 13133288,
+              "max_ns": 17471778,
+              "mean_ns": 970711,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 5000,
+              "p50_ns": 109184,
+              "p90_ns": 152616,
+              "p99_ns": 259912,
+              "p999_ns": 1941366,
+              "max_ns": 3797488,
+              "mean_ns": 127728,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 5000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 255,
+              "Batches": 1147,
+              "Entries": 255,
+              "Sent": 5901,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 254,
+              "Batches": 1153,
+              "Entries": 255,
+              "Sent": 5907,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 255,
+              "Batches": 1166,
+              "Entries": 255,
+              "Sent": 5920,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 255,
+              "Batches": 1018,
+              "Entries": 255,
+              "Sent": 5765,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 255,
+              "Batches": 510,
+              "Entries": 255,
+              "Sent": 23492,
+              "Writes": 255,
+              "Reads": 4744,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.2548,
+          "msgs_per_op": 9.397,
+          "entries_per_fsync": 1.000784929356358,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 1000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 1000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 1000,
+            "achieved_per_s": 1000,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 9479,
+              "p50_ns": 551488,
+              "p90_ns": 1128259,
+              "p99_ns": 3616725,
+              "p999_ns": 13557247,
+              "max_ns": 19928348,
+              "mean_ns": 765483,
+              "errors": 0
+            },
+            "writes": {
+              "n": 521,
+              "p50_ns": 8270216,
+              "p90_ns": 13495336,
+              "p99_ns": 18381646,
+              "p999_ns": 21676466,
+              "max_ns": 25837552,
+              "mean_ns": 8887735,
+              "errors": 0
+            },
+            "all": {
+              "n": 10000,
+              "p50_ns": 560846,
+              "p90_ns": 1520297,
+              "p99_ns": 11786141,
+              "p999_ns": 17964197,
+              "max_ns": 25837552,
+              "mean_ns": 1188652,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 10000,
+              "p50_ns": 112563,
+              "p90_ns": 192653,
+              "p99_ns": 440032,
+              "p999_ns": 2197633,
+              "max_ns": 5909956,
+              "mean_ns": 141277,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 10000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 502,
+              "Batches": 4124,
+              "Entries": 522,
+              "Sent": 13759,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 501,
+              "Batches": 4068,
+              "Entries": 522,
+              "Sent": 13708,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 501,
+              "Batches": 4147,
+              "Entries": 522,
+              "Sent": 13809,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 504,
+              "Batches": 3573,
+              "Entries": 522,
+              "Sent": 13192,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 511,
+              "Batches": 1035,
+              "Entries": 522,
+              "Sent": 54448,
+              "Writes": 521,
+              "Reads": 9477,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.2519,
+          "msgs_per_op": 10.8916,
+          "entries_per_fsync": 1.0361254466057959,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 2000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 2000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 2000,
+            "achieved_per_s": 2000,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 19039,
+              "p50_ns": 692554,
+              "p90_ns": 1285566,
+              "p99_ns": 21673604,
+              "p999_ns": 44784425,
+              "max_ns": 51038842,
+              "mean_ns": 1286698,
+              "errors": 0
+            },
+            "writes": {
+              "n": 961,
+              "p50_ns": 10428728,
+              "p90_ns": 15938601,
+              "p99_ns": 39999672,
+              "p999_ns": 52669017,
+              "max_ns": 56219204,
+              "mean_ns": 11419532,
+              "errors": 0
+            },
+            "all": {
+              "n": 20000,
+              "p50_ns": 708774,
+              "p90_ns": 1905291,
+              "p99_ns": 23048491,
+              "p999_ns": 46585891,
+              "max_ns": 56219204,
+              "mean_ns": 1773581,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 20000,
+              "p50_ns": 139993,
+              "p90_ns": 242658,
+              "p99_ns": 434125,
+              "p999_ns": 1395965,
+              "max_ns": 6884209,
+              "mean_ns": 161401,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 20000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 803,
+              "Batches": 11320,
+              "Entries": 961,
+              "Sent": 32254,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 801,
+              "Batches": 11547,
+              "Entries": 961,
+              "Sent": 32496,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 795,
+              "Batches": 11436,
+              "Entries": 961,
+              "Sent": 32262,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 817,
+              "Batches": 10814,
+              "Entries": 961,
+              "Sent": 31395,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 837,
+              "Batches": 1848,
+              "Entries": 961,
+              "Sent": 128396,
+              "Writes": 961,
+              "Reads": 19036,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.20265,
+          "msgs_per_op": 12.84015,
+          "entries_per_fsync": 1.1855415741426105,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 4000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 4000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 4000,
+            "achieved_per_s": 4000,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 38050,
+              "p50_ns": 11182781,
+              "p90_ns": 30778031,
+              "p99_ns": 40696841,
+              "p999_ns": 47121228,
+              "max_ns": 51321823,
+              "mean_ns": 13505140,
+              "errors": 0
+            },
+            "writes": {
+              "n": 1950,
+              "p50_ns": 21589865,
+              "p90_ns": 34059311,
+              "p99_ns": 43394392,
+              "p999_ns": 51064042,
+              "max_ns": 53611143,
+              "mean_ns": 22208158,
+              "errors": 0
+            },
+            "all": {
+              "n": 40000,
+              "p50_ns": 12498881,
+              "p90_ns": 31015891,
+              "p99_ns": 40908812,
+              "p999_ns": 47252152,
+              "max_ns": 53611143,
+              "mean_ns": 13929413,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 40000,
+              "p50_ns": 119181,
+              "p90_ns": 256610,
+              "p99_ns": 479699,
+              "p999_ns": 1958715,
+              "max_ns": 5963108,
+              "mean_ns": 155792,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 40000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 1108,
+              "Batches": 9192,
+              "Entries": 1952,
+              "Sent": 76512,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1112,
+              "Batches": 9225,
+              "Entries": 1952,
+              "Sent": 76560,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1113,
+              "Batches": 9136,
+              "Entries": 1952,
+              "Sent": 76544,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1119,
+              "Batches": 9268,
+              "Entries": 1952,
+              "Sent": 76535,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1156,
+              "Batches": 3206,
+              "Entries": 1950,
+              "Sent": 305800,
+              "Writes": 1950,
+              "Reads": 38043,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.1402,
+          "msgs_per_op": 15.298775,
+          "entries_per_fsync": 1.7400142653352353,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 8000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 8000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 8000,
+            "achieved_per_s": 8000,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 76023,
+              "p50_ns": 23640382,
+              "p90_ns": 39778672,
+              "p99_ns": 61461401,
+              "p999_ns": 74308878,
+              "max_ns": 93311057,
+              "mean_ns": 25658809,
+              "errors": 0
+            },
+            "writes": {
+              "n": 3977,
+              "p50_ns": 30013080,
+              "p90_ns": 46345058,
+              "p99_ns": 68661110,
+              "p999_ns": 84440437,
+              "max_ns": 86175603,
+              "mean_ns": 32509223,
+              "errors": 0
+            },
+            "all": {
+              "n": 80000,
+              "p50_ns": 24030124,
+              "p90_ns": 40207808,
+              "p99_ns": 62084484,
+              "p999_ns": 75820855,
+              "max_ns": 93311057,
+              "mean_ns": 25999360,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 80000,
+              "p50_ns": 98635,
+              "p90_ns": 197962,
+              "p99_ns": 751152,
+              "p999_ns": 2996809,
+              "max_ns": 6067217,
+              "mean_ns": 138612,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 80000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 1127,
+              "Batches": 1761,
+              "Entries": 3981,
+              "Sent": 149916,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1116,
+              "Batches": 1710,
+              "Entries": 3981,
+              "Sent": 149943,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1124,
+              "Batches": 1697,
+              "Entries": 3981,
+              "Sent": 149872,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1128,
+              "Batches": 1656,
+              "Entries": 3981,
+              "Sent": 149958,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1228,
+              "Batches": 5009,
+              "Entries": 3977,
+              "Sent": 598642,
+              "Writes": 3977,
+              "Reads": 76005,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.0715375,
+          "msgs_per_op": 14.9791375,
+          "entries_per_fsync": 3.4773720076882753,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 16000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 16000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 16000,
+            "achieved_per_s": 13177.5,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 125163,
+              "p50_ns": 719598084,
+              "p90_ns": 889669975,
+              "p99_ns": 1012781049,
+              "p999_ns": 1343234757,
+              "max_ns": 1611224265,
+              "mean_ns": 719854852,
+              "errors": 0
+            },
+            "writes": {
+              "n": 6612,
+              "p50_ns": 726321571,
+              "p90_ns": 892085196,
+              "p99_ns": 988477923,
+              "p999_ns": 1339708533,
+              "max_ns": 1550146962,
+              "mean_ns": 724055062,
+              "errors": 0
+            },
+            "all": {
+              "n": 131775,
+              "p50_ns": 719874382,
+              "p90_ns": 889736850,
+              "p99_ns": 1011770830,
+              "p999_ns": 1343234757,
+              "max_ns": 1611224265,
+              "mean_ns": 720065604,
+              "errors": 0
+            },
+            "dropped": 28225,
+            "lag": {
+              "n": 131775,
+              "p50_ns": 96780,
+              "p90_ns": 178954,
+              "p99_ns": 3065239,
+              "p999_ns": 12068405,
+              "max_ns": 18068970,
+              "mean_ns": 193858,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": false,
+            "invalid": "28225 requests dropped at the in-flight limit",
+            "timed_out": 0,
+            "scheduled": 160000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 827,
+              "Batches": 1401,
+              "Entries": 6706,
+              "Sent": 205665,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 812,
+              "Batches": 1409,
+              "Entries": 6703,
+              "Sent": 205657,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 757,
+              "Batches": 1337,
+              "Entries": 6703,
+              "Sent": 205673,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 628,
+              "Batches": 1212,
+              "Entries": 6703,
+              "Sent": 205753,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 877,
+              "Batches": 6244,
+              "Entries": 6604,
+              "Sent": 807719,
+              "Writes": 6603,
+              "Reads": 124910,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.02960349079870992,
+          "msgs_per_op": 12.373113261240752,
+          "entries_per_fsync": 8.566777749295053,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 12000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 12000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 12000,
+            "achieved_per_s": 12000,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 114050,
+              "p50_ns": 39607331,
+              "p90_ns": 90501307,
+              "p99_ns": 154190780,
+              "p999_ns": 170860044,
+              "max_ns": 178301683,
+              "mean_ns": 48006098,
+              "errors": 0
+            },
+            "writes": {
+              "n": 5950,
+              "p50_ns": 47943642,
+              "p90_ns": 89689178,
+              "p99_ns": 148342246,
+              "p999_ns": 175012872,
+              "max_ns": 179603842,
+              "mean_ns": 54700514,
+              "errors": 0
+            },
+            "all": {
+              "n": 120000,
+              "p50_ns": 40076861,
+              "p90_ns": 90448701,
+              "p99_ns": 154091607,
+              "p999_ns": 171123937,
+              "max_ns": 179603842,
+              "mean_ns": 48338030,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 120000,
+              "p50_ns": 112123,
+              "p90_ns": 191608,
+              "p99_ns": 1031111,
+              "p999_ns": 4665412,
+              "max_ns": 12010808,
+              "mean_ns": 154006,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 120000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 899,
+              "Batches": 1514,
+              "Entries": 5959,
+              "Sent": 190422,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 900,
+              "Batches": 1536,
+              "Entries": 5959,
+              "Sent": 190209,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 877,
+              "Batches": 1541,
+              "Entries": 5959,
+              "Sent": 190516,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 819,
+              "Batches": 1466,
+              "Entries": 5959,
+              "Sent": 190429,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1025,
+              "Batches": 5996,
+              "Entries": 5959,
+              "Sent": 759901,
+              "Writes": 5949,
+              "Reads": 114038,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.03766666666666667,
+          "msgs_per_op": 12.678975,
+          "entries_per_fsync": 6.591814159292035,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 14000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 14000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 14000,
+            "achieved_per_s": 14000.1,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 133041,
+              "p50_ns": 76104580,
+              "p90_ns": 385846668,
+              "p99_ns": 797798412,
+              "p999_ns": 857245972,
+              "max_ns": 1068570518,
+              "mean_ns": 151906952,
+              "errors": 0
+            },
+            "writes": {
+              "n": 6960,
+              "p50_ns": 79425769,
+              "p90_ns": 402494363,
+              "p99_ns": 807026450,
+              "p999_ns": 883855106,
+              "max_ns": 889693919,
+              "mean_ns": 158442329,
+              "errors": 0
+            },
+            "all": {
+              "n": 140001,
+              "p50_ns": 76370301,
+              "p90_ns": 386729860,
+              "p99_ns": 798308104,
+              "p999_ns": 858911478,
+              "max_ns": 1068570518,
+              "mean_ns": 152231851,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 140001,
+              "p50_ns": 107093,
+              "p90_ns": 177829,
+              "p99_ns": 1037005,
+              "p999_ns": 3262457,
+              "max_ns": 6599807,
+              "mean_ns": 146061,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 140001
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 900,
+              "Batches": 1508,
+              "Entries": 7020,
+              "Sent": 223726,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 901,
+              "Batches": 1502,
+              "Entries": 7027,
+              "Sent": 224014,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 884,
+              "Batches": 1490,
+              "Entries": 7013,
+              "Sent": 223722,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 726,
+              "Batches": 1353,
+              "Entries": 7027,
+              "Sent": 224224,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 957,
+              "Batches": 6816,
+              "Entries": 6962,
+              "Sent": 887696,
+              "Writes": 6959,
+              "Reads": 133035,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.031199777144448968,
+          "msgs_per_op": 12.738351868915222,
+          "entries_per_fsync": 8.024038461538462,
+          "elections": 0
+        }
+      }
+    ],
+    "knee_per_s": 14000.1,
+    "at_50_percent": {
+      "rate": 7000,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 7000,
+            "Duration": 10000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0.95,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 7000,
+          "achieved_per_s": 7000,
+          "window_ns": 10000000000,
+          "reads": {
+            "n": 66499,
+            "p50_ns": 22048113,
+            "p90_ns": 34258483,
+            "p99_ns": 58384463,
+            "p999_ns": 94197354,
+            "max_ns": 102627855,
+            "mean_ns": 23196807,
+            "errors": 0
+          },
+          "writes": {
+            "n": 3501,
+            "p50_ns": 28810746,
+            "p90_ns": 40762846,
+            "p99_ns": 66483902,
+            "p999_ns": 93477410,
+            "max_ns": 103165405,
+            "mean_ns": 30447082,
+            "errors": 0
+          },
+          "all": {
+            "n": 70000,
+            "p50_ns": 22403679,
+            "p90_ns": 34766773,
+            "p99_ns": 59027157,
+            "p999_ns": 94197354,
+            "max_ns": 103165405,
+            "mean_ns": 23559424,
+            "errors": 0
+          },
+          "dropped": 0,
+          "lag": {
+            "n": 70000,
+            "p50_ns": 99560,
+            "p90_ns": 205875,
+            "p99_ns": 711710,
+            "p999_ns": 3137625,
+            "max_ns": 5724593,
+            "mean_ns": 140135,
+            "errors": 0
+          },
+          "errors": {},
+          "valid": true,
+          "timed_out": 0,
+          "scheduled": 70000
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 1139,
+            "Batches": 2045,
+            "Entries": 3504,
+            "Sent": 132625,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1141,
+            "Batches": 2103,
+            "Entries": 3504,
+            "Sent": 133000,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1138,
+            "Batches": 2053,
+            "Entries": 3504,
+            "Sent": 132766,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1150,
+            "Batches": 2072,
+            "Entries": 3504,
+            "Sent": 132911,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1220,
+            "Batches": 4586,
+            "Entries": 3501,
+            "Sent": 530308,
+            "Writes": 3500,
+            "Reads": 66481,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.08268571428571428,
+        "msgs_per_op": 15.165857142857142,
+        "entries_per_fsync": 3.02643400138217,
+        "elections": 0
+      }
+    },
+    "at_80_percent": {
+      "rate": 11200,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 11200,
+            "Duration": 10000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0.95,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 11200,
+          "achieved_per_s": 11200.1,
+          "window_ns": 10000000000,
+          "reads": {
+            "n": 106470,
+            "p50_ns": 32455255,
+            "p90_ns": 61292190,
+            "p99_ns": 96406838,
+            "p999_ns": 118845843,
+            "max_ns": 138640200,
+            "mean_ns": 36286786,
+            "errors": 0
+          },
+          "writes": {
+            "n": 5531,
+            "p50_ns": 39379814,
+            "p90_ns": 65761599,
+            "p99_ns": 92985954,
+            "p999_ns": 120050698,
+            "max_ns": 125379065,
+            "mean_ns": 42877089,
+            "errors": 0
+          },
+          "all": {
+            "n": 112001,
+            "p50_ns": 32822705,
+            "p90_ns": 61650824,
+            "p99_ns": 96290270,
+            "p999_ns": 119019014,
+            "max_ns": 138640200,
+            "mean_ns": 36612238,
+            "errors": 0
+          },
+          "dropped": 0,
+          "lag": {
+            "n": 112001,
+            "p50_ns": 107361,
+            "p90_ns": 191547,
+            "p99_ns": 1053484,
+            "p999_ns": 2881541,
+            "max_ns": 6048501,
+            "mean_ns": 146710,
+            "errors": 0
+          },
+          "errors": {},
+          "valid": true,
+          "timed_out": 0,
+          "scheduled": 112001
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 976,
+            "Batches": 1458,
+            "Entries": 5540,
+            "Sent": 183180,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 958,
+            "Batches": 1431,
+            "Entries": 5540,
+            "Sent": 183144,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 966,
+            "Batches": 1424,
+            "Entries": 5540,
+            "Sent": 183253,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 920,
+            "Batches": 1375,
+            "Entries": 5540,
+            "Sent": 183372,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1104,
+            "Batches": 5841,
+            "Entries": 5536,
+            "Sent": 731808,
+            "Writes": 5532,
+            "Reads": 106552,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.04396389317952518,
+        "msgs_per_op": 13.078070731511326,
+        "entries_per_fsync": 5.6246953696181965,
+        "elections": 0
+      }
+    }
+  },
+  {
+    "name": "index reads, 0.95, one event per Ready",
+    "nodes": 5,
+    "node_flags": [
+      "-election",
+      "1s",
+      "-heartbeat",
+      "100ms",
+      "-lease",
+      "800ms",
+      "-batch",
+      "1"
+    ],
+    "generator_flags": [
+      "-reads",
+      "0.95",
+      "-read-mode",
+      "index"
+    ],
+    "steps": [
+      {
+        "rate": 500,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 500,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 500,
+            "achieved_per_s": 500,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 4745,
+              "p50_ns": 530473,
+              "p90_ns": 895944,
+              "p99_ns": 1636978,
+              "p999_ns": 3404148,
+              "max_ns": 7774921,
+              "mean_ns": 622025,
+              "errors": 0
+            },
+            "writes": {
+              "n": 255,
+              "p50_ns": 7556649,
+              "p90_ns": 10876439,
+              "p99_ns": 14649422,
+              "p999_ns": 15532046,
+              "max_ns": 16273628,
+              "mean_ns": 7487439,
+              "errors": 0
+            },
+            "all": {
+              "n": 5000,
+              "p50_ns": 535843,
+              "p90_ns": 1167658,
+              "p99_ns": 9211157,
+              "p999_ns": 14224184,
+              "max_ns": 16273628,
+              "mean_ns": 972161,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 5000,
+              "p50_ns": 113402,
+              "p90_ns": 157934,
+              "p99_ns": 276504,
+              "p999_ns": 2040440,
+              "max_ns": 3964305,
+              "mean_ns": 130330,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 5000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 254,
+              "Batches": 1162,
+              "Entries": 255,
+              "Sent": 5906,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 254,
+              "Batches": 1200,
+              "Entries": 255,
+              "Sent": 5944,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 254,
+              "Batches": 1209,
+              "Entries": 255,
+              "Sent": 5953,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 254,
+              "Batches": 1037,
+              "Entries": 255,
+              "Sent": 5781,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 255,
+              "Batches": 510,
+              "Entries": 255,
+              "Sent": 23584,
+              "Writes": 255,
+              "Reads": 4744,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.2542,
+          "msgs_per_op": 9.4336,
+          "entries_per_fsync": 1.003147128245476,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 1000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 1000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 1000,
+            "achieved_per_s": 1000,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 9479,
+              "p50_ns": 568726,
+              "p90_ns": 1152771,
+              "p99_ns": 3245171,
+              "p999_ns": 8812922,
+              "max_ns": 11083481,
+              "mean_ns": 756128,
+              "errors": 0
+            },
+            "writes": {
+              "n": 521,
+              "p50_ns": 8031752,
+              "p90_ns": 12746831,
+              "p99_ns": 16793194,
+              "p999_ns": 27164108,
+              "max_ns": 28157353,
+              "mean_ns": 8680000,
+              "errors": 0
+            },
+            "all": {
+              "n": 10000,
+              "p50_ns": 580362,
+              "p90_ns": 1514589,
+              "p99_ns": 11235953,
+              "p999_ns": 16182329,
+              "max_ns": 28157353,
+              "mean_ns": 1168961,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 10000,
+              "p50_ns": 112412,
+              "p90_ns": 198997,
+              "p99_ns": 459250,
+              "p999_ns": 1601385,
+              "max_ns": 3565315,
+              "mean_ns": 140348,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 10000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 500,
+              "Batches": 4171,
+              "Entries": 522,
+              "Sent": 13650,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 499,
+              "Batches": 4210,
+              "Entries": 522,
+              "Sent": 13689,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 499,
+              "Batches": 4302,
+              "Entries": 522,
+              "Sent": 13781,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 509,
+              "Batches": 3744,
+              "Entries": 522,
+              "Sent": 13222,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 513,
+              "Batches": 1044,
+              "Entries": 522,
+              "Sent": 54323,
+              "Writes": 521,
+              "Reads": 9477,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.252,
+          "msgs_per_op": 10.8665,
+          "entries_per_fsync": 1.0357142857142858,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 2000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 2000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 2000,
+            "achieved_per_s": 2000,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 19039,
+              "p50_ns": 695667,
+              "p90_ns": 1211484,
+              "p99_ns": 3711908,
+              "p999_ns": 11682993,
+              "max_ns": 18883274,
+              "mean_ns": 866241,
+              "errors": 0
+            },
+            "writes": {
+              "n": 961,
+              "p50_ns": 10399630,
+              "p90_ns": 15627807,
+              "p99_ns": 19657354,
+              "p999_ns": 40363530,
+              "max_ns": 50868984,
+              "mean_ns": 10837799,
+              "errors": 0
+            },
+            "all": {
+              "n": 20000,
+              "p50_ns": 714814,
+              "p90_ns": 1579402,
+              "p99_ns": 14213538,
+              "p999_ns": 18635014,
+              "max_ns": 50868984,
+              "mean_ns": 1345374,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 20000,
+              "p50_ns": 140273,
+              "p90_ns": 239816,
+              "p99_ns": 411978,
+              "p999_ns": 1575999,
+              "max_ns": 9691494,
+              "mean_ns": 162402,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 20000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 807,
+              "Batches": 13181,
+              "Entries": 961,
+              "Sent": 32220,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 801,
+              "Batches": 13368,
+              "Entries": 961,
+              "Sent": 32406,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 802,
+              "Batches": 13133,
+              "Entries": 961,
+              "Sent": 32170,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 825,
+              "Batches": 12463,
+              "Entries": 961,
+              "Sent": 31500,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 835,
+              "Batches": 1915,
+              "Entries": 961,
+              "Sent": 128289,
+              "Writes": 961,
+              "Reads": 19036,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.2035,
+          "msgs_per_op": 12.82925,
+          "entries_per_fsync": 1.1805896805896805,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 4000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 4000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 4000,
+            "achieved_per_s": 4000,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 38050,
+              "p50_ns": 15933565,
+              "p90_ns": 33321053,
+              "p99_ns": 46427007,
+              "p999_ns": 63337486,
+              "max_ns": 72491216,
+              "mean_ns": 15829082,
+              "errors": 0
+            },
+            "writes": {
+              "n": 1950,
+              "p50_ns": 25447687,
+              "p90_ns": 37600017,
+              "p99_ns": 49307552,
+              "p999_ns": 59805023,
+              "max_ns": 69235481,
+              "mean_ns": 25032800,
+              "errors": 0
+            },
+            "all": {
+              "n": 40000,
+              "p50_ns": 16622803,
+              "p90_ns": 33607804,
+              "p99_ns": 46731568,
+              "p999_ns": 63337486,
+              "max_ns": 72491216,
+              "mean_ns": 16277764,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 40000,
+              "p50_ns": 125389,
+              "p90_ns": 274484,
+              "p99_ns": 566495,
+              "p999_ns": 2683914,
+              "max_ns": 5172806,
+              "mean_ns": 167303,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 40000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 1066,
+              "Batches": 39672,
+              "Entries": 1951,
+              "Sent": 77753,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1071,
+              "Batches": 39544,
+              "Entries": 1951,
+              "Sent": 77625,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1063,
+              "Batches": 39502,
+              "Entries": 1950,
+              "Sent": 77579,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1081,
+              "Batches": 39562,
+              "Entries": 1951,
+              "Sent": 77639,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1112,
+              "Batches": 3888,
+              "Entries": 1950,
+              "Sent": 310350,
+              "Writes": 1950,
+              "Reads": 38043,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.134825,
+          "msgs_per_op": 15.52365,
+          "entries_per_fsync": 1.8084554051548303,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 8000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 8000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 8000,
+            "achieved_per_s": 8000,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 76023,
+              "p50_ns": 24622529,
+              "p90_ns": 51924910,
+              "p99_ns": 101513634,
+              "p999_ns": 163299423,
+              "max_ns": 173046465,
+              "mean_ns": 29873955,
+              "errors": 0
+            },
+            "writes": {
+              "n": 3977,
+              "p50_ns": 31452770,
+              "p90_ns": 58294180,
+              "p99_ns": 100116944,
+              "p999_ns": 126543788,
+              "max_ns": 131624256,
+              "mean_ns": 36467788,
+              "errors": 0
+            },
+            "all": {
+              "n": 80000,
+              "p50_ns": 25017904,
+              "p90_ns": 52380716,
+              "p99_ns": 101491098,
+              "p999_ns": 162962829,
+              "max_ns": 173046465,
+              "mean_ns": 30201751,
+              "errors": 0
+            },
+            "dropped": 0,
+            "lag": {
+              "n": 80000,
+              "p50_ns": 98347,
+              "p90_ns": 196910,
+              "p99_ns": 748216,
+              "p999_ns": 2484546,
+              "max_ns": 3818161,
+              "mean_ns": 136717,
+              "errors": 0
+            },
+            "errors": {},
+            "valid": true,
+            "timed_out": 0,
+            "scheduled": 80000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 1017,
+              "Batches": 83810,
+              "Entries": 3982,
+              "Sent": 159968,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1009,
+              "Batches": 83903,
+              "Entries": 3980,
+              "Sent": 159942,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1014,
+              "Batches": 83906,
+              "Entries": 3980,
+              "Sent": 160002,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1034,
+              "Batches": 84078,
+              "Entries": 3982,
+              "Sent": 160174,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 1132,
+              "Batches": 7960,
+              "Entries": 3978,
+              "Sent": 639267,
+              "Writes": 3977,
+              "Reads": 76004,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 0.065075,
+          "msgs_per_op": 15.9919125,
+          "entries_per_fsync": 3.8228966577026506,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 16000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 16000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 16000,
+            "achieved_per_s": 27.2,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 0,
+              "p50_ns": 0,
+              "p90_ns": 0,
+              "p99_ns": 0,
+              "p999_ns": 0,
+              "max_ns": 0,
+              "mean_ns": 0,
+              "errors": 106454
+            },
+            "writes": {
+              "n": 272,
+              "p50_ns": 1407693042,
+              "p90_ns": 1807001602,
+              "p99_ns": 1936008397,
+              "p999_ns": 1996987945,
+              "max_ns": 2000354767,
+              "mean_ns": 1401315763,
+              "errors": 5282
+            },
+            "all": {
+              "n": 272,
+              "p50_ns": 1407693042,
+              "p90_ns": 1807001602,
+              "p99_ns": 1936008397,
+              "p999_ns": 1996987945,
+              "max_ns": 2000354767,
+              "mean_ns": 1401315763,
+              "errors": 111736
+            },
+            "dropped": 47992,
+            "lag": {
+              "n": 112008,
+              "p50_ns": 97875,
+              "p90_ns": 187369,
+              "p99_ns": 1976026,
+              "p999_ns": 7568915,
+              "max_ns": 13685405,
+              "mean_ns": 176092,
+              "errors": 0
+            },
+            "errors": {
+              "DeadlineExceeded": 2343,
+              "Unavailable": 109393
+            },
+            "valid": false,
+            "invalid": "47992 requests dropped at the in-flight limit",
+            "timed_out": 0,
+            "scheduled": 160000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 247,
+              "Batches": 23230,
+              "Entries": 2792,
+              "Sent": 145926,
+              "Writes": 2819,
+              "Reads": 53528,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 268,
+              "Batches": 39701,
+              "Entries": 2794,
+              "Sent": 111277,
+              "Writes": 120,
+              "Reads": 2331,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 259,
+              "Batches": 23625,
+              "Entries": 2794,
+              "Sent": 93145,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 253,
+              "Batches": 31869,
+              "Entries": 2794,
+              "Sent": 101365,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 368,
+              "Batches": 3434,
+              "Entries": 2744,
+              "Sent": 406269,
+              "Writes": 2617,
+              "Reads": 50630,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 5.1286764705882355,
+          "msgs_per_op": 3154.345588235294,
+          "entries_per_fsync": 9.977060931899642,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 12000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 12000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 12000,
+            "achieved_per_s": 33.1,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 0,
+              "p50_ns": 0,
+              "p90_ns": 0,
+              "p99_ns": 0,
+              "p999_ns": 0,
+              "max_ns": 0,
+              "mean_ns": 0,
+              "errors": 101315
+            },
+            "writes": {
+              "n": 331,
+              "p50_ns": 1491372195,
+              "p90_ns": 1949878561,
+              "p99_ns": 1993495772,
+              "p999_ns": 1999866481,
+              "max_ns": 2000279067,
+              "mean_ns": 1490087014,
+              "errors": 4994
+            },
+            "all": {
+              "n": 331,
+              "p50_ns": 1491372195,
+              "p90_ns": 1949878561,
+              "p99_ns": 1993495772,
+              "p999_ns": 1999866481,
+              "max_ns": 2000279067,
+              "mean_ns": 1490087014,
+              "errors": 106309
+            },
+            "dropped": 13360,
+            "lag": {
+              "n": 106640,
+              "p50_ns": 113075,
+              "p90_ns": 191837,
+              "p99_ns": 2245245,
+              "p999_ns": 13096424,
+              "max_ns": 17830250,
+              "mean_ns": 204808,
+              "errors": 0
+            },
+            "errors": {
+              "DeadlineExceeded": 2124,
+              "Unavailable": 104185
+            },
+            "valid": false,
+            "invalid": "13360 requests dropped at the in-flight limit",
+            "timed_out": 0,
+            "scheduled": 120000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 211,
+              "Batches": 23081,
+              "Entries": 2606,
+              "Sent": 142431,
+              "Writes": 2747,
+              "Reads": 51386,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 252,
+              "Batches": 39917,
+              "Entries": 2609,
+              "Sent": 110466,
+              "Writes": 111,
+              "Reads": 2471,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 285,
+              "Batches": 36904,
+              "Entries": 2609,
+              "Sent": 105259,
+              "Writes": 12,
+              "Reads": 320,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 267,
+              "Batches": 22516,
+              "Entries": 2609,
+              "Sent": 90680,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 362,
+              "Batches": 3230,
+              "Entries": 2545,
+              "Sent": 407613,
+              "Writes": 2463,
+              "Reads": 47248,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 4.16012084592145,
+          "msgs_per_op": 2587.4592145015104,
+          "entries_per_fsync": 9.42483660130719,
+          "elections": 0
+        }
+      },
+      {
+        "rate": 10000,
+        "report": {
+          "summary": {
+            "config": {
+              "Rate": 10000,
+              "Duration": 10000000000,
+              "Warmup": 3000000000,
+              "ReadFraction": 0.95,
+              "Keys": 1000,
+              "ValueBytes": 128,
+              "MaxInflight": 10000,
+              "Timeout": 2000000000,
+              "Poisson": false,
+              "Seed": 1
+            },
+            "offered_per_s": 10000,
+            "achieved_per_s": 34.2,
+            "window_ns": 10000000000,
+            "reads": {
+              "n": 0,
+              "p50_ns": 0,
+              "p90_ns": 0,
+              "p99_ns": 0,
+              "p999_ns": 0,
+              "max_ns": 0,
+              "mean_ns": 0,
+              "errors": 91498
+            },
+            "writes": {
+              "n": 342,
+              "p50_ns": 1393481722,
+              "p90_ns": 1787737333,
+              "p99_ns": 1889116117,
+              "p999_ns": 1975155793,
+              "max_ns": 1991950348,
+              "mean_ns": 1368661742,
+              "errors": 4416
+            },
+            "all": {
+              "n": 342,
+              "p50_ns": 1393481722,
+              "p90_ns": 1787737333,
+              "p99_ns": 1889116117,
+              "p999_ns": 1975155793,
+              "max_ns": 1991950348,
+              "mean_ns": 1368661742,
+              "errors": 95914
+            },
+            "dropped": 3744,
+            "lag": {
+              "n": 96256,
+              "p50_ns": 109710,
+              "p90_ns": 196460,
+              "p99_ns": 1742778,
+              "p999_ns": 14956909,
+              "max_ns": 20548231,
+              "mean_ns": 203820,
+              "errors": 0
+            },
+            "errors": {
+              "DeadlineExceeded": 2217,
+              "Unavailable": 93697
+            },
+            "valid": false,
+            "invalid": "3744 requests dropped at the in-flight limit",
+            "timed_out": 0,
+            "scheduled": 100000
+          },
+          "nodes": 5,
+          "read_mode": "index",
+          "per_node_delta": [
+            {
+              "Fsyncs": 155,
+              "Batches": 23071,
+              "Entries": 2758,
+              "Sent": 124543,
+              "Writes": 2133,
+              "Reads": 41374,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 195,
+              "Batches": 29258,
+              "Entries": 2759,
+              "Sent": 90589,
+              "Writes": 66,
+              "Reads": 1108,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 295,
+              "Batches": 34279,
+              "Entries": 2786,
+              "Sent": 94480,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 299,
+              "Batches": 30113,
+              "Entries": 2759,
+              "Sent": 90400,
+              "Writes": 0,
+              "Reads": 0,
+              "Elections": 0
+            },
+            {
+              "Fsyncs": 384,
+              "Batches": 3458,
+              "Entries": 2688,
+              "Sent": 364511,
+              "Writes": 2562,
+              "Reads": 49047,
+              "Elections": 0
+            }
+          ],
+          "fsyncs_per_op": 3.8830409356725144,
+          "msgs_per_op": 2235.4473684210525,
+          "entries_per_fsync": 10.353915662650602,
+          "elections": 0
+        }
+      }
+    ],
+    "knee_per_s": 8000,
+    "at_50_percent": {
+      "rate": 4000,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 4000,
+            "Duration": 10000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0.95,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 4000,
+          "achieved_per_s": 4000,
+          "window_ns": 10000000000,
+          "reads": {
+            "n": 38050,
+            "p50_ns": 20518581,
+            "p90_ns": 35757473,
+            "p99_ns": 57505728,
+            "p999_ns": 72731876,
+            "max_ns": 79239848,
+            "mean_ns": 20582827,
+            "errors": 0
+          },
+          "writes": {
+            "n": 1950,
+            "p50_ns": 27496721,
+            "p90_ns": 44834061,
+            "p99_ns": 67571799,
+            "p999_ns": 83831571,
+            "max_ns": 87942179,
+            "mean_ns": 29525855,
+            "errors": 0
+          },
+          "all": {
+            "n": 40000,
+            "p50_ns": 20938355,
+            "p90_ns": 36321894,
+            "p99_ns": 58225313,
+            "p999_ns": 73603179,
+            "max_ns": 87942179,
+            "mean_ns": 21018799,
+            "errors": 0
+          },
+          "dropped": 0,
+          "lag": {
+            "n": 40000,
+            "p50_ns": 107780,
+            "p90_ns": 262209,
+            "p99_ns": 566773,
+            "p999_ns": 3462895,
+            "max_ns": 10357617,
+            "mean_ns": 155328,
+            "errors": 0
+          },
+          "errors": {},
+          "valid": true,
+          "timed_out": 0,
+          "scheduled": 40000
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 1023,
+            "Batches": 39871,
+            "Entries": 1952,
+            "Sent": 77952,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1024,
+            "Batches": 39669,
+            "Entries": 1952,
+            "Sent": 77750,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1024,
+            "Batches": 40205,
+            "Entries": 1951,
+            "Sent": 78287,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1044,
+            "Batches": 40060,
+            "Entries": 1951,
+            "Sent": 78143,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1069,
+            "Batches": 3900,
+            "Entries": 1950,
+            "Sent": 311780,
+            "Writes": 1950,
+            "Reads": 38044,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.1296,
+        "msgs_per_op": 15.5978,
+        "entries_per_fsync": 1.8819444444444444,
+        "elections": 0
+      }
+    },
+    "at_80_percent": {
+      "rate": 6400,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 6400,
+            "Duration": 10000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0.95,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 6400,
+          "achieved_per_s": 6400,
+          "window_ns": 10000000000,
+          "reads": {
+            "n": 60849,
+            "p50_ns": 25654612,
+            "p90_ns": 61739727,
+            "p99_ns": 160098782,
+            "p999_ns": 193991436,
+            "max_ns": 199226824,
+            "mean_ns": 34566317,
+            "errors": 0
+          },
+          "writes": {
+            "n": 3151,
+            "p50_ns": 32345929,
+            "p90_ns": 69672523,
+            "p99_ns": 149128953,
+            "p999_ns": 197249444,
+            "max_ns": 205161582,
+            "mean_ns": 40479987,
+            "errors": 0
+          },
+          "all": {
+            "n": 64000,
+            "p50_ns": 26038955,
+            "p90_ns": 62197987,
+            "p99_ns": 159777436,
+            "p999_ns": 194056728,
+            "max_ns": 205161582,
+            "mean_ns": 34857473,
+            "errors": 0
+          },
+          "dropped": 0,
+          "lag": {
+            "n": 64000,
+            "p50_ns": 97997,
+            "p90_ns": 199787,
+            "p99_ns": 516151,
+            "p999_ns": 1946425,
+            "max_ns": 4748630,
+            "mean_ns": 130859,
+            "errors": 0
+          },
+          "errors": {},
+          "valid": true,
+          "timed_out": 0,
+          "scheduled": 64000
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 905,
+            "Batches": 66148,
+            "Entries": 3154,
+            "Sent": 127080,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 902,
+            "Batches": 66020,
+            "Entries": 3152,
+            "Sent": 127016,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 900,
+            "Batches": 66183,
+            "Entries": 3154,
+            "Sent": 127115,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 927,
+            "Batches": 66582,
+            "Entries": 3152,
+            "Sent": 127534,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1001,
+            "Batches": 6306,
+            "Entries": 3152,
+            "Sent": 507945,
+            "Writes": 3151,
+            "Reads": 60840,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.072421875,
+        "msgs_per_op": 15.88578125,
+        "entries_per_fsync": 3.4010787486515643,
+        "elections": 0
+      }
+    }
+  }
+]
