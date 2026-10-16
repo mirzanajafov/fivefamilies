@@ -15,10 +15,50 @@ export type LabRun = {
   problems: string[]
 }
 
+export type Point = {
+  rate: number
+  achieved: number
+  valid: boolean
+  kept: boolean
+  errors: number
+  p50: number
+  p99: number
+  p999: number
+  readP50: number
+  readP99: number
+  writeP50: number
+  writeP99: number
+  fsyncsPerOp: number
+  msgsPerOp: number
+  entriesPerFsync: number
+  elections: number
+}
+
+export type Curve = {
+  name: string
+  nodes: number
+  knee: number
+  latency: Point | null
+  steps: Point[]
+}
+
+export type Curves = { run: string; curves: Curve[] } | null
+
+export type E1bRow = {
+  election: number
+  sync: boolean
+  faults: { kind: string; target: string; duration: number; injections: number; elected: number }[]
+}
+
 type Results = {
   failover: { run: string; rows: FailoverRow[] } | null
   registry: { run: string; ttl: number; election: string; variants: Record<string, RegistryVariant> } | null
   lab: LabRun[]
+  e1b?: { run: string; rows: E1bRow[] } | null
+  e2?: Curves
+  e3?: Curves
+  e4?: Curves
+  e5?: Curves
 }
 
 const results = data as Results
@@ -26,3 +66,5 @@ const results = data as Results
 export const failover = () => results.failover
 export const registry = () => results.registry
 export const lab = () => results.lab
+export const e1b = () => results.e1b ?? null
+export const experiment = (name: 'e2' | 'e3' | 'e4' | 'e5') => results[name] ?? null

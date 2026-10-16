@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,8 +141,10 @@ type Curve struct {
 
 type SweepOptions struct {
 	Start    float64
+	Floor    float64
 	Factor   float64
 	Max      float64
+	Refine   int
 	Duration time.Duration
 	Warmup   time.Duration
 	GenCPUs  string
@@ -150,38 +153,102 @@ type SweepOptions struct {
 
 func saturated(s Step, maxP99 time.Duration) bool {
 	sum := s.Report.Summary
-	return s.Err != "" || !sum.Valid || sum.Achieved < 0.9*s.Rate || sum.All.P99 > maxP99
+	return s.Err != "" || !sum.Valid || sum.Achieved < 0.9*s.Rate || sum.All.P99 > maxP99 || float64(sum.All.Error) > 0.01*float64(sum.Scheduled)
 }
 
 type generator func(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error)
 
+type quieter func(ctx context.Context) error
+
 func (b *BenchCluster) Sweep(ctx context.Context, name string, opts SweepOptions, genFlags []string) Curve {
-	return sweep(ctx, b.Generate, Curve{Name: name, Nodes: b.Nodes, NodeFlags: b.Flags, GenFlags: genFlags}, opts)
+	return sweep(ctx, b.Generate, b.Quiet, Curve{Name: name, Nodes: b.Nodes, NodeFlags: b.Flags, GenFlags: genFlags}, opts)
 }
 
-func sweep(ctx context.Context, gen generator, c Curve, opts SweepOptions) Curve {
+func sweep(ctx context.Context, gen generator, quiet quieter, c Curve, opts SweepOptions) Curve {
+	stopped := false
 	run := func(rate float64) Step {
+		s := Step{Rate: rate}
+		if err := quiet(ctx); err != nil {
+			s.Err, stopped = err.Error(), true
+			return s
+		}
 		args := append([]string{"-rate", fmt.Sprint(rate), "-duration", opts.Duration.String(), "-warmup", opts.Warmup.String()}, c.GenFlags...)
 		r, err := gen(ctx, opts.GenCPUs, args...)
-		s := Step{Rate: rate, Report: r}
+		s.Report = r
 		if err != nil {
 			s.Err = err.Error()
 		}
 		return s
 	}
-	for rate := opts.Start; rate <= opts.Max && ctx.Err() == nil; rate *= opts.Factor {
+	going := func() bool { return !stopped && ctx.Err() == nil }
+	var lo, hi float64
+	try := func(rate float64) bool {
 		s := run(rate)
 		c.Steps = append(c.Steps, s)
 		if saturated(s, opts.MaxP99) {
-			break
+			hi = rate
+			return false
 		}
-		c.Knee = s.Report.Summary.Achieved
+		lo, c.Knee = rate, s.Report.Summary.Achieved
+		return true
 	}
-	if c.Knee > 0 && ctx.Err() == nil {
-		s50, s80 := run(0.5*c.Knee), run(0.8*c.Knee)
+	for rate := opts.Start; rate <= opts.Max && going() && try(rate); rate *= opts.Factor {
+	}
+	for rate := opts.Start / opts.Factor; lo == 0 && rate >= opts.Floor && going(); rate /= opts.Factor {
+		try(rate)
+	}
+	for i := 0; i < opts.Refine && lo > 0 && hi > lo && going(); i++ {
+		try(math.Round((lo + hi) / 2))
+	}
+	if lo > 0 && going() {
+		s50 := run(math.Round(0.5 * lo))
+		s80 := run(math.Round(0.8 * lo))
 		c.At50, c.At80 = &s50, &s80
 	}
 	return c
+}
+
+func settle(ctx context.Context, probe func(context.Context) (uint64, bool)) error {
+	deadline := time.Now().Add(2 * time.Minute)
+	var last uint64
+	was := false
+	for time.Now().Before(deadline) && ctx.Err() == nil {
+		at, idle := probe(ctx)
+		if idle && was && at == last {
+			return nil
+		}
+		last, was = at, idle
+		wait(ctx, 500*time.Millisecond)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return fmt.Errorf("the cluster was still working through its backlog after 2 minutes")
+}
+
+func (b *BenchCluster) Quiet(ctx context.Context) error {
+	adm, err := dialAdmin(b.addrs())
+	if err != nil {
+		return err
+	}
+	defer adm.close()
+	return settle(ctx, func(ctx context.Context) (uint64, bool) {
+		sts := adm.progress(ctx, time.Second)
+		l, _ := leaderOf(sts)
+		if l == 0 {
+			return 0, false
+		}
+		commit := sts[l-1].GetCommit()
+		if sts[l-1].GetLastIndex() != commit {
+			return commit, false
+		}
+		for _, st := range sts {
+			if st == nil || st.GetApplied() != commit {
+				return commit, false
+			}
+		}
+		return commit, true
+	})
 }
 
 func SaveJSON(dir, name string, v any) error {

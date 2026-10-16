@@ -19,9 +19,9 @@ type ExperimentOptions struct {
 }
 
 func (o ExperimentOptions) sweep() SweepOptions {
-	s := SweepOptions{Start: 500, Factor: 2, Max: 64000, Duration: 10 * time.Second, Warmup: 3 * time.Second, GenCPUs: o.GenCPUs, MaxP99: time.Second}
+	s := SweepOptions{Start: 500, Floor: 30, Factor: 2, Max: 64000, Refine: 2, Duration: 10 * time.Second, Warmup: 3 * time.Second, GenCPUs: o.GenCPUs, MaxP99: time.Second}
 	if o.Quick {
-		s.Start, s.Max, s.Duration, s.Warmup = 500, 1000, 2*time.Second, time.Second
+		s.Start, s.Max, s.Refine, s.Duration, s.Warmup = 500, 1000, 0, 2*time.Second, time.Second
 	}
 	return s
 }

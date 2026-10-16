@@ -2,6 +2,7 @@ package lab
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,30 +11,90 @@ import (
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
 )
 
-func TestTheSweepStopsAtTheKneeAndMeasuresBelowIt(t *testing.T) {
-	var rates []string
-	gen := func(ctx context.Context, cpus string, args ...string) (loadgen.Report, error) {
-		var rate float64
-		fmt.Sscan(args[1], &rate)
-		rates = append(rates, args[1])
-		s := loadgen.Summary{Valid: true, Achieved: min(rate, 3000)}
-		s.All.P99 = 10 * time.Millisecond
-		return loadgen.Report{Summary: s}, nil
+type fakeCluster struct {
+	capacity float64
+	rates    []string
+	quiets   int
+	busy     bool
+}
+
+func (f *fakeCluster) gen(ctx context.Context, cpus string, args ...string) (loadgen.Report, error) {
+	var rate float64
+	fmt.Sscan(args[1], &rate)
+	f.rates = append(f.rates, args[1])
+	s := loadgen.Summary{Valid: true, Achieved: min(rate, f.capacity)}
+	s.All.P99 = 10 * time.Millisecond
+	return loadgen.Report{Summary: s}, nil
+}
+
+func (f *fakeCluster) quiet(ctx context.Context) error {
+	f.quiets++
+	if f.busy {
+		return errors.New("still busy")
 	}
-	c := sweep(context.Background(), gen, Curve{Name: "fake"}, SweepOptions{Start: 500, Factor: 2, Max: 64000, MaxP99: time.Second})
+	return nil
+}
+
+func (f *fakeCluster) sweep(opts SweepOptions) Curve {
+	opts.Factor, opts.Max, opts.MaxP99 = 2, 64000, time.Second
+	return sweep(context.Background(), f.gen, f.quiet, Curve{Name: "fake"}, opts)
+}
+
+func TestTheSweepStopsAtTheKneeAndMeasuresBelowIt(t *testing.T) {
+	f := &fakeCluster{capacity: 3000}
+	c := f.sweep(SweepOptions{Start: 500})
 	if c.Knee != 2000 {
 		t.Fatalf("knee %.0f: 4000/s achieved only 3000, so the last rate that kept up was 2000", c.Knee)
 	}
-	if got := strings.Join(rates, " "); got != "500 1000 2000 4000 1000 1600" {
+	if got := strings.Join(f.rates, " "); got != "500 1000 2000 4000 1000 1600" {
 		t.Fatalf("rates run: %s", got)
 	}
 	if c.At50 == nil || c.At80 == nil || c.At80.Rate != 1600 {
 		t.Fatalf("fixed-share runs: %+v %+v", c.At50, c.At80)
 	}
+	if f.quiets != len(f.rates) {
+		t.Fatalf("%d steps but the cluster was let settle %d times", len(f.rates), f.quiets)
+	}
+}
+
+func TestTheSweepNarrowsTheKneeBetweenTheLastGoodAndFirstBadRate(t *testing.T) {
+	f := &fakeCluster{capacity: 3000}
+	c := f.sweep(SweepOptions{Start: 500, Refine: 2})
+	if got := strings.Join(f.rates, " "); got != "500 1000 2000 4000 3000 3500 1500 2400" {
+		t.Fatalf("rates run: %s", got)
+	}
+	if c.Knee != 3000 {
+		t.Fatalf("knee %.0f", c.Knee)
+	}
+}
+
+func TestTheSweepStepsDownWhenTheFirstRateIsAlreadyTooMuch(t *testing.T) {
+	f := &fakeCluster{capacity: 100}
+	c := f.sweep(SweepOptions{Start: 500, Floor: 30, Refine: 2})
+	if got := strings.Join(f.rates, " "); got != "500 250 125 62.5 94 110 55 88" {
+		t.Fatalf("rates run: %s", got)
+	}
+	if c.Knee != 100 {
+		t.Fatalf("knee %.0f", c.Knee)
+	}
+	f = &fakeCluster{capacity: 10}
+	c = f.sweep(SweepOptions{Start: 500, Floor: 30, Refine: 2})
+	if got := strings.Join(f.rates, " "); got != "500 250 125 62.5 31.25" || c.Knee != 0 || c.At80 != nil {
+		t.Fatalf("below the floor: rates %s, knee %.0f, at 80%% %+v", got, c.Knee, c.At80)
+	}
+}
+
+func TestTheSweepStopsWhenTheClusterNeverSettles(t *testing.T) {
+	f := &fakeCluster{capacity: 3000, busy: true}
+	c := f.sweep(SweepOptions{Start: 500, Floor: 30, Refine: 2})
+	if len(f.rates) != 0 || len(c.Steps) != 1 || c.Steps[0].Err == "" || c.Knee != 0 || c.At80 != nil {
+		t.Fatalf("rates %v, steps %+v", f.rates, c.Steps)
+	}
 }
 
 func TestAnInvalidOrSlowStepCountsAsSaturated(t *testing.T) {
-	ok := Step{Rate: 1000, Report: loadgen.Report{Summary: loadgen.Summary{Valid: true, Achieved: 1000}}}
+	ok := Step{Rate: 1000, Report: loadgen.Report{Summary: loadgen.Summary{Valid: true, Achieved: 1000, Scheduled: 10000}}}
+	ok.Report.Summary.All.Error = 100
 	if saturated(ok, time.Second) {
 		t.Fatal("a step that kept up is saturated")
 	}
@@ -43,7 +104,9 @@ func TestAnInvalidOrSlowStepCountsAsSaturated(t *testing.T) {
 	slow.Report.Summary.All.P99 = 2 * time.Second
 	failed := ok
 	failed.Err = "generator crashed"
-	for _, s := range []Step{invalid, slow, failed} {
+	erring := ok
+	erring.Report.Summary.All.Error = 101
+	for _, s := range []Step{invalid, slow, failed, erring} {
 		if !saturated(s, time.Second) {
 			t.Fatalf("%+v is not saturated", s)
 		}
@@ -64,5 +127,21 @@ func TestTheGeneratedComposeFilesPinEveryNode(t *testing.T) {
 		if !strings.Contains(y, want) {
 			t.Fatalf("missing %s in\n%s", want, y)
 		}
+	}
+}
+
+func TestTheClusterIsQuietOnlyWhenIdleTwiceAtTheSameIndex(t *testing.T) {
+	seen := []struct {
+		at   uint64
+		idle bool
+	}{{3, false}, {5, true}, {6, true}, {6, false}, {6, true}, {6, true}}
+	n := 0
+	err := settle(context.Background(), func(context.Context) (uint64, bool) {
+		s := seen[n]
+		n++
+		return s.at, s.idle
+	})
+	if err != nil || n != len(seen) {
+		t.Fatalf("settled after %d probes: %v", n, err)
 	}
 }
