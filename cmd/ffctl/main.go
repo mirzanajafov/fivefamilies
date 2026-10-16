@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
@@ -30,6 +31,9 @@ func usage() {
   member add|promote|remove ID
   lease grant TTL | revoke ID | keepalive ID | ttl ID
   watch PREFIX [REV]     (runs until interrupted)
+  register SERVICE INSTANCE ADDR [TTL]   (keeps the instance registered until interrupted)
+  discover SERVICE       (prints the instances on every change, until interrupted)
+  config set SERVICE KEY VALUE | get SERVICE KEY | watch SERVICE
   transfer ID`)
 	os.Exit(2)
 }
@@ -72,6 +76,33 @@ func main() {
 		rev, err := c.Put(ctx, args[1], []byte(args[2]), opts...)
 		check(err)
 		fmt.Println("rev", rev)
+	case args[0] == "register" && (len(args) == 4 || len(args) == 5):
+		ttl := 10 * time.Second
+		if len(args) == 5 {
+			var err error
+			ttl, err = time.ParseDuration(args[4])
+			check(err)
+		}
+		rctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		reg, err := c.Register(ctx, args[1], args[2], args[3], ttl)
+		check(err)
+		fmt.Println("registered with lease", reg.Lease())
+		<-rctx.Done()
+		dctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		check(c.Deregister(dctx, reg))
+		fmt.Println("deregistered")
+	case args[0] == "discover" && len(args) == 2:
+		dctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		seen, err := c.Discover(dctx, args[1])
+		check(err)
+		for list := range seen {
+			fmt.Println(time.Now().Format("15:04:05.000"), list)
+		}
+	case args[0] == "config" && len(args) >= 3:
+		config(ctx, c, args[1:])
 	case args[0] == "watch" && (len(args) == 2 || len(args) == 3):
 		var from uint64
 		if len(args) == 3 {
@@ -238,5 +269,32 @@ func watchPrefix(ctx context.Context, c *client.Client, prefix string, from uint
 			}
 			fmt.Println(ev.KV.ModRev, "put", ev.KV.Key, strconv.Quote(string(ev.KV.Value)))
 		}
+	}
+}
+
+func config(ctx context.Context, c *client.Client, args []string) {
+	switch {
+	case args[0] == "set" && len(args) == 4:
+		rev, err := c.SetConfig(ctx, args[1], args[2], args[3])
+		check(err)
+		fmt.Println("rev", rev)
+	case args[0] == "get" && len(args) == 3:
+		v, found, err := c.GetConfig(ctx, args[1], args[2])
+		check(err)
+		if !found {
+			fmt.Println("(missing)")
+			return
+		}
+		fmt.Println(v)
+	case args[0] == "watch" && len(args) == 2:
+		wctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		cfg, err := c.WatchConfig(wctx, args[1])
+		check(err)
+		for m := range cfg {
+			fmt.Println(time.Now().Format("15:04:05.000"), m)
+		}
+	default:
+		usage()
 	}
 }

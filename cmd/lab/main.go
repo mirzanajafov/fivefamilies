@@ -57,6 +57,37 @@ func failover(args []string) {
 	}
 }
 
+func registry(args []string) {
+	fs := flag.NewFlagSet("registry", flag.ExitOnError)
+	election := fs.String("election", "1s", "election timeout")
+	heartbeat := fs.String("heartbeat", "100ms", "heartbeat interval")
+	ttl := fs.Duration("ttl", 2*time.Second, "the instance's lease TTL")
+	trials := fs.Int("trials", 10, "trials per variant")
+	seed := fs.Uint64("seed", 1, "seed for the time each instance is held before the kill")
+	out := fs.String("out", filepath.Join("bench", "results", "registry", time.Now().UTC().Format("20060102-150405")), "results directory")
+	build := fs.Bool("build", false, "build the lab image first")
+	fs.Parse(args)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if *build {
+		buildImage(ctx)
+	}
+	res, err := lab.Registry(ctx, lab.RegistryOptions{
+		Election: *election, Heartbeat: *heartbeat, TTL: *ttl, Trials: *trials, Seed: *seed,
+		Project: "fflab", File: filepath.Join("lab", "compose.yml"),
+	}, *out)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	for _, tr := range res.Trials {
+		fmt.Printf("%-16s %s held %v gone %v %s\n", tr.Variant, tr.Instance, tr.Held.Round(time.Millisecond), tr.Gone.Round(time.Millisecond), tr.Err)
+	}
+	for v, s := range res.Variants {
+		fmt.Printf("%s: median %v (min %v, max %v) over %d kills\n", v, s.Median.Round(time.Millisecond), s.Min.Round(time.Millisecond), s.Max.Round(time.Millisecond), s.N)
+	}
+}
+
 func buildImage(ctx context.Context) {
 	cmd := exec.CommandContext(ctx, "docker", "build", "-q", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", ".")
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
@@ -69,6 +100,10 @@ func buildImage(ctx context.Context) {
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "failover" {
 		failover(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "registry" {
+		registry(os.Args[2:])
 		return
 	}
 	seed := flag.Uint64("seed", uint64(time.Now().UnixNano()), "fault schedule and workload seed")
