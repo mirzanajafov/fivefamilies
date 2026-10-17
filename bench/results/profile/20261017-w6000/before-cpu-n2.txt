@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: cpu
+Time: 2026-10-17 17:17:22 +04
+Duration: 20.01s, Total samples = 7.74s (38.68%)
+Showing nodes accounting for 5.51s, 71.19% of 7.74s total
+Dropped 360 nodes (cum <= 0.04s)
+Showing top 40 nodes out of 255
+      flat  flat%   sum%        cum   cum%
+     3.47s 44.83% 44.83%      3.47s 44.83%  internal/runtime/syscall/linux.Syscall6
+     0.20s  2.58% 47.42%      0.20s  2.58%  runtime.memmove
+     0.13s  1.68% 49.10%      0.13s  1.68%  runtime.memclrNoHeapPointers
+     0.11s  1.42% 50.52%      0.12s  1.55%  runtime.unlock2
+     0.10s  1.29% 51.81%      0.87s 11.24%  runtime.selectgo
+     0.09s  1.16% 52.97%      0.09s  1.16%  runtime.cputicks
+     0.09s  1.16% 54.13%      0.09s  1.16%  runtime.nextFreeFast (inline)
+     0.08s  1.03% 55.17%      0.24s  3.10%  runtime.adjustframe
+     0.08s  1.03% 56.20%      0.08s  1.03%  runtime.lock2
+     0.07s   0.9% 57.11%      0.07s   0.9%  internal/runtime/maps.ctrlGroup.matchH2
+     0.07s   0.9% 58.01%      0.07s   0.9%  runtime.step
+     0.07s   0.9% 58.91%      0.10s  1.29%  runtime.tryDeferToSpanScan
+     0.06s  0.78% 59.69%      0.06s  0.78%  internal/sync.(*Mutex).Lock (inline)
+     0.06s  0.78% 60.47%      0.19s  2.45%  runtime.pcvalue
+     0.05s  0.65% 61.11%      0.05s  0.65%  internal/runtime/atomic.(*Uint32).CompareAndSwap (inline)
+     0.05s  0.65% 61.76%      0.05s  0.65%  runtime.(*mspan).writeHeapBitsSmall
+     0.05s  0.65% 62.40%      0.05s  0.65%  runtime.acquirem (inline)
+     0.05s  0.65% 63.05%      0.05s  0.65%  runtime.nanotime (inline)
+     0.04s  0.52% 63.57%      0.04s  0.52%  runtime.(*moduledata).textAddr
+     0.04s  0.52% 64.08%      0.04s  0.52%  runtime.(*timers).adjust
+     0.04s  0.52% 64.60%      0.12s  1.55%  runtime.(*unwinder).resolveInternal
+     0.04s  0.52% 65.12%      0.04s  0.52%  runtime.(*waitq).dequeue (inline)
+     0.04s  0.52% 65.63%      0.37s  4.78%  runtime.newobject
+     0.03s  0.39% 66.02%      0.34s  4.39%  google.golang.org/grpc.(*clientStream).SendMsg
+     0.03s  0.39% 66.41%      0.05s  0.65%  google.golang.org/protobuf/internal/impl.(*MessageInfo).sizePointerSlow
+     0.03s  0.39% 66.80%      0.11s  1.42%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshalPointerEager
+     0.03s  0.39% 67.18%      0.05s  0.65%  runtime.(*spanSet).push
+     0.03s  0.39% 67.57%      0.04s  0.52%  runtime.acquireSudog
+     0.03s  0.39% 67.96%      0.40s  5.17%  runtime.findRunnable
+     0.03s  0.39% 68.35%      0.65s  8.40%  runtime.mallocgc
+     0.03s  0.39% 68.73%      0.08s  1.03%  runtime.scanObject
+     0.03s  0.39% 69.12%      0.06s  0.78%  runtime.scanObjectsSmall
+     0.02s  0.26% 69.38%      0.07s   0.9%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).get
+     0.02s  0.26% 69.64%      0.53s  6.85%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+     0.02s  0.26% 69.90%      0.08s  1.03%  golang.org/x/net/http2/hpack.(*Decoder).parseFieldIndexed
+     0.02s  0.26% 70.16%      1.26s 16.28%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+     0.02s  0.26% 70.41%      1.10s 14.21%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+     0.02s  0.26% 70.67%      0.49s  6.33%  google.golang.org/grpc/internal/transport.(*transportReader).ReadMessageHeader
+     0.02s  0.26% 70.93%      0.68s  8.79%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read
+     0.02s  0.26% 71.19%      0.61s  7.88%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1

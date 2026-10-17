@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: cpu
+Time: 2026-10-17 17:19:21 +04
+Duration: 20s, Total samples = 10.85s (54.25%)
+Showing nodes accounting for 7.51s, 69.22% of 10.85s total
+Dropped 370 nodes (cum <= 0.05s)
+Showing top 40 nodes out of 196
+      flat  flat%   sum%        cum   cum%
+     5.80s 53.46% 53.46%      5.80s 53.46%  internal/runtime/syscall/linux.Syscall6
+     0.10s  0.92% 54.38%      0.14s  1.29%  runtime.tryDeferToSpanScan
+     0.09s  0.83% 55.21%      0.09s  0.83%  internal/runtime/atomic.(*Uint32).CompareAndSwap (inline)
+     0.09s  0.83% 56.04%      0.09s  0.83%  runtime.nextFreeFast (inline)
+     0.08s  0.74% 56.77%      0.08s  0.74%  runtime.memmove
+     0.08s  0.74% 57.51%      0.08s  0.74%  runtime.nanotime (inline)
+     0.08s  0.74% 58.25%      0.87s  8.02%  runtime.selectgo
+     0.07s  0.65% 58.89%      0.07s  0.65%  runtime.memclrNoHeapPointers
+     0.07s  0.65% 59.54%      0.14s  1.29%  runtime.pcvalue
+     0.07s  0.65% 60.18%      0.09s  0.83%  runtime.stkbucket
+     0.07s  0.65% 60.83%      0.08s  0.74%  runtime.unlock2
+     0.06s  0.55% 61.38%      0.10s  0.92%  google.golang.org/protobuf/internal/impl.(*MessageInfo).sizePointerSlow
+     0.06s  0.55% 61.94%      0.14s  1.29%  runtime.(*unwinder).resolveInternal
+     0.05s  0.46% 62.40%      0.57s  5.25%  runtime.netpoll
+     0.05s  0.46% 62.86%      0.47s  4.33%  runtime.sellock
+     0.04s  0.37% 63.23%      0.22s  2.03%  google.golang.org/grpc/internal/transport.(*controlBuffer).executeAndPut
+     0.04s  0.37% 63.59%      0.18s  1.66%  runtime.adjustframe
+     0.04s  0.37% 63.96%      0.36s  3.32%  runtime.newobject
+     0.04s  0.37% 64.33%      0.15s  1.38%  runtime.scanObject
+     0.03s  0.28% 64.61%      0.09s  0.83%  golang.org/x/net/http2/hpack.(*Decoder).parseFieldIndexed
+     0.03s  0.28% 64.88%      0.89s  8.20%  google.golang.org/grpc.(*Server).register.(*Server).wrapUnaryHandler.func1
+     0.03s  0.28% 65.16%      1.37s 12.63%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+     0.03s  0.28% 65.44%      0.39s  3.59%  google.golang.org/grpc/internal/transport.(*http2Server).operateHeaders
+     0.03s  0.28% 65.71%      0.09s  0.83%  runtime.(*stkframe).getStackMap
+     0.03s  0.28% 65.99%      0.08s  0.74%  runtime.(*waitq).dequeue (inline)
+     0.03s  0.28% 66.27%      0.71s  6.54%  runtime.findRunnable
+     0.03s  0.28% 66.54%      0.07s  0.65%  runtime.makechan
+     0.03s  0.28% 66.82%      0.58s  5.35%  runtime.mallocgc
+     0.03s  0.28% 67.10%      0.31s  2.86%  runtime.mallocgcSmallScanNoHeader
+     0.03s  0.28% 67.37%      4.45s 41.01%  syscall.Write (inline)
+     0.02s  0.18% 67.56%      0.77s  7.10%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._KV_Put_Handler
+     0.02s  0.18% 67.74%      0.10s  0.92%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Apply
+     0.02s  0.18% 67.93%      0.36s  3.32%  google.golang.org/grpc.(*GenericClientStream[go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; Messages []*github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.RaftMessage "protobuf:\"bytes,1,rep,name=messages,proto3\" json:\"messages,omitempty\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 },go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 }]).Send
+     0.02s  0.18% 68.11%      1.20s 11.06%  google.golang.org/grpc.(*Server).processRPC
+     0.02s  0.18% 68.29%      0.34s  3.13%  google.golang.org/grpc.(*clientStreamWrapper).SendMsg
+     0.02s  0.18% 68.48%      0.20s  1.84%  google.golang.org/grpc/encoding/proto.(*codecV2).Unmarshal
+     0.02s  0.18% 68.66%      0.19s  1.75%  google.golang.org/grpc/internal/transport.(*controlBuffer).get
+     0.02s  0.18% 68.85%      0.07s  0.65%  google.golang.org/grpc/internal/transport.(*itemList).enqueue
+     0.02s  0.18% 69.03%      4.91s 45.25%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+     0.02s  0.18% 69.22%      0.93s  8.57%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read

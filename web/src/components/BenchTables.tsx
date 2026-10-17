@@ -37,7 +37,8 @@ export function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][
 
 function knee(c: Curve): string {
   if (!c.knee) return 'none'
-  return c.rounds > 1 ? `${rate(c.knee)} (${rate(c.kneeMin)}–${rate(c.kneeMax)})` : rate(c.knee)
+  if (c.rounds < 2) return rate(c.knee)
+  return c.kneeMin === c.kneeMax ? `${rate(c.knee)} (every round)` : `${rate(c.knee)} (${rate(c.kneeMin)}–${rate(c.kneeMax)})`
 }
 
 function latency(c: Curve, cells: (p: Point) => string[]): string[] {

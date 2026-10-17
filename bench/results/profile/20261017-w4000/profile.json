@@ -1,0 +1,151 @@
+{
+  "nodes": 5,
+  "node_flags": [
+    "-election",
+    "1s",
+    "-heartbeat",
+    "100ms"
+  ],
+  "generator_flags": [
+    "-reads",
+    "0",
+    "-value-bytes",
+    "128"
+  ],
+  "phases": [
+    {
+      "name": "before",
+      "rate": 4000,
+      "leader": 3,
+      "follower": 4,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 4000,
+            "Duration": 24000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 4000,
+          "achieved_per_s": 4000,
+          "window_ns": 24000000000,
+          "reads": {
+            "n": 0,
+            "p50_ns": 0,
+            "p90_ns": 0,
+            "p99_ns": 0,
+            "p999_ns": 0,
+            "max_ns": 0,
+            "mean_ns": 0,
+            "errors": 0
+          },
+          "writes": {
+            "n": 96000,
+            "p50_ns": 15299743,
+            "p90_ns": 49038641,
+            "p99_ns": 66907800,
+            "p999_ns": 83429660,
+            "max_ns": 97619892,
+            "mean_ns": 22292774,
+            "errors": 0
+          },
+          "all": {
+            "n": 96000,
+            "p50_ns": 15299743,
+            "p90_ns": 49038641,
+            "p99_ns": 66907800,
+            "p999_ns": 83429660,
+            "max_ns": 97619892,
+            "mean_ns": 22292774,
+            "errors": 0
+          },
+          "dropped": 0,
+          "lag": {
+            "n": 96000,
+            "p50_ns": 136801,
+            "p90_ns": 258977,
+            "p99_ns": 533629,
+            "p999_ns": 1911072,
+            "max_ns": 4245141,
+            "mean_ns": 165421,
+            "errors": 0
+          },
+          "errors": {},
+          "valid": true,
+          "timed_out": 0,
+          "scheduled": 96000
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 2768,
+            "Batches": 53308,
+            "Entries": 96017,
+            "Sent": 102194,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2762,
+            "Batches": 53434,
+            "Entries": 96017,
+            "Sent": 102132,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2942,
+            "Batches": 101656,
+            "Entries": 96017,
+            "Sent": 408541,
+            "Writes": 95996,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2763,
+            "Batches": 53798,
+            "Entries": 96017,
+            "Sent": 102250,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2775,
+            "Batches": 51973,
+            "Entries": 96004,
+            "Sent": 102169,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.1459375,
+        "msgs_per_op": 8.513395833333334,
+        "entries_per_fsync": 34.26638115631692,
+        "elections": 0
+      },
+      "files": [
+        "bench\\results\\profile\\20261017-w4000\\raw\\before-block-n3.pprof",
+        "bench\\results\\profile\\20261017-w4000\\raw\\before-block-n4.pprof",
+        "bench\\results\\profile\\20261017-w4000\\raw\\before-cpu-n3.pprof",
+        "bench\\results\\profile\\20261017-w4000\\raw\\before-cpu-n4.pprof",
+        "bench\\results\\profile\\20261017-w4000\\raw\\before-goroutine-n3.pprof",
+        "bench\\results\\profile\\20261017-w4000\\raw\\before-heap-n3.pprof",
+        "bench\\results\\profile\\20261017-w4000\\raw\\before-heap-n4.pprof",
+        "bench\\results\\profile\\20261017-w4000\\raw\\before-mutex-n3.pprof",
+        "bench\\results\\profile\\20261017-w4000\\raw\\before-mutex-n4.pprof"
+      ]
+    }
+  ]
+}

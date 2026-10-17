@@ -56,19 +56,20 @@ export default function Results() {
         <Section title="Throughput and latency">
           <p className="mb-3 text-sm leading-relaxed">
             Open-loop writes on a quiet cluster, doubling the rate until a step falls behind (under 90% of the offered rate, p99
-            over a second, or more than 1% failed), then two steps of bisection. The knee is the highest rate that kept up;
-            latency comes from a run at 80% of it, or the nearest lower step that kept up.
+            over a second, or more than 1% failed), then two steps of bisection. The knee is the highest rate that kept up; where
+            a row ran three interleaved rounds, it is the median with the range. Latency comes from a run at 80% of the knee, or
+            the nearest lower step that kept up.
           </p>
           <WriteCurves curves={e2.curves} />
           <div className="mt-4">
-            <LoadChart curves={e2.curves.filter((c) => !c.name.includes('append') && !c.name.includes('KiB'))} label="p99 latency against offered writes for three, five and seven nodes and five nodes without pipelining" />
+            <LoadChart curves={e2.curves.filter((c) => ['3 nodes', '5 nodes', '7 nodes', '5 nodes, no pipelining'].includes(c.name))} label="p99 latency against offered writes for three, five and seven nodes and five nodes without pipelining" />
           </div>
           <p className="mt-3 text-sm leading-relaxed">
-            Cluster size moved the knee less than chance does: the same five nodes reached 4,000 here and 6,000 in the etcd
-            comparison an hour later. The number that stands out is messages per write. With pipelining each write goes to every
-            follower as its own append, because the event loop handed Raft one event at a time (changed since, see below); without pipelining the appends wait
-            for each other and carry dozens of entries, and the knee doubled. Past the knee the cluster doesn&apos;t level off, it
-            collapses: writes time out and the leader keeps working on requests nobody is waiting for.
+            Three nodes stay ahead (7,000 to 8,000); five and seven overlap, and the same five-node setup ranged from 4,000 to
+            7,000 over six rounds that evening. Taking the whole queue into one Ready halved the messages per write but didn&apos;t
+            move the knee: one event per Ready reached 7,000 too. Without pipelining the appends wait for each other and carry
+            dozens of entries, which reached 8,000 in its one round. Past the knee the cluster still collapses rather than slowing
+            down, with or without the cap on pending writes.
           </p>
         </Section>
       )}
@@ -82,9 +83,8 @@ export default function Results() {
           <p className="mt-3 text-sm leading-relaxed">
             A flush takes about 9 ms on this disk, so one per write holds every node to about 110 writes a second. Group commit
             flushes about 40 entries at once near its knee. At low load the flush is nearly all of a write&apos;s latency: 13 ms with
-            it, under a millisecond without. Writing on the leader before sending added 2 to 3 ms at low load; its knee is not a fair
-            number yet, because in this run that setting also held back the heartbeats queued with the entries (fixed since), and it
-            caused two elections.
+            it, under a millisecond without. Writing on the leader before sending its appends reached 4,000 against 5,000 for writing
+            in parallel, and added about 3 ms at low load (15.4 against 12.8 ms).
           </p>
         </Section>
       )}
@@ -96,10 +96,11 @@ export default function Results() {
           </p>
           <ReadCurves curves={e4.curves} />
           <p className="mt-3 text-sm leading-relaxed">
-            A lease read costs no messages and answers in about half a millisecond until the leader is busy with writes. ReadIndex
-            should cost one heartbeat round shared by every read waiting for it; here it costs 10 to 16 messages per operation, a
-            round per read, for the same reason (see below). That is why it reaches half of the lease&apos;s throughput, and
-            follower reads, which add a round trip to the leader, don&apos;t raise it much.
+            A lease read answers in a third of a millisecond and costs no messages until the leader is busy with writes. ReadIndex
+            reached 12,000 in all three rounds against the lease&apos;s 16,000: reads that queue up share a heartbeat round, though
+            below the knee one still costs about 14 messages, because there is rarely more than one waiting. ReadIndex on followers
+            reached 20,000, more than the lease, because the reads themselves leave the leader. With half the operations writes,
+            every path is limited by the writes.
           </p>
         </Section>
       )}
@@ -114,11 +115,11 @@ export default function Results() {
             <LoadChart curves={e5.curves.filter((c) => c.name.includes('writes') && !c.name.includes('leader only'))} label="p99 latency against offered writes, FiveFamilies and etcd at three and five nodes" />
           </div>
           <p className="mt-3 text-sm leading-relaxed">
-            etcd wins clearly anyway: about three times the writes and four times the linearizable reads. At low load
-            FiveFamilies is faster (13 ms against 22 to 38 ms for a write), and past their knees they behave differently: etcd
-            slows down and keeps answering, FiveFamilies falls over. Both point at batching under load; the first change for it is
-            measured below. etcd&apos;s five-node write knee is a lower bound: the step above it was ruled
-            invalid because the load generator itself fell behind.
+            etcd still wins on everything that goes through consensus: 2.7 times the writes on five nodes and 4 times on three,
+            2.7 times the linearizable reads. FiveFamilies&apos; unsafe local reads beat etcd&apos;s serializable ones (40,000 against
+            32,000), and at low load FiveFamilies writes faster (11 to 13 ms against 23 to 37 ms). Past their knees etcd slows down
+            and keeps answering; FiveFamilies falls over. etcd&apos;s five-node write median is a lower bound: in one round the step
+            above it was ruled invalid because the load generator itself fell behind.
           </p>
         </Section>
       )}
@@ -132,8 +133,24 @@ export default function Results() {
           <p className="mt-3 text-sm leading-relaxed">
             ReadIndex gained the most: reads that queue up share a heartbeat round, the knee went from 8,000 to 14,000, and offered
             16,000 a second the cluster still served 13,178 instead of 27. Writes send about half the messages (8 against 15 per
-            write at 4,000 a second), but their knee moved by less than run-to-run noise, so something else holds writes back. A
-            profile of the leader is the next step.
+            write at 4,000 a second), but their knee moved by less than run-to-run noise, so something else holds writes back.
+          </p>
+        </Section>
+      )}
+      {e2 && (
+        <Section title="Where the time goes">
+          <p className="text-sm leading-relaxed">
+            Go profiles of the Don under steady writes on five nodes. At 4,000 writes a second it used 54% of its CPU, and half of
+            that went to write syscalls flushing gRPC streams, mostly to the followers; the loop with Raft, the store and the
+            bookkeeping was 6%. At 6,000 a second it used 39%, with bigger batches and fewer flushes, and its request handlers spent
+            their time waiting for commits, not for locks. So CPU doesn&apos;t set the knee; the fsync cadence and a snapshot written
+            inside the loop are the next suspects.
+          </p>
+          <p className="mt-3 text-sm leading-relaxed">
+            Overloaded at 10,000 writes a second for 15 s, the cluster served 218 a second. With the Don refusing writes past
+            4,096 uncommitted entries it served 267, with 5,099 refusals and 85,629 timeouts: the cap bounds the queue inside Raft,
+            but most writes wait in front of the event loop, where nothing bounds them yet. After both overloads it went back to
+            4,000 a second cleanly.
           </p>
         </Section>
       )}

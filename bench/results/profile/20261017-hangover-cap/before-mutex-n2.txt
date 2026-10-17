@@ -1,0 +1,33 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: delay
+Time: 2026-10-17 17:20:31 +04
+Showing nodes accounting for 33.03us, 100% of 33.03us total
+      flat  flat%   sum%        cum   cum%
+   33.03us   100%   100%    33.03us   100%  runtime.unlock (inline)
+         0     0%   100%    14.75us 44.66%  golang.org/x/net/http2.(*Framer).ReadFrameHeader
+         0     0%   100%    14.75us 44.66%  golang.org/x/net/http2.readFrameHeader
+         0     0%   100%    14.75us 44.66%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+         0     0%   100%    14.75us 44.66%  google.golang.org/grpc/internal/transport.(*http2Client).reader
+         0     0%   100%    14.75us 44.66%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read
+         0     0%   100%    14.75us 44.66%  google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady
+         0     0%   100%    14.75us 44.66%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+         0     0%   100%    14.75us 44.66%  google.golang.org/grpc/internal/transport/readyreader.sysRead (inline)
+         0     0%   100%    14.75us 44.66%  internal/poll.(*FD).RawRead
+         0     0%   100%    14.75us 44.66%  io.ReadAtLeast
+         0     0%   100%    14.75us 44.66%  io.ReadFull (inline)
+         0     0%   100%    14.75us 44.66%  net.(*rawConn).Read
+         0     0%   100%    18.28us 55.34%  runtime.(*scavengerState).wake
+         0     0%   100%    14.75us 44.66%  runtime.entersyscall
+         0     0%   100%    14.75us 44.66%  runtime.entersyscallWakeSysmon
+         0     0%   100%    18.28us 55.34%  runtime.injectglist
+         0     0%   100%    18.28us 55.34%  runtime.injectglist.func1
+         0     0%   100%    18.28us 55.34%  runtime.mstart
+         0     0%   100%    18.28us 55.34%  runtime.mstart0
+         0     0%   100%    18.28us 55.34%  runtime.mstart1
+         0     0%   100%    14.75us 44.66%  runtime.reentersyscall
+         0     0%   100%    18.28us 55.34%  runtime.sysmon
+         0     0%   100%    14.75us 44.66%  runtime.systemstack
+         0     0%   100%    14.75us 44.66%  syscall.Read (inline)
+         0     0%   100%    14.75us 44.66%  syscall.Syscall
+         0     0%   100%    14.75us 44.66%  syscall.read

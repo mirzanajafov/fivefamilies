@@ -1,0 +1,222 @@
+{
+  "options": {
+    "seed": 11,
+    "duration_ns": 90000000000,
+    "settle_ns": 5000000000,
+    "workers": 6,
+    "keys": 3,
+    "read": "index",
+    "faults": [
+      "kill",
+      "kill-leader",
+      "pause",
+      "isolate",
+      "split",
+      "bridge",
+      "one-way",
+      "netem",
+      "member",
+      "transfer"
+    ],
+    "fault_mean_ns": 1000000000,
+    "bug": "figure8",
+    "election": "1s",
+    "heartbeat": "100ms",
+    "lease": "0s",
+    "op_timeout_ns": 120000000000,
+    "check_timeout_ns": 300000000000
+  },
+  "started": "2026-10-17T17:10:40.7378911+04:00",
+  "ops": 24218,
+  "unknown_writes": 0,
+  "failed_reads": 0,
+  "faults": [
+    {
+      "kind": "split",
+      "detail": "split [2 1] | [5 4 3]",
+      "start_ns": 1541528800,
+      "end_ns": 5060991800
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 3",
+      "start_ns": 5934696200,
+      "end_ns": 8101103300
+    },
+    {
+      "kind": "bridge",
+      "detail": "bridge 1 between [3] and [4 5 2]",
+      "start_ns": 9383270900,
+      "end_ns": 16250919900
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 2",
+      "start_ns": 16675268200,
+      "end_ns": 23164083500
+    },
+    {
+      "kind": "split",
+      "detail": "split [5 3] | [4 2 1]",
+      "start_ns": 23418116500,
+      "end_ns": 30292231400
+    },
+    {
+      "kind": "kill",
+      "detail": "SIGKILL node 5",
+      "start_ns": 30488186400,
+      "end_ns": 35769862400
+    },
+    {
+      "kind": "one-way",
+      "detail": "one-way 1 -\u003e 3",
+      "start_ns": 36992144300,
+      "end_ns": 43254124100
+    },
+    {
+      "kind": "transfer",
+      "detail": "hand leadership from node 4 to 1",
+      "start_ns": 44653957800,
+      "end_ns": 45581359700
+    },
+    {
+      "kind": "split",
+      "detail": "split [4 1] | [2 3 5]",
+      "start_ns": 45669460000,
+      "end_ns": 48664683500
+    },
+    {
+      "kind": "split",
+      "detail": "split [1] | [3 4 2 5]",
+      "start_ns": 48965665500,
+      "end_ns": 52164355900
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 1",
+      "start_ns": 54374829400,
+      "end_ns": 58870404200
+    },
+    {
+      "kind": "transfer",
+      "detail": "hand leadership from node 3 to 4",
+      "start_ns": 61367158300,
+      "end_ns": 62917129200
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 5, then add it back as a learner and promote it",
+      "start_ns": 63318933300,
+      "end_ns": 67083515800
+    },
+    {
+      "kind": "split",
+      "detail": "split [4] | [3 1 5 2]",
+      "start_ns": 67600717500,
+      "end_ns": 71061820500
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 4, then add it back as a learner and promote it",
+      "start_ns": 71257821500,
+      "end_ns": 73077513900
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 5",
+      "start_ns": 73967450200,
+      "end_ns": 75238435700
+    },
+    {
+      "kind": "bridge",
+      "detail": "bridge 2 between [1] and [5 3 4]",
+      "start_ns": 76410348300,
+      "end_ns": 81559750900
+    },
+    {
+      "kind": "bridge",
+      "detail": "bridge 2 between [3 4 1] and [5]",
+      "start_ns": 81801501100,
+      "end_ns": 88247021700
+    },
+    {
+      "kind": "netem",
+      "detail": "netem delay 25ms 15ms loss 6% on node 4",
+      "start_ns": 88497269600,
+      "end_ns": 91369483200
+    }
+  ],
+  "leaders": [
+    {
+      "at_ns": 27531600,
+      "leader": 1,
+      "term": 1
+    },
+    {
+      "at_ns": 3481253100,
+      "leader": 3,
+      "term": 2
+    },
+    {
+      "at_ns": 6119909400,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 7138202500,
+      "leader": 2,
+      "term": 3
+    },
+    {
+      "at_ns": 18113327200,
+      "leader": 4,
+      "term": 4
+    },
+    {
+      "at_ns": 44742282300,
+      "leader": 1,
+      "term": 5
+    },
+    {
+      "at_ns": 47795887500,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 47998860300,
+      "leader": 3,
+      "term": 6
+    },
+    {
+      "at_ns": 61402275100,
+      "leader": 4,
+      "term": 7
+    },
+    {
+      "at_ns": 69127574300,
+      "leader": 5,
+      "term": 8
+    },
+    {
+      "at_ns": 74215937200,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 75435655100,
+      "leader": 4,
+      "term": 9
+    }
+  ],
+  "linearizable": "Ok",
+  "check_took_ns": 133325100,
+  "states_equal": true,
+  "state_index": 14585,
+  "hashes": [
+    "770189ab71a814cb@14585",
+    "770189ab71a814cb@14585",
+    "770189ab71a814cb@14585",
+    "770189ab71a814cb@14585",
+    "770189ab71a814cb@14585"
+  ]
+}

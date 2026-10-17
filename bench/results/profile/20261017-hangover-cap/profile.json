@@ -1,0 +1,412 @@
+{
+  "nodes": 5,
+  "node_flags": [
+    "-election",
+    "1s",
+    "-heartbeat",
+    "100ms"
+  ],
+  "generator_flags": [
+    "-reads",
+    "0",
+    "-value-bytes",
+    "128"
+  ],
+  "phases": [
+    {
+      "name": "before",
+      "rate": 4000,
+      "leader": 2,
+      "follower": 3,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 4000,
+            "Duration": 24000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 4000,
+          "achieved_per_s": 4000,
+          "window_ns": 24000000000,
+          "reads": {
+            "n": 0,
+            "p50_ns": 0,
+            "p90_ns": 0,
+            "p99_ns": 0,
+            "p999_ns": 0,
+            "max_ns": 0,
+            "mean_ns": 0,
+            "errors": 0
+          },
+          "writes": {
+            "n": 96000,
+            "p50_ns": 15241097,
+            "p90_ns": 42082057,
+            "p99_ns": 58053615,
+            "p999_ns": 67722303,
+            "max_ns": 75183037,
+            "mean_ns": 20189726,
+            "errors": 0
+          },
+          "all": {
+            "n": 96000,
+            "p50_ns": 15241097,
+            "p90_ns": 42082057,
+            "p99_ns": 58053615,
+            "p999_ns": 67722303,
+            "max_ns": 75183037,
+            "mean_ns": 20189726,
+            "errors": 0
+          },
+          "dropped": 0,
+          "lag": {
+            "n": 96000,
+            "p50_ns": 137968,
+            "p90_ns": 255090,
+            "p99_ns": 529975,
+            "p999_ns": 2589785,
+            "max_ns": 7814303,
+            "mean_ns": 167068,
+            "errors": 0
+          },
+          "errors": {},
+          "valid": true,
+          "timed_out": 0,
+          "scheduled": 96000
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 2800,
+            "Batches": 53481,
+            "Entries": 96094,
+            "Sent": 102364,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2983,
+            "Batches": 101759,
+            "Entries": 96010,
+            "Sent": 409171,
+            "Writes": 95997,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2807,
+            "Batches": 52354,
+            "Entries": 96011,
+            "Sent": 102270,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2818,
+            "Batches": 54065,
+            "Entries": 96011,
+            "Sent": 102338,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2848,
+            "Batches": 55388,
+            "Entries": 96011,
+            "Sent": 102347,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.1485,
+        "msgs_per_op": 8.5259375,
+        "entries_per_fsync": 33.67964365881033,
+        "elections": 0
+      },
+      "files": [
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\before-block-n2.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\before-block-n3.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\before-cpu-n2.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\before-cpu-n3.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\before-goroutine-n2.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\before-heap-n2.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\before-heap-n3.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\before-mutex-n2.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\before-mutex-n3.pprof"
+      ]
+    },
+    {
+      "name": "overload",
+      "rate": 10000,
+      "leader": 2,
+      "follower": 3,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 10000,
+            "Duration": 19000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 10000,
+          "achieved_per_s": 267,
+          "window_ns": 19000000000,
+          "reads": {
+            "n": 0,
+            "p50_ns": 0,
+            "p90_ns": 0,
+            "p99_ns": 0,
+            "p999_ns": 0,
+            "max_ns": 0,
+            "mean_ns": 0,
+            "errors": 0
+          },
+          "writes": {
+            "n": 5073,
+            "p50_ns": 1881349948,
+            "p90_ns": 1990626741,
+            "p99_ns": 1999583335,
+            "p999_ns": 2000299600,
+            "max_ns": 2000496191,
+            "mean_ns": 1840581573,
+            "errors": 90728
+          },
+          "all": {
+            "n": 5073,
+            "p50_ns": 1881349948,
+            "p90_ns": 1990626741,
+            "p99_ns": 1999583335,
+            "p999_ns": 2000299600,
+            "max_ns": 2000496191,
+            "mean_ns": 1840581573,
+            "errors": 90728
+          },
+          "dropped": 94199,
+          "lag": {
+            "n": 95801,
+            "p50_ns": 101036,
+            "p90_ns": 164131,
+            "p99_ns": 546009,
+            "p999_ns": 5946117,
+            "max_ns": 12420724,
+            "mean_ns": 134596,
+            "errors": 0
+          },
+          "errors": {
+            "DeadlineExceeded": 85629,
+            "ResourceExhausted": 5099
+          },
+          "valid": false,
+          "invalid": "94199 requests dropped at the in-flight limit",
+          "timed_out": 0,
+          "scheduled": 190000
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 238,
+            "Batches": 289,
+            "Entries": 66938,
+            "Sent": 19896,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 4173,
+            "Batches": 35143,
+            "Entries": 62573,
+            "Sent": 67565,
+            "Writes": 70897,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 197,
+            "Batches": 242,
+            "Entries": 62573,
+            "Sent": 17283,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 199,
+            "Batches": 249,
+            "Entries": 62573,
+            "Sent": 17004,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 170,
+            "Batches": 207,
+            "Entries": 62573,
+            "Sent": 16467,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.9810762862211709,
+        "msgs_per_op": 27.245219791050662,
+        "entries_per_fsync": 63.739200321478805,
+        "elections": 0
+      }
+    },
+    {
+      "name": "after",
+      "rate": 4000,
+      "leader": 2,
+      "follower": 3,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 4000,
+            "Duration": 24000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 4000,
+          "achieved_per_s": 4000,
+          "window_ns": 24000000000,
+          "reads": {
+            "n": 0,
+            "p50_ns": 0,
+            "p90_ns": 0,
+            "p99_ns": 0,
+            "p999_ns": 0,
+            "max_ns": 0,
+            "mean_ns": 0,
+            "errors": 0
+          },
+          "writes": {
+            "n": 96000,
+            "p50_ns": 24251107,
+            "p90_ns": 53207141,
+            "p99_ns": 68438841,
+            "p999_ns": 80529170,
+            "max_ns": 86944341,
+            "mean_ns": 30175256,
+            "errors": 0
+          },
+          "all": {
+            "n": 96000,
+            "p50_ns": 24251107,
+            "p90_ns": 53207141,
+            "p99_ns": 68438841,
+            "p999_ns": 80529170,
+            "max_ns": 86944341,
+            "mean_ns": 30175256,
+            "errors": 0
+          },
+          "dropped": 0,
+          "lag": {
+            "n": 96000,
+            "p50_ns": 120874,
+            "p90_ns": 251640,
+            "p99_ns": 540555,
+            "p999_ns": 2169316,
+            "max_ns": 5565040,
+            "mean_ns": 157688,
+            "errors": 0
+          },
+          "errors": {},
+          "valid": true,
+          "timed_out": 0,
+          "scheduled": 96000
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 2507,
+            "Batches": 33419,
+            "Entries": 96078,
+            "Sent": 100476,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 3004,
+            "Batches": 99833,
+            "Entries": 96023,
+            "Sent": 401524,
+            "Writes": 95997,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2502,
+            "Batches": 33247,
+            "Entries": 96024,
+            "Sent": 100407,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2502,
+            "Batches": 34040,
+            "Entries": 95967,
+            "Sent": 100363,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2541,
+            "Batches": 34792,
+            "Entries": 96024,
+            "Sent": 100447,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.136,
+        "msgs_per_op": 8.36684375,
+        "entries_per_fsync": 36.77359068627451,
+        "elections": 0
+      },
+      "files": [
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\after-block-n2.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\after-block-n3.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\after-cpu-n2.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\after-cpu-n3.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\after-goroutine-n2.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\after-heap-n2.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\after-heap-n3.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\after-mutex-n2.pprof",
+        "bench\\results\\profile\\20261017-hangover-cap\\raw\\after-mutex-n3.pprof"
+      ]
+    }
+  ]
+}

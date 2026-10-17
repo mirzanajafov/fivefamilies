@@ -1,0 +1,47 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: inuse_space
+Time: 2026-10-17 17:21:42 +04
+Showing nodes accounting for 16465.52kB, 100% of 16465.52kB total
+Showing top 40 nodes out of 65
+      flat  flat%   sum%        cum   cum%
+ 4610.11kB 28.00% 28.00%  4610.11kB 28.00%  runtime.mallocgc
+ 4096.62kB 24.88% 52.88%  4096.62kB 24.88%  github.com/mirzanajafov/fivefamilies/internal/kv.Encode
+ 2304.77kB 14.00% 66.88%  2304.77kB 14.00%  github.com/mirzanajafov/fivefamilies/internal/transport.New
+ 1184.27kB  7.19% 74.07%  1184.27kB  7.19%  runtime/pprof.StartCPUProfile
+ 1024.12kB  6.22% 80.29%  1024.12kB  6.22%  github.com/mirzanajafov/fivefamilies/internal/transport.toProto
+  778.57kB  4.73% 85.02%   778.57kB  4.73%  time.newTimer
+  768.26kB  4.67% 89.68%  3073.03kB 18.66%  github.com/mirzanajafov/fivefamilies/internal/server.New
+  600.58kB  3.65% 93.33%   600.58kB  3.65%  github.com/mirzanajafov/fivefamilies/internal/kv.appendBytes (inline)
+  570.04kB  3.46% 96.79%   570.04kB  3.46%  time.goFunc
+  528.17kB  3.21%   100%   528.17kB  3.21%  google.golang.org/grpc/internal/mem.(*SimpleBufferPool).Get
+         0     0%   100%   778.57kB  4.73%  context.WithDeadline (inline)
+         0     0%   100%   778.57kB  4.73%  context.WithDeadlineCause
+         0     0%   100%   778.57kB  4.73%  context.WithTimeout
+         0     0%   100%   600.58kB  3.65%  github.com/google/btree.(*BTreeG[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).Ascend
+         0     0%   100%   600.58kB  3.65%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).iterate
+         0     0%   100%   600.58kB  3.65%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Snapshot
+         0     0%   100%   600.58kB  3.65%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Snapshot.func1
+         0     0%   100%   600.58kB  3.65%  github.com/mirzanajafov/fivefamilies/internal/kv.appendKV
+         0     0%   100%   600.58kB  3.65%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+         0     0%   100%  4096.62kB 24.88%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Submit
+         0     0%   100%   600.58kB  3.65%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).maybeSnapshot
+         0     0%   100%  4697.21kB 28.53%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0%   100%  4096.62kB 24.88%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Submit.func1
+         0     0%   100%  4697.21kB 28.53%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0%   100%  4096.62kB 24.88%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).run.func1
+         0     0%   100%  1024.12kB  6.22%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Start.func1
+         0     0%   100%  1024.12kB  6.22%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+         0     0%   100%  1024.12kB  6.22%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).runPeer
+         0     0%   100%   600.58kB  3.65%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Machine).Snapshot
+         0     0%   100%   528.17kB  3.21%  golang.org/x/net/http2.(*Framer).ReadFrameHeader
+         0     0%   100%   528.17kB  3.21%  golang.org/x/net/http2.readFrameHeader
+         0     0%   100%   778.57kB  4.73%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0%   100%   778.57kB  4.73%  google.golang.org/grpc.(*Server).serveStreams
+         0     0%   100%   528.17kB  3.21%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+         0     0%   100%   528.17kB  3.21%  google.golang.org/grpc/internal/transport.(*http2Client).reader
+         0     0%   100%   778.57kB  4.73%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+         0     0%   100%   778.57kB  4.73%  google.golang.org/grpc/internal/transport.(*http2Server).operateHeaders
+         0     0%   100%   528.17kB  3.21%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read
+         0     0%   100%   528.17kB  3.21%  google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady
+         0     0%   100%   528.17kB  3.21%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1

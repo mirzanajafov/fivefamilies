@@ -1,0 +1,47 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: goroutine
+Time: 2026-10-17 17:16:40 +04
+Showing nodes accounting for 109, 99.09% of 110 total
+Showing top 40 nodes out of 105
+      flat  flat%   sum%        cum   cum%
+       103 93.64% 93.64%        103 93.64%  runtime.gopark
+         2  1.82% 95.45%          2  1.82%  runtime.Gosched
+         2  1.82% 97.27%          2  1.82%  runtime.notetsleepg
+         1  0.91% 98.18%          1  0.91%  runtime.goroutineProfileWithLabels
+         1  0.91% 99.09%          1  0.91%  syscall.Syscall
+         0     0% 99.09%         40 36.36%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._KV_Put_Handler
+         0     0% 99.09%          4  3.64%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._Peer_Send_Handler
+         0     0% 99.09%          1  0.91%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0% 99.09%          1  0.91%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+         0     0% 99.09%         40 36.36%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Submit
+         0     0% 99.09%          1  0.91%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0% 99.09%         40 36.36%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).run
+         0     0% 99.09%          1  0.91%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).sync
+         0     0% 99.09%          1  0.91%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0% 99.09%         40 36.36%  github.com/mirzanajafov/fivefamilies/internal/server.(*kvService).Put
+         0     0% 99.09%         40 36.36%  github.com/mirzanajafov/fivefamilies/internal/server.(*kvService).submit
+         0     0% 99.09%          4  3.64%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Start.func1
+         0     0% 99.09%          4  3.64%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Start.func2
+         0     0% 99.09%          4  3.64%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+         0     0% 99.09%          4  3.64%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).runPeer
+         0     0% 99.09%          4  3.64%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).runSnapshots
+         0     0% 99.09%          4  3.64%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+         0     0% 99.09%          1  0.91%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).Sync (inline)
+         0     0% 99.09%          9  8.18%  golang.org/x/net/http2.(*Framer).ReadFrameHeader
+         0     0% 99.09%          9  8.18%  golang.org/x/net/http2.readFrameHeader
+         0     0% 99.09%          4  3.64%  google.golang.org/grpc.(*GenericServerStream[go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; Messages []*github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.RaftMessage "protobuf:\"bytes,1,rep,name=messages,proto3\" json:\"messages,omitempty\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 },go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 }]).Recv
+         0     0% 99.09%          1  0.91%  google.golang.org/grpc.(*Server).Serve
+         0     0% 99.09%          5  4.55%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0% 99.09%         44 40.00%  google.golang.org/grpc.(*Server).handleStream
+         0     0% 99.09%         44 40.00%  google.golang.org/grpc.(*Server).processRPC
+         0     0% 99.09%         40 36.36%  google.golang.org/grpc.(*Server).register.(*Server).wrapUnaryHandler.func1
+         0     0% 99.09%          5  4.55%  google.golang.org/grpc.(*Server).serveStreams
+         0     0% 99.09%         44 40.00%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+         0     0% 99.09%          4  3.64%  google.golang.org/grpc.(*parser).recvMsg
+         0     0% 99.09%          4  3.64%  google.golang.org/grpc.(*serverStream).RecvMsg
+         0     0% 99.09%          4  3.64%  google.golang.org/grpc.newClientStreamWithParams.func4
+         0     0% 99.09%          4  3.64%  google.golang.org/grpc.recv
+         0     0% 99.09%          4  3.64%  google.golang.org/grpc.recvAndDecompress
+         0     0% 99.09%         12 10.91%  google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run
+         0     0% 99.09%          4  3.64%  google.golang.org/grpc/internal/resolver/dns.(*dnsResolver).watcher
