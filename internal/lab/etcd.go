@@ -191,11 +191,8 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		specs = specs[1:2]
 	}
 	var curves []Curve
-	for _, sp := range specs {
-		if !o.wants(sp.name) {
-			continue
-		}
-		o.Log("%s: starting", sp.name)
+	for round, sp := range rounds(o, specs, func(sp spec) string { return sp.name }) {
+		o.Log("%s, round %d: starting", sp.name, round)
 		var gen generator
 		var quiet quieter
 		var down func()
@@ -224,8 +221,9 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 			gen, quiet, down = b.Generate, b.Quiet, b.Down
 		}
 		c = sweep(ctx, gen, quiet, c, o.sweep())
+		c.Round = round
 		down()
-		o.Log("%s: knee %.0f/s over %d steps", sp.name, c.Knee, len(c.Steps))
+		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
 		if err := SaveJSON(o.Out, "e5.json", curves); err != nil {
 			return curves, err

@@ -35,6 +35,11 @@ export function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][
   )
 }
 
+function knee(c: Curve): string {
+  if (!c.knee) return 'none'
+  return c.rounds > 1 ? `${rate(c.knee)} (${rate(c.kneeMin)}–${rate(c.kneeMax)})` : rate(c.knee)
+}
+
 function latency(c: Curve, cells: (p: Point) => string[]): string[] {
   return c.latency ? [rate(c.latency.rate), ...cells(c.latency)] : Array<string>(5).fill('')
 }
@@ -44,7 +49,7 @@ export function WriteCurves({ curves, unit = 'write' }: { curves: Curve[]; unit?
   return (
     <Table
       head={['configuration', `knee, ${unit}s/s`, 'latency taken at', 'p50', 'p99', `fsyncs per ${unit}`, `messages per ${unit}`]}
-      rows={curves.map((c) => [c.name, c.knee ? rate(c.knee) : 'none', ...latency(c, cells)])}
+      rows={curves.map((c) => [c.name, knee(c), ...latency(c, cells)])}
     />
   )
 }
@@ -54,7 +59,7 @@ export function ReadCurves({ curves }: { curves: Curve[] }) {
   return (
     <Table
       head={['read path and share', 'knee, ops/s', 'latency taken at', 'read p50', 'read p99', 'write p99', 'messages per op']}
-      rows={curves.map((c) => [c.name, c.knee ? rate(c.knee) : 'none', ...latency(c, cells)])}
+      rows={curves.map((c) => [c.name, knee(c), ...latency(c, cells)])}
     />
   )
 }

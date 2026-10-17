@@ -88,6 +88,62 @@ func registry(args []string) {
 	}
 }
 
+func profile(args []string) {
+	fs := flag.NewFlagSet("profile", flag.ExitOnError)
+	nodes := fs.Int("nodes", 5, "cluster size")
+	rate := fs.Float64("rate", 4000, "operations per second while profiling")
+	seconds := fs.Int("seconds", 20, "length of each CPU profile")
+	overload := fs.Float64("overload", 0, "if set, overload the cluster at this rate and then profile again at -rate")
+	overloadFor := fs.Duration("overload-for", 15*time.Second, "how long the overload lasts")
+	nodeFlags := fs.String("node-flags", "-election,1s,-heartbeat,100ms", "node flags, comma separated")
+	genFlags := fs.String("gen-flags", "-reads,0,-value-bytes,128", "generator flags, comma separated")
+	label := fs.String("label", time.Now().Format("20060102")+"-laptop", "results go to bench/results/profile/<label>")
+	nodeCPUs := fs.String("node-cpus", "4,5,6,7,8,9,10", "one cpuset per node, comma separated")
+	genCPUs := fs.String("gen-cpus", "12-15", "the generator's cpuset")
+	build := fs.Bool("build", false, "build the lab image first")
+	fs.Parse(args)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if *build {
+		buildImage(ctx)
+	}
+	out := filepath.Join("bench", "results", "profile", *label)
+	o := lab.ProfileOptions{
+		Nodes: *nodes, Flags: strings.Split(*nodeFlags, ","), GenFlags: strings.Split(*genFlags, ","),
+		Rate: *rate, Seconds: *seconds, Overload: *overload, OverloadFor: *overloadFor,
+		NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Out: out,
+		Log: func(format string, args ...any) {
+			fmt.Printf("%s "+format+"\n", append([]any{time.Now().Format("15:04:05")}, args...)...)
+		},
+	}
+	rep, err := lab.Profile(ctx, o)
+	for _, p := range rep.Phases {
+		for _, f := range p.Files {
+			views := map[string][]string{".txt": {"-top"}}
+			if strings.Contains(f, "-cpu-") {
+				views[".cum.txt"] = []string{"-top", "-cum"}
+			}
+			for suffix, view := range views {
+				top := exec.CommandContext(ctx, "go", append(append([]string{"tool", "pprof"}, view...), "-nodecount=40", f)...)
+				text, err := top.Output()
+				if err != nil {
+					fmt.Fprintln(os.Stderr, f+":", err)
+					continue
+				}
+				name := strings.TrimSuffix(filepath.Base(f), ".pprof") + suffix
+				if err := os.WriteFile(filepath.Join(out, name), text, 0o644); err != nil {
+					fmt.Fprintln(os.Stderr, err)
+				}
+			}
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println("results:", out)
+}
+
 func bench(args []string) {
 	fs := flag.NewFlagSet("bench", flag.ExitOnError)
 	experiments := fs.String("experiment", "e1b,e2,e3,e4,e5", "experiments to run, comma separated")
@@ -96,6 +152,7 @@ func bench(args []string) {
 	genCPUs := fs.String("gen-cpus", "12-15", "the generator's cpuset")
 	quick := fs.Bool("quick", false, "one short configuration per experiment, to check the harness")
 	only := fs.String("only", "", "run only the curves with these names, separated by semicolons")
+	repeat := fs.Int("repeat", 1, "run every curve this many times, interleaved and rotated")
 	build := fs.Bool("build", false, "build the lab image first")
 	fs.Parse(args)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -110,7 +167,7 @@ func bench(args []string) {
 		fmt.Printf("%s "+format+"\n", append([]any{time.Now().Format("15:04:05")}, args...)...)
 	}
 	for e := range strings.SplitSeq(*experiments, ",") {
-		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Log: logf}
+		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Repeat: *repeat, Log: logf}
 		if *only != "" {
 			o.Only = strings.Split(*only, ";")
 		}
@@ -167,6 +224,10 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "registry" {
 		registry(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "profile" {
+		profile(os.Args[2:])
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "bench" {

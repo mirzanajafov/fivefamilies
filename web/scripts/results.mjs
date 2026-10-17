@@ -92,21 +92,28 @@ function curves(kind, label) {
   const run = label ?? runs(kind).filter((r) => r.endsWith('-laptop')).at(-1)
   const f = run && read(kind, run, `${kind}.json`)
   if (!f) return null
+  const rounds = new Map()
+  for (const c of f.map(curve)) rounds.set(c.name, [...(rounds.get(c.name) ?? []), c])
+  return { run, curves: [...rounds.values()].map(combine) }
+}
+
+function curve(c) {
+  const steps = c.steps.filter((s) => s.report.summary.scheduled > 0).map(point).sort((a, b) => a.rate - b.rate)
+  const knee = Math.max(0, ...steps.filter((p) => p.kept).map((p) => p.achieved))
+  const below = steps.filter((p) => p.rate <= 0.8 * knee).reverse()
   return {
-    run,
-    curves: f.map((c) => {
-      const steps = c.steps.filter((s) => s.report.summary.scheduled > 0).map(point).sort((a, b) => a.rate - b.rate)
-      const knee = Math.max(0, ...steps.filter((p) => p.kept).map((p) => p.achieved))
-      const below = steps.filter((p) => p.rate <= 0.8 * knee).reverse()
-      return {
-        name: c.name,
-        nodes: c.nodes,
-        knee,
-        latency: [point(c.at_80_percent), ...below, point(c.at_50_percent)].find((p) => p?.kept) ?? null,
-        steps,
-      }
-    }),
+    name: c.name,
+    nodes: c.nodes,
+    knee,
+    latency: [point(c.at_80_percent), ...below, point(c.at_50_percent)].find((p) => p?.kept) ?? null,
+    steps,
   }
+}
+
+function combine(cs) {
+  const sorted = [...cs].sort((a, b) => a.knee - b.knee)
+  const middle = sorted[Math.floor((sorted.length - 1) / 2)]
+  return { ...middle, knee: median(cs.map((c) => c.knee)), rounds: cs.length, kneeMin: sorted[0].knee, kneeMax: sorted.at(-1).knee }
 }
 
 function batching() {

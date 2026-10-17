@@ -145,3 +145,14 @@ func TestTheClusterIsQuietOnlyWhenIdleTwiceAtTheSameIndex(t *testing.T) {
 		t.Fatalf("settled after %d probes: %v", n, err)
 	}
 }
+
+func TestRepeatsAreInterleavedAndRotated(t *testing.T) {
+	var got []string
+	o := ExperimentOptions{Repeat: 3, Only: []string{"a", "b", "c"}}
+	for r, name := range rounds(o, []string{"a", "x", "b", "c"}, func(s string) string { return s }) {
+		got = append(got, fmt.Sprint(r, name))
+	}
+	if s := strings.Join(got, " "); s != "1a 1b 1c 2b 2c 2a 3c 3a 3b" {
+		t.Fatalf("order %s", s)
+	}
+}

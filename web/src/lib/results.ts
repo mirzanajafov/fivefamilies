@@ -38,6 +38,9 @@ export type Curve = {
   name: string
   nodes: number
   knee: number
+  rounds: number
+  kneeMin: number
+  kneeMax: number
   latency: Point | null
   steps: Point[]
 }

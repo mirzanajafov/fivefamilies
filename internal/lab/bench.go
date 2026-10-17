@@ -20,6 +20,7 @@ type BenchCluster struct {
 	Flags    []string
 	NodeCPUs []string
 	Image    string
+	Profiles bool
 	dir      string
 	d        *Docker
 	gens     int
@@ -58,8 +59,13 @@ func (b *BenchCluster) compose() string {
 	sb.WriteString("services:\n")
 	for i := 1; i <= b.Nodes; i++ {
 		args := append([]string{"-id", fmt.Sprint(i), "-cluster", strings.Join(cluster, ","), "-data", "/data"}, b.Flags...)
+		ports := fmt.Sprintf("\"127.0.0.1:315%d:3161\"", i)
+		if b.Profiles {
+			args = append(args, "-pprof", ":6060")
+			ports += fmt.Sprintf(", \"127.0.0.1:316%d:6060\"", i)
+		}
 		fmt.Fprintf(&sb, "  n%d:\n    image: %s\n    restart: \"no\"\n    cpuset: %q\n    mem_limit: 1g\n    pids_limit: 512\n", i, b.Image, b.NodeCPUs[(i-1)%len(b.NodeCPUs)])
-		fmt.Fprintf(&sb, "    command: [%s]\n    ports: [\"127.0.0.1:315%d:3161\"]\n    volumes: [\"n%d:/data\"]\n    networks: [bench]\n", quote(args), i, i)
+		fmt.Fprintf(&sb, "    command: [%s]\n    ports: [%s]\n    volumes: [\"n%d:/data\"]\n    networks: [bench]\n", quote(args), ports, i)
 	}
 	sb.WriteString("networks:\n  bench: {}\nvolumes:\n")
 	for i := 1; i <= b.Nodes; i++ {
@@ -134,6 +140,7 @@ type Curve struct {
 	NodeFlags []string `json:"node_flags"`
 	GenFlags  []string `json:"generator_flags"`
 	Steps     []Step   `json:"steps"`
+	Round     int      `json:"round,omitempty"`
 	Knee      float64  `json:"knee_per_s"`
 	At50      *Step    `json:"at_50_percent,omitempty"`
 	At80      *Step    `json:"at_80_percent,omitempty"`
