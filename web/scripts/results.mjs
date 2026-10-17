@@ -89,12 +89,17 @@ function point(step) {
 }
 
 function curves(kind, label) {
-  const run = label ?? runs(kind).filter((r) => r.endsWith('-laptop')).at(-1)
-  const f = run && read(kind, run, `${kind}.json`)
-  if (!f) return null
-  const rounds = new Map()
-  for (const c of f.map(curve)) rounds.set(c.name, [...(rounds.get(c.name) ?? []), c])
-  return { run, curves: [...rounds.values()].map(combine) }
+  const newest = new Map()
+  for (const run of label ? [label] : runs(kind).filter((r) => r.endsWith('-laptop'))) {
+    const f = read(kind, run, `${kind}.json`)
+    if (!f) continue
+    const rounds = new Map()
+    for (const c of f.map(curve)) rounds.set(c.name, [...(rounds.get(c.name) ?? []), c])
+    for (const [name, cs] of rounds) newest.set(name, { ...combine(cs), run })
+  }
+  if (newest.size === 0) return null
+  const all = [...newest.values()]
+  return { run: [...new Set(all.map((c) => c.run))].join(', '), curves: all }
 }
 
 function curve(c) {
