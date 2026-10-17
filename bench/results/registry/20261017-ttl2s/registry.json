@@ -1,0 +1,155 @@
+{
+  "options": {
+    "election": "1s",
+    "heartbeat": "100ms",
+    "ttl_ns": 2000000000,
+    "trials": 10,
+    "seed": 1
+  },
+  "trials": [
+    {
+      "variant": "instance",
+      "instance": "i0",
+      "held_ns": 3373789507,
+      "gone_ns": 1993197400
+    },
+    {
+      "variant": "instance+leader",
+      "instance": "i1",
+      "leader_killed": 5,
+      "held_ns": 3759427471,
+      "gone_ns": 3114092500
+    },
+    {
+      "variant": "instance",
+      "instance": "i2",
+      "held_ns": 3181187819,
+      "gone_ns": 1519900900
+    },
+    {
+      "variant": "instance+leader",
+      "instance": "i3",
+      "leader_killed": 4,
+      "held_ns": 2679554495,
+      "gone_ns": 3204165100
+    },
+    {
+      "variant": "instance",
+      "instance": "i4",
+      "held_ns": 3353547329,
+      "gone_ns": 2014248700
+    },
+    {
+      "variant": "instance+leader",
+      "instance": "i5",
+      "leader_killed": 1,
+      "held_ns": 3609065245,
+      "gone_ns": 3145276200
+    },
+    {
+      "variant": "instance",
+      "instance": "i6",
+      "held_ns": 3395943145,
+      "gone_ns": 1972191500
+    },
+    {
+      "variant": "instance+leader",
+      "instance": "i7",
+      "leader_killed": 5,
+      "held_ns": 3790066336,
+      "gone_ns": 3365191100
+    },
+    {
+      "variant": "instance",
+      "instance": "i8",
+      "held_ns": 3963802827,
+      "gone_ns": 2077895000
+    },
+    {
+      "variant": "instance+leader",
+      "instance": "i9",
+      "leader_killed": 2,
+      "held_ns": 2722509521,
+      "gone_ns": 3163943900
+    },
+    {
+      "variant": "instance",
+      "instance": "i10",
+      "held_ns": 2483842740,
+      "gone_ns": 1538702900
+    },
+    {
+      "variant": "instance+leader",
+      "instance": "i11",
+      "leader_killed": 3,
+      "held_ns": 2781810106,
+      "gone_ns": 3065710800
+    },
+    {
+      "variant": "instance",
+      "instance": "i12",
+      "held_ns": 2975398645,
+      "gone_ns": 1711433100
+    },
+    {
+      "variant": "instance+leader",
+      "instance": "i13",
+      "leader_killed": 4,
+      "held_ns": 2556976412,
+      "gone_ns": 3264514000
+    },
+    {
+      "variant": "instance",
+      "instance": "i14",
+      "held_ns": 2915084763,
+      "gone_ns": 1788951700
+    },
+    {
+      "variant": "instance+leader",
+      "instance": "i15",
+      "leader_killed": 5,
+      "held_ns": 2793289849,
+      "gone_ns": 3148462400
+    },
+    {
+      "variant": "instance",
+      "instance": "i16",
+      "held_ns": 3214276662,
+      "gone_ns": 1474710000
+    },
+    {
+      "variant": "instance+leader",
+      "instance": "i17",
+      "leader_killed": 3,
+      "held_ns": 3646590183,
+      "gone_ns": 3203682700
+    },
+    {
+      "variant": "instance",
+      "instance": "i18",
+      "held_ns": 3667483002,
+      "gone_ns": 1695664500
+    },
+    {
+      "variant": "instance+leader",
+      "instance": "i19",
+      "leader_killed": 2,
+      "held_ns": 3862442793,
+      "gone_ns": 3329365500
+    }
+  ],
+  "variants": {
+    "instance": {
+      "median_ns": 1788951700,
+      "min_ns": 1474710000,
+      "max_ns": 2077895000,
+      "n": 10
+    },
+    "instance+leader": {
+      "median_ns": 3203682700,
+      "min_ns": 3065710800,
+      "max_ns": 3365191100,
+      "n": 10
+    }
+  }
+}

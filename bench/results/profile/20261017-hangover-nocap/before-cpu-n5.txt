@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: cpu
+Time: 2026-10-17 17:18:09 +04
+Duration: 20.01s, Total samples = 5.08s (25.38%)
+Showing nodes accounting for 3.57s, 70.28% of 5.08s total
+Dropped 274 nodes (cum <= 0.03s)
+Showing top 40 nodes out of 242
+      flat  flat%   sum%        cum   cum%
+     2.07s 40.75% 40.75%      2.07s 40.75%  internal/runtime/syscall/linux.Syscall6
+     0.08s  1.57% 42.32%      0.70s 13.78%  runtime.selectgo
+     0.08s  1.57% 43.90%      0.10s  1.97%  runtime.step
+     0.07s  1.38% 45.28%      0.07s  1.38%  runtime.memmove
+     0.07s  1.38% 46.65%      0.07s  1.38%  runtime.nanotime (inline)
+     0.07s  1.38% 48.03%      0.07s  1.38%  runtime.nextFreeFast (inline)
+     0.06s  1.18% 49.21%      0.33s  6.50%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+     0.06s  1.18% 50.39%      0.07s  1.38%  runtime.findfunc
+     0.05s  0.98% 51.38%      0.12s  2.36%  runtime.(*unwinder).resolveInternal
+     0.05s  0.98% 52.36%      0.05s  0.98%  runtime.lock2
+     0.05s  0.98% 53.35%      0.29s  5.71%  runtime.mallocgcSmallScanNoHeader
+     0.05s  0.98% 54.33%      0.06s  1.18%  runtime.unlock2
+     0.04s  0.79% 55.12%      0.10s  1.97%  google.golang.org/protobuf/internal/impl.(*MessageInfo).marshalAppendPointer
+     0.04s  0.79% 55.91%      0.17s  3.35%  runtime.pcvalue
+     0.04s  0.79% 56.69%      0.04s  0.79%  runtime.stkbucket
+     0.04s  0.79% 57.48%      0.06s  1.18%  runtime.tryDeferToSpanScan
+     0.03s  0.59% 58.07%      0.04s  0.79%  golang.org/x/net/http2.(*Framer).readMetaFrame.func1
+     0.03s  0.59% 58.66%      0.41s  8.07%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read
+     0.03s  0.59% 59.25%      0.04s  0.79%  google.golang.org/protobuf/internal/impl.(*MessageInfo).sizePointerSlow
+     0.03s  0.59% 59.84%      0.03s  0.59%  internal/runtime/maps.ctrlGroup.matchFull
+     0.03s  0.59% 60.43%      0.03s  0.59%  runtime.(*moduledata).textAddr
+     0.03s  0.59% 61.02%      0.06s  1.18%  runtime.(*mspan).writeHeapBitsSmall
+     0.03s  0.59% 61.61%      0.16s  3.15%  runtime.(*stkframe).getStackMap
+     0.03s  0.59% 62.20%      0.03s  0.59%  runtime.adjustpointers
+     0.03s  0.59% 62.80%      0.03s  0.59%  runtime.cputicks
+     0.03s  0.59% 63.39%      0.06s  1.18%  runtime.fpTracebackPartialExpand
+     0.03s  0.59% 63.98%      0.03s  0.59%  runtime.futex
+     0.03s  0.59% 64.57%      0.12s  2.36%  runtime.growslice
+     0.03s  0.59% 65.16%      0.38s  7.48%  runtime.mallocgc
+     0.03s  0.59% 65.75%      0.03s  0.59%  runtime.memclrNoHeapPointers
+     0.03s  0.59% 66.34%      0.15s  2.95%  runtime.newobject
+     0.03s  0.59% 66.93%      0.09s  1.77%  runtime.scanObject
+     0.03s  0.59% 67.52%      0.42s  8.27%  runtime.sellock
+     0.02s  0.39% 67.91%      0.05s  0.98%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).put
+     0.02s  0.39% 68.31%      0.04s  0.79%  github.com/mirzanajafov/fivefamilies/internal/kv.lessKey
+     0.02s  0.39% 68.70%      0.05s  0.98%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).send
+     0.02s  0.39% 69.09%      0.06s  1.18%  golang.org/x/net/http2/hpack.(*Decoder).callEmit
+     0.02s  0.39% 69.49%      0.14s  2.76%  google.golang.org/grpc.(*clientStream).SendMsg
+     0.02s  0.39% 69.88%      0.12s  2.36%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshalPointerEager
+     0.02s  0.39% 70.28%      0.10s  1.97%  runtime.chansend

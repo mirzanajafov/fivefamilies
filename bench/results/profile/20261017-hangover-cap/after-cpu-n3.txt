@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: cpu
+Time: 2026-10-17 17:21:22 +04
+Duration: 20s, Total samples = 2.39s (11.95%)
+Showing nodes accounting for 2.10s, 87.87% of 2.39s total
+Dropped 115 nodes (cum <= 0.01s)
+Showing top 40 nodes out of 145
+      flat  flat%   sum%        cum   cum%
+     1.44s 60.25% 60.25%      1.44s 60.25%  internal/runtime/syscall/linux.Syscall6
+     0.08s  3.35% 63.60%      0.12s  5.02%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find.func1 (inline)
+     0.06s  2.51% 66.11%      0.06s  2.51%  runtime.futex
+     0.04s  1.67% 67.78%      0.04s  1.67%  cmpbody
+     0.04s  1.67% 69.46%      0.04s  1.67%  runtime.nanotime (inline)
+     0.03s  1.26% 70.71%      0.03s  1.26%  runtime.nextFreeFast (inline)
+     0.03s  1.26% 71.97%      0.03s  1.26%  runtime.stkbucket
+     0.02s  0.84% 72.80%      0.12s  5.02%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).get
+     0.02s  0.84% 73.64%      0.20s  8.37%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+     0.02s  0.84% 74.48%      0.02s  0.84%  google.golang.org/grpc.(*serverStream).RecvMsg.func1
+     0.02s  0.84% 75.31%      0.53s 22.18%  google.golang.org/grpc/internal/transport.(*bufWriter).flushKeepBuffer
+     0.02s  0.84% 76.15%      0.49s 20.50%  internal/poll.(*FD).RawRead
+     0.02s  0.84% 76.99%      0.02s  0.84%  runtime.(*mheap).allocNeedsZero
+     0.02s  0.84% 77.82%      0.02s  0.84%  runtime.memmove
+     0.02s  0.84% 78.66%      0.02s  0.84%  runtime.nanotime1
+     0.02s  0.84% 79.50%      0.04s  1.67%  runtime.unlock2
+     0.01s  0.42% 79.92%      0.15s  6.28%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).exec
+     0.01s  0.42% 80.33%      0.02s  0.84%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Hub).Publish
+     0.01s  0.42% 80.75%      0.16s  6.69%  google.golang.org/grpc.(*serverStream).RecvMsg
+     0.01s  0.42% 81.17%      0.03s  1.26%  google.golang.org/grpc.recvAndDecompress
+     0.01s  0.42% 81.59%      0.08s  3.35%  google.golang.org/grpc/encoding/proto.(*codecV2).Marshal
+     0.01s  0.42% 82.01%      0.10s  4.18%  google.golang.org/grpc/encoding/proto.(*codecV2).Unmarshal
+     0.01s  0.42% 82.43%      0.02s  0.84%  google.golang.org/grpc/encoding/proto.messageV2Of (inline)
+     0.01s  0.42% 82.85%      0.51s 21.34%  google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady
+     0.01s  0.42% 83.26%      0.02s  0.84%  google.golang.org/protobuf/internal/impl.(*MessageInfo).marshalAppendPointer
+     0.01s  0.42% 83.68%      0.06s  2.51%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshalPointerEager
+     0.01s  0.42% 84.10%      0.02s  0.84%  google.golang.org/protobuf/internal/impl.(*messageState).protoUnwrap
+     0.01s  0.42% 84.52%      0.03s  1.26%  google.golang.org/protobuf/proto.MarshalOptions.marshal
+     0.01s  0.42% 84.94%      0.10s  4.18%  internal/runtime/syscall/linux.EpollWait
+     0.01s  0.42% 85.36%      0.50s 20.92%  net.(*rawConn).Read
+     0.01s  0.42% 85.77%      0.03s  1.26%  reflect.New
+     0.01s  0.42% 86.19%      0.02s  0.84%  runtime.cheaprandn (inline)
+     0.01s  0.42% 86.61%      0.02s  0.84%  runtime.exitsyscall
+     0.01s  0.42% 87.03%      0.18s  7.53%  runtime.findRunnable
+     0.01s  0.42% 87.45%      0.08s  3.35%  runtime.selectgo
+     0.01s  0.42% 87.87%      1.36s 56.90%  syscall.RawSyscall6
+         0     0% 87.87%      0.12s  5.02%  github.com/google/btree.(*BTreeG[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).Get
+         0     0% 87.87%      0.02s  0.84%  github.com/google/btree.(*BTreeG[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).ReplaceOrInsert
+         0     0% 87.87%      0.02s  0.84%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).insert
+         0     0% 87.87%      0.12s  5.02%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find

@@ -1,0 +1,299 @@
+{
+  "options": {
+    "seed": 5,
+    "duration_ns": 180000000000,
+    "settle_ns": 5000000000,
+    "workers": 6,
+    "keys": 3,
+    "read": "index",
+    "faults": [
+      "kill",
+      "kill-leader",
+      "pause",
+      "isolate",
+      "split",
+      "bridge",
+      "one-way",
+      "netem",
+      "member",
+      "transfer"
+    ],
+    "fault_mean_ns": 2000000000,
+    "election": "1s",
+    "heartbeat": "100ms",
+    "lease": "0s",
+    "op_timeout_ns": 120000000000,
+    "check_timeout_ns": 300000000000
+  },
+  "started": "2026-10-17T16:58:29.7652172+04:00",
+  "ops": 51012,
+  "unknown_writes": 0,
+  "failed_reads": 0,
+  "faults": [
+    {
+      "kind": "pause",
+      "detail": "pause node 4",
+      "start_ns": 2694094900,
+      "end_ns": 5916376500
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 3, then add it back as a learner and promote it",
+      "start_ns": 7314614600,
+      "end_ns": 11832602600
+    },
+    {
+      "kind": "one-way",
+      "detail": "one-way 2 -\u003e 3",
+      "start_ns": 15585204400,
+      "end_ns": 18447668800
+    },
+    {
+      "kind": "transfer",
+      "detail": "hand leadership from node 1 to 5",
+      "start_ns": 20913763400,
+      "end_ns": 22104182900
+    },
+    {
+      "kind": "kill",
+      "detail": "SIGKILL node 1",
+      "start_ns": 22282829400,
+      "end_ns": 27137437000
+    },
+    {
+      "kind": "transfer",
+      "detail": "hand leadership from node 5 to 2",
+      "start_ns": 30219079400,
+      "end_ns": 31751474500
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 2",
+      "start_ns": 31868183400,
+      "end_ns": 35818491500
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 3, then add it back as a learner and promote it",
+      "start_ns": 36954808900,
+      "end_ns": 40720343300
+    },
+    {
+      "kind": "split",
+      "detail": "split [2] | [3 1 5 4]",
+      "start_ns": 40828064300,
+      "end_ns": 47438982700
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 2",
+      "start_ns": 49768808800,
+      "end_ns": 53436521600
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 4",
+      "start_ns": 59322620700,
+      "end_ns": 62232505200
+    },
+    {
+      "kind": "split",
+      "detail": "split [5 3] | [2 4 1]",
+      "start_ns": 64157682000,
+      "end_ns": 70969854800
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 4",
+      "start_ns": 79790562500,
+      "end_ns": 84357600200
+    },
+    {
+      "kind": "kill",
+      "detail": "SIGKILL node 3",
+      "start_ns": 86653003400,
+      "end_ns": 91668600700
+    },
+    {
+      "kind": "isolate",
+      "detail": "isolate node 5",
+      "start_ns": 92057364900,
+      "end_ns": 96643510900
+    },
+    {
+      "kind": "bridge",
+      "detail": "bridge 4 between [2 3 1] and [5]",
+      "start_ns": 99054978100,
+      "end_ns": 104136158500
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 2, then add it back as a learner and promote it",
+      "start_ns": 104175647300,
+      "end_ns": 106262795500
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 1",
+      "start_ns": 107778307900,
+      "end_ns": 111657084800
+    },
+    {
+      "kind": "kill",
+      "detail": "SIGKILL node 4",
+      "start_ns": 111931775900,
+      "end_ns": 116777023000
+    },
+    {
+      "kind": "one-way",
+      "detail": "one-way 3 -\u003e 4",
+      "start_ns": 117799524200,
+      "end_ns": 120248755500
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 2",
+      "start_ns": 120689082900,
+      "end_ns": 123231110200
+    },
+    {
+      "kind": "kill-leader",
+      "detail": "SIGKILL node 5",
+      "start_ns": 127588106100,
+      "end_ns": 129787727200
+    },
+    {
+      "kind": "split",
+      "detail": "split [3] | [1 5 2 4]",
+      "start_ns": 132025542100,
+      "end_ns": 134534916100
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 5",
+      "start_ns": 135630645700,
+      "end_ns": 136593615100
+    },
+    {
+      "kind": "split",
+      "detail": "split [4] | [5 2 3 1]",
+      "start_ns": 136953818400,
+      "end_ns": 140225509300
+    },
+    {
+      "kind": "netem",
+      "detail": "netem delay 45ms 18ms loss 9% on node 3",
+      "start_ns": 142363845600,
+      "end_ns": 147636965000
+    },
+    {
+      "kind": "split",
+      "detail": "split [4 5] | [3 2 1]",
+      "start_ns": 148388450500,
+      "end_ns": 155371156000
+    },
+    {
+      "kind": "pause",
+      "detail": "pause node 3",
+      "start_ns": 157097205400,
+      "end_ns": 158050763200
+    },
+    {
+      "kind": "kill",
+      "detail": "SIGKILL node 1",
+      "start_ns": 159738181100,
+      "end_ns": 160886405600
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 5, then add it back as a learner and promote it",
+      "start_ns": 163294210100,
+      "end_ns": 169009501100
+    },
+    {
+      "kind": "member",
+      "detail": "remove node 5, then add it back as a learner and promote it",
+      "start_ns": 169917825400,
+      "end_ns": 172690211100
+    },
+    {
+      "kind": "kill",
+      "detail": "SIGKILL node 1",
+      "start_ns": 172872291400,
+      "end_ns": 177846398800
+    }
+  ],
+  "leaders": [
+    {
+      "at_ns": 30666200,
+      "leader": 1,
+      "term": 1
+    },
+    {
+      "at_ns": 21122494400,
+      "leader": 5,
+      "term": 2
+    },
+    {
+      "at_ns": 30269364600,
+      "leader": 2,
+      "term": 3
+    },
+    {
+      "at_ns": 32122606500,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 33136718100,
+      "leader": 1,
+      "term": 4
+    },
+    {
+      "at_ns": 107941640000,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 109361267100,
+      "leader": 5,
+      "term": 5
+    },
+    {
+      "at_ns": 127861301400,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 129281259500,
+      "leader": 4,
+      "term": 6
+    },
+    {
+      "at_ns": 138393425000,
+      "leader": 1,
+      "term": 7
+    },
+    {
+      "at_ns": 160056638900,
+      "leader": 0,
+      "term": 0
+    },
+    {
+      "at_ns": 161280224700,
+      "leader": 3,
+      "term": 8
+    }
+  ],
+  "linearizable": "Ok",
+  "check_took_ns": 587132100,
+  "states_equal": true,
+  "state_index": 30706,
+  "hashes": [
+    "178dddfd050c393e@30706",
+    "178dddfd050c393e@30706",
+    "178dddfd050c393e@30706",
+    "178dddfd050c393e@30706",
+    "178dddfd050c393e@30706"
+  ]
+}

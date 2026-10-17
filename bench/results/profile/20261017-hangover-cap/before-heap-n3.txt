@@ -1,0 +1,47 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: inuse_space
+Time: 2026-10-17 17:20:31 +04
+Showing nodes accounting for 11043.86kB, 100% of 11043.86kB total
+Showing top 40 nodes out of 53
+      flat  flat%   sum%        cum   cum%
+    3323kB 30.09% 30.09%     3323kB 30.09%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Hub).Publish
+ 2304.77kB 20.87% 50.96%  2304.77kB 20.87%  github.com/mirzanajafov/fivefamilies/internal/transport.New
+ 2048.28kB 18.55% 69.51%  2048.28kB 18.55%  google.golang.org/protobuf/internal/impl.consumeBytesNoZero
+  908.20kB  8.22% 77.73%   908.20kB  8.22%  github.com/mirzanajafov/fivefamilies/internal/raft.(*raftLog).append
+  768.26kB  6.96% 84.69%  3073.03kB 27.83%  github.com/mirzanajafov/fivefamilies/internal/server.New
+  600.58kB  5.44% 90.12%   600.58kB  5.44%  github.com/mirzanajafov/fivefamilies/internal/kv.appendBytes (inline)
+  578.66kB  5.24% 95.36%   578.66kB  5.24%  runtime/pprof.StartCPUProfile
+  512.10kB  4.64%   100%   512.10kB  4.64%  google.golang.org/grpc/internal/balancer/gracefulswitch.(*balancerWrapper).NewSubConn
+         0     0%   100%   600.58kB  5.44%  github.com/google/btree.(*BTreeG[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).Ascend
+         0     0%   100%   600.58kB  5.44%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).iterate
+         0     0%   100%  2048.28kB 18.55%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._Peer_Send_Handler
+         0     0%   100%   600.58kB  5.44%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Snapshot
+         0     0%   100%   600.58kB  5.44%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Snapshot.func1
+         0     0%   100%   600.58kB  5.44%  github.com/mirzanajafov/fivefamilies/internal/kv.appendKV
+         0     0%   100%  3923.58kB 35.53%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+         0     0%   100%   908.20kB  8.22%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Receive (inline)
+         0     0%   100%   600.58kB  5.44%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).maybeSnapshot
+         0     0%   100%   908.20kB  8.22%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).Step
+         0     0%   100%   908.20kB  8.22%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).handleAppend
+         0     0%   100%   908.20kB  8.22%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).stepFollower
+         0     0%   100%   908.20kB  8.22%  github.com/mirzanajafov/fivefamilies/internal/raft.(*raftLog).maybeAppend
+         0     0%   100%  4831.78kB 43.75%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0%   100%  4831.78kB 43.75%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0%   100%  2048.28kB 18.55%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+         0     0%   100%     3323kB 30.09%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Machine).Apply
+         0     0%   100%   600.58kB  5.44%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Machine).Snapshot
+         0     0%   100%  2048.28kB 18.55%  google.golang.org/grpc.(*GenericServerStream[go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; Messages []*github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.RaftMessage "protobuf:\"bytes,1,rep,name=messages,proto3\" json:\"messages,omitempty\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 },go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 }]).Recv
+         0     0%   100%  2048.28kB 18.55%  google.golang.org/grpc.(*Server).handleStream
+         0     0%   100%  2048.28kB 18.55%  google.golang.org/grpc.(*Server).processRPC
+         0     0%   100%  2048.28kB 18.55%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+         0     0%   100%   512.10kB  4.64%  google.golang.org/grpc.(*ccBalancerWrapper).updateClientConnState.func1
+         0     0%   100%  2048.28kB 18.55%  google.golang.org/grpc.(*serverStream).RecvMsg
+         0     0%   100%  2048.28kB 18.55%  google.golang.org/grpc.recv
+         0     0%   100%   512.10kB  4.64%  google.golang.org/grpc/balancer/pickfirst.(*pickfirstBalancer).UpdateClientConnState
+         0     0%   100%   512.10kB  4.64%  google.golang.org/grpc/balancer/pickfirst.(*pickfirstBalancer).newSCData
+         0     0%   100%   512.10kB  4.64%  google.golang.org/grpc/balancer/pickfirst.(*pickfirstBalancer).requestConnectionLocked
+         0     0%   100%   512.10kB  4.64%  google.golang.org/grpc/balancer/pickfirst.(*pickfirstBalancer).startFirstPassLocked
+         0     0%   100%  2048.28kB 18.55%  google.golang.org/grpc/encoding/proto.(*codecV2).Unmarshal
+         0     0%   100%   512.10kB  4.64%  google.golang.org/grpc/internal/balancer/gracefulswitch.(*Balancer).UpdateClientConnState
+         0     0%   100%   512.10kB  4.64%  google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run

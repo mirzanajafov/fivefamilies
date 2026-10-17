@@ -1,0 +1,48 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: cpu
+Time: 2026-10-17 17:18:09 +04
+Duration: 20s, Total samples = 1.81s ( 9.05%)
+Showing nodes accounting for 1.65s, 91.16% of 1.81s total
+Showing top 40 nodes out of 219
+      flat  flat%   sum%        cum   cum%
+     1.07s 59.12% 59.12%      1.07s 59.12%  internal/runtime/syscall/linux.Syscall6
+     0.06s  3.31% 62.43%      0.06s  3.31%  runtime.futex
+     0.03s  1.66% 64.09%      0.03s  1.66%  cmpbody
+     0.03s  1.66% 65.75%      0.03s  1.66%  runtime.memmove
+     0.03s  1.66% 67.40%      0.03s  1.66%  runtime.nextFreeFast (inline)
+     0.03s  1.66% 69.06%      0.10s  5.52%  runtime.selectgo
+     0.02s  1.10% 70.17%      0.05s  2.76%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find.func1 (inline)
+     0.02s  1.10% 71.27%      0.02s  1.10%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.(*Batch).ProtoReflect
+     0.02s  1.10% 72.38%      0.02s  1.10%  runtime.cputicks
+     0.02s  1.10% 73.48%      0.02s  1.10%  runtime.lock2
+     0.02s  1.10% 74.59%      0.02s  1.10%  runtime.nanotime
+     0.02s  1.10% 75.69%      0.10s  5.52%  runtime.netpoll
+     0.01s  0.55% 76.24%      0.06s  3.31%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).get
+     0.01s  0.55% 76.80%      0.12s  6.63%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+     0.01s  0.55% 77.35%      0.01s  0.55%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).syncLessor
+     0.01s  0.55% 77.90%      0.01s  0.55%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).write
+     0.01s  0.55% 78.45%      0.01s  0.55%  gogo
+     0.01s  0.55% 79.01%      0.22s 12.15%  golang.org/x/net/http2.readFrameHeader
+     0.01s  0.55% 79.56%      0.13s  7.18%  google.golang.org/grpc.(*GenericServerStream[go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; Messages []*github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.RaftMessage "protobuf:\"bytes,1,rep,name=messages,proto3\" json:\"messages,omitempty\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 },go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 }]).Recv
+     0.01s  0.55% 80.11%      0.04s  2.21%  google.golang.org/grpc.(*parser).recvMsg
+     0.01s  0.55% 80.66%      0.01s  0.55%  google.golang.org/grpc/internal/mem.(*SimpleBufferPool).Get
+     0.01s  0.55% 81.22%      0.01s  0.55%  google.golang.org/grpc/internal/transport.(*bdpEstimator).timesnap (inline)
+     0.01s  0.55% 81.77%      0.01s  0.55%  google.golang.org/grpc/internal/transport.(*bufWriter).Write
+     0.01s  0.55% 82.32%      0.01s  0.55%  google.golang.org/grpc/internal/transport.(*controlBuffer).getOnceLocked
+     0.01s  0.55% 82.87%      0.01s  0.55%  google.golang.org/grpc/internal/transport.(*http2Server).getStream
+     0.01s  0.55% 83.43%      0.43s 23.76%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+     0.01s  0.55% 83.98%      0.01s  0.55%  google.golang.org/protobuf/internal/impl.consumeUint32
+     0.01s  0.55% 84.53%      0.08s  4.42%  google.golang.org/protobuf/proto.Unmarshal
+     0.01s  0.55% 85.08%      0.45s 24.86%  internal/poll.ignoringEINTRIO (inline)
+     0.01s  0.55% 85.64%      0.01s  0.55%  internal/runtime/atomic.(*Int32).CompareAndSwap (inline)
+     0.01s  0.55% 86.19%      0.07s  3.87%  internal/runtime/syscall/linux.EpollWait
+     0.01s  0.55% 86.74%      0.01s  0.55%  runtime.(*gList).push (inline)
+     0.01s  0.55% 87.29%      0.01s  0.55%  runtime.(*mheap).initSpan
+     0.01s  0.55% 87.85%      0.01s  0.55%  runtime.(*mspan).markBitsForIndex
+     0.01s  0.55% 88.40%      0.01s  0.55%  runtime.(*pageCache).alloc
+     0.01s  0.55% 88.95%      0.01s  0.55%  runtime.bulkBarrierPreWrite
+     0.01s  0.55% 89.50%      0.02s  1.10%  runtime.chansend
+     0.01s  0.55% 90.06%      0.01s  0.55%  runtime.cheaprand
+     0.01s  0.55% 90.61%      0.01s  0.55%  runtime.checkIdleGCNoP
+     0.01s  0.55% 91.16%      0.01s  0.55%  runtime.dropg

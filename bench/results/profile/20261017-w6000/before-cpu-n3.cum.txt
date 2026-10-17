@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: cpu
+Time: 2026-10-17 17:17:22 +04
+Duration: 20s, Total samples = 2.91s (14.55%)
+Showing nodes accounting for 1.58s, 54.30% of 2.91s total
+Dropped 86 nodes (cum <= 0.01s)
+Showing top 40 nodes out of 201
+      flat  flat%   sum%        cum   cum%
+     1.48s 50.86% 50.86%      1.48s 50.86%  internal/runtime/syscall/linux.Syscall6
+     0.01s  0.34% 51.20%      1.43s 49.14%  syscall.Syscall
+         0     0% 51.20%      1.34s 46.05%  syscall.RawSyscall6
+         0     0% 51.20%      0.78s 26.80%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0% 51.20%      0.78s 26.80%  google.golang.org/grpc.(*Server).serveStreams
+     0.01s  0.34% 51.55%      0.78s 26.80%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+     0.01s  0.34% 51.89%      0.74s 25.43%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+     0.01s  0.34% 52.23%      0.68s 23.37%  io.ReadAtLeast
+         0     0% 52.23%      0.68s 23.37%  io.ReadFull (inline)
+     0.01s  0.34% 52.58%      0.67s 23.02%  golang.org/x/net/http2.(*Framer).ReadFrameHeader
+     0.01s  0.34% 52.92%      0.67s 23.02%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read
+         0     0% 52.92%      0.66s 22.68%  golang.org/x/net/http2.readFrameHeader
+         0     0% 52.92%      0.66s 22.68%  internal/poll.(*FD).Write
+         0     0% 52.92%      0.66s 22.68%  internal/poll.ignoringEINTRIO (inline)
+         0     0% 52.92%      0.66s 22.68%  syscall.Write (inline)
+     0.01s  0.34% 53.26%      0.66s 22.68%  syscall.write
+     0.01s  0.34% 53.61%      0.65s 22.34%  google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady
+         0     0% 53.61%      0.64s 21.99%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+         0     0% 53.61%      0.64s 21.99%  internal/poll.(*FD).RawRead
+         0     0% 53.61%      0.64s 21.99%  net.(*rawConn).Read
+         0     0% 53.61%      0.62s 21.31%  google.golang.org/grpc/internal/transport/readyreader.sysRead (inline)
+         0     0% 53.61%      0.62s 21.31%  syscall.Read (inline)
+         0     0% 53.61%      0.62s 21.31%  syscall.read
+         0     0% 53.61%      0.55s 18.90%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+         0     0% 53.61%      0.53s 18.21%  sync.(*WaitGroup).Go.func1
+         0     0% 53.61%      0.49s 16.84%  google.golang.org/grpc/internal/transport.(*bufWriter).Flush
+     0.01s  0.34% 53.95%      0.48s 16.49%  google.golang.org/grpc/internal/transport.(*bufWriter).flushKeepBuffer
+         0     0% 53.95%      0.47s 16.15%  net.(*conn).Write
+         0     0% 53.95%      0.47s 16.15%  net.(*netFD).Write
+         0     0% 53.95%      0.43s 14.78%  google.golang.org/grpc/internal/transport.NewServerTransport.func3
+         0     0% 53.95%      0.42s 14.43%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0% 53.95%      0.42s 14.43%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0% 53.95%      0.42s 14.43%  main.main
+         0     0% 53.95%      0.42s 14.43%  runtime.main
+         0     0% 53.95%      0.41s 14.09%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+         0     0% 53.95%      0.41s 14.09%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0% 53.95%      0.29s  9.97%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._Peer_Send_Handler
+     0.01s  0.34% 54.30%      0.29s  9.97%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+         0     0% 54.30%      0.29s  9.97%  google.golang.org/grpc.(*Server).handleStream
+         0     0% 54.30%      0.29s  9.97%  google.golang.org/grpc.(*Server).processRPC

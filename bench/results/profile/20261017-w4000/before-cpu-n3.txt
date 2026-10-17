@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: cpu
+Time: 2026-10-17 17:16:30 +04
+Duration: 20s, Total samples = 10.90s (54.50%)
+Showing nodes accounting for 8.38s, 76.88% of 10.90s total
+Dropped 348 nodes (cum <= 0.05s)
+Showing top 40 nodes out of 187
+      flat  flat%   sum%        cum   cum%
+     6.88s 63.12% 63.12%      6.88s 63.12%  internal/runtime/syscall/linux.Syscall6
+     0.14s  1.28% 64.40%      0.14s  1.28%  runtime.nextFreeFast (inline)
+     0.11s  1.01% 65.41%      0.11s  1.01%  runtime.memmove
+     0.11s  1.01% 66.42%      0.72s  6.61%  runtime.selectgo
+     0.08s  0.73% 67.16%      0.08s  0.73%  internal/runtime/atomic.(*Uint32).CompareAndSwap (inline)
+     0.08s  0.73% 67.89%      0.37s  3.39%  runtime.sellock
+     0.08s  0.73% 68.62%      0.09s  0.83%  runtime.unlock2
+     0.06s  0.55% 69.17%      6.10s 55.96%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+     0.06s  0.55% 69.72%      0.99s  9.08%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+     0.05s  0.46% 70.18%      0.11s  1.01%  runtime.pcvalue
+     0.05s  0.46% 70.64%      0.06s  0.55%  runtime.step
+     0.04s  0.37% 71.01%      0.06s  0.55%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find.func1 (inline)
+     0.04s  0.37% 71.38%      0.07s  0.64%  google.golang.org/protobuf/internal/impl.(*MessageInfo).marshalAppendPointer
+     0.04s  0.37% 71.74%      0.06s  0.55%  google.golang.org/protobuf/internal/impl.(*MessageInfo).sizePointerSlow
+     0.04s  0.37% 72.11%      0.48s  4.40%  runtime.mallocgc
+     0.04s  0.37% 72.48%      0.23s  2.11%  runtime.newobject
+     0.03s  0.28% 72.75%      1.27s 11.65%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+     0.03s  0.28% 73.03%      0.07s  0.64%  runtime.(*unwinder).resolveInternal
+     0.03s  0.28% 73.30%      0.19s  1.74%  runtime.chansend
+     0.03s  0.28% 73.58%      0.08s  0.73%  runtime.tryDeferToSpanScan
+     0.03s  0.28% 73.85%      6.62s 60.73%  syscall.Syscall
+     0.02s  0.18% 74.04%      0.09s  0.83%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).get
+     0.02s  0.18% 74.22%      0.41s  3.76%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+     0.02s  0.18% 74.40%      0.06s  0.55%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).deliver
+     0.02s  0.18% 74.59%      0.49s  4.50%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+     0.02s  0.18% 74.77%      0.19s  1.74%  google.golang.org/grpc/encoding/proto.(*codecV2).Unmarshal
+     0.02s  0.18% 74.95%      1.05s  9.63%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+     0.02s  0.18% 75.14%      0.08s  0.73%  google.golang.org/grpc/internal/transport.(*loopyWriter).processData
+     0.02s  0.18% 75.32%      0.12s  1.10%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshalPointerEager
+     0.02s  0.18% 75.50%      0.10s  0.92%  runtime.(*stkframe).getStackMap
+     0.02s  0.18% 75.69%      0.32s  2.94%  runtime.mallocgcSmallScanNoHeader
+     0.02s  0.18% 75.87%      0.38s  3.49%  runtime.netpoll
+     0.02s  0.18% 76.06%      0.08s  0.73%  runtime.scanObjectsSmall
+     0.02s  0.18% 76.24%      0.60s  5.50%  runtime.schedule
+     0.02s  0.18% 76.42%      5.63s 51.65%  syscall.write
+     0.01s 0.092% 76.51%      0.07s  0.64%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find
+     0.01s 0.092% 76.61%      0.49s  4.50%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._KV_Put_Handler
+     0.01s 0.092% 76.70%      0.12s  1.10%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Apply
+     0.01s 0.092% 76.79%      0.06s  0.55%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).Ready
+     0.01s 0.092% 76.88%      0.14s  1.28%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).sync

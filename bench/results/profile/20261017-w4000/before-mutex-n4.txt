@@ -1,0 +1,41 @@
+File: ffnode
+Build ID: d10a6ec4d13fa7e1a673776a41df3748dafcca08
+Type: delay
+Time: 2026-10-17 17:16:50 +04
+Showing nodes accounting for 251.64us, 100% of 251.64us total
+      flat  flat%   sum%        cum   cum%
+  251.64us   100%   100%   251.64us   100%  runtime.unlock (inline)
+         0     0%   100%    57.06us 22.67%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+         0     0%   100%    57.06us 22.67%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).sync
+         0     0%   100%    57.06us 22.67%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0%   100%    57.06us 22.67%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).Sync (inline)
+         0     0%   100%   194.58us 77.33%  golang.org/x/net/http2.(*Framer).ReadFrameHeader
+         0     0%   100%   194.58us 77.33%  golang.org/x/net/http2.readFrameHeader
+         0     0%   100%   194.58us 77.33%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0%   100%   194.58us 77.33%  google.golang.org/grpc.(*Server).serveStreams
+         0     0%   100%   194.58us 77.33%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+         0     0%   100%   194.58us 77.33%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+         0     0%   100%   194.58us 77.33%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read
+         0     0%   100%   194.58us 77.33%  google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady
+         0     0%   100%   194.58us 77.33%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+         0     0%   100%   194.58us 77.33%  google.golang.org/grpc/internal/transport/readyreader.sysRead (inline)
+         0     0%   100%    57.06us 22.67%  internal/poll.(*FD).Fsync
+         0     0%   100%    57.06us 22.67%  internal/poll.(*FD).Fsync.func1 (inline)
+         0     0%   100%   194.58us 77.33%  internal/poll.(*FD).RawRead
+         0     0%   100%    57.06us 22.67%  internal/poll.ignoringEINTR (inline)
+         0     0%   100%   194.58us 77.33%  io.ReadAtLeast
+         0     0%   100%   194.58us 77.33%  io.ReadFull (inline)
+         0     0%   100%   194.58us 77.33%  net.(*rawConn).Read
+         0     0%   100%    57.06us 22.67%  os.(*File).Sync
+         0     0%   100%   194.58us 77.33%  runtime.entersyscall
+         0     0%   100%   194.58us 77.33%  runtime.entersyscallWakeSysmon
+         0     0%   100%    57.06us 22.67%  runtime.exitsyscall
+         0     0%   100%    57.06us 22.67%  runtime.exitsyscall.func3
+         0     0%   100%    57.06us 22.67%  runtime.exitsyscallTryGetP
+         0     0%   100%   194.58us 77.33%  runtime.reentersyscall
+         0     0%   100%   251.64us   100%  runtime.systemstack
+         0     0%   100%    57.06us 22.67%  sync.(*WaitGroup).Go.func1
+         0     0%   100%    57.06us 22.67%  syscall.Fsync
+         0     0%   100%   194.58us 77.33%  syscall.Read (inline)
+         0     0%   100%   251.64us   100%  syscall.Syscall
+         0     0%   100%   194.58us 77.33%  syscall.read
