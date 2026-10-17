@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -39,7 +40,7 @@ func (t *target) failed(n int, err error, md metadata.MD) error {
 		if id, perr := strconv.Atoi(hint[0]); perr == nil && id >= 1 && id <= len(t.kv) {
 			t.leader.CompareAndSwap(int64(n), int64(id-1))
 		}
-	} else {
+	} else if status.Code(err) == codes.Unavailable {
 		t.leader.CompareAndSwap(int64(n), int64((n+1)%len(t.kv)))
 	}
 	return codeErr{status.Code(err).String()}

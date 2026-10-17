@@ -92,6 +92,7 @@ func main() {
 	maxInflight := flag.Int("max-inflight", 0, "append messages in flight per follower (1 turns pipelining off)")
 	maxMsgBytes := flag.Int("max-msg-bytes", 0, "bytes of entries per append message (1 sends one entry per message)")
 	batch := flag.Int("batch", 0, "events the loop takes before each Ready (default 256; 1 handles every event on its own)")
+	maxPending := flag.Uint64("max-pending", 4096, "uncommitted entries a leader holds before it refuses new writes (0 never refuses)")
 	restore := flag.String("restore", "", "start a new cluster from this backup file when the data directory is empty (every node needs the same file)")
 	chaos := flag.Bool("chaos", false, "accept chaos requests (stall-disk, pause, isolate, crash) on the admin API")
 	level := flag.String("log-level", "info", "debug, info, warn or error")
@@ -152,6 +153,7 @@ func main() {
 		MaxInflight:     *maxInflight,
 		MaxMsgBytes:     *maxMsgBytes,
 		Batch:           *batch,
+		MaxPending:      *maxPending,
 		Chaos:           *chaos,
 	}
 	if *restore != "" {

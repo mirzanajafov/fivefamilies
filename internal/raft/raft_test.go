@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"slices"
@@ -459,6 +460,30 @@ func TestInflightWindowPausesReplication(t *testing.T) {
 	m, ok := find(rd.Messages, MsgApp, 2)
 	if !ok || len(m.Entries) != 3 {
 		t.Fatalf("after the ack: %v", m)
+	}
+}
+
+func TestALeaderRefusesProposalsPastItsPendingCap(t *testing.T) {
+	c := newCluster(t, 3, func(cfg *Config) { cfg.MaxPending = 5 })
+	c.elect(1)
+	c.isolate(1)
+	r := c.node(1)
+	for i := range 5 {
+		if _, err := r.Propose([]byte{byte(i)}); err != nil {
+			t.Fatalf("proposal %d under the cap: %v", i, err)
+		}
+	}
+	if _, err := r.Propose([]byte("over")); !errors.Is(err, ErrBusy) {
+		t.Fatalf("the sixth uncommitted proposal: %v, want ErrBusy", err)
+	}
+	c.drain()
+	c.heal()
+	c.tickAll(5)
+	if r.Committed() != r.LastIndex() {
+		t.Fatalf("committed %d of %d after healing", r.Committed(), r.LastIndex())
+	}
+	if _, err := r.Propose([]byte("after")); err != nil {
+		t.Fatalf("after the backlog committed: %v", err)
 	}
 }
 

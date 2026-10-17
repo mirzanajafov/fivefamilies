@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,8 @@ import (
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func putMany(t *testing.T, c *testCluster, writers, each int) {
@@ -75,9 +78,7 @@ func TestTheLoopTakesEverythingQueuedIntoOneReady(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			before := c.status(l)
-			blocked, release := make(chan struct{}), make(chan struct{})
-			go srv.inLoop(ctx, func() { close(blocked); <-release })
-			<-blocked
+			release := blockLoop(t, ctx, srv)
 			var wg sync.WaitGroup
 			for i := range 100 {
 				wg.Go(func() {
@@ -89,7 +90,7 @@ func TestTheLoopTakesEverythingQueuedIntoOneReady(t *testing.T) {
 			for len(srv.calls) < 100 {
 				time.Sleep(time.Millisecond)
 			}
-			close(release)
+			release()
 			wg.Wait()
 			after := c.status(l)
 			batches, sent := after.GetWalBatches()-before.GetWalBatches(), after.GetMsgsSent()-before.GetMsgsSent()
@@ -101,6 +102,82 @@ func TestTheLoopTakesEverythingQueuedIntoOneReady(t *testing.T) {
 				t.Fatalf("100 writes queued at once went out in %d log batches", batches)
 			}
 		})
+	}
+}
+
+func blockLoop(t *testing.T, ctx context.Context, srv *Server) func() {
+	t.Helper()
+	blocked, release := make(chan struct{}), make(chan struct{})
+	go srv.inLoop(ctx, func() { close(blocked); <-release })
+	<-blocked
+	return func() { close(release) }
+}
+
+func TestALeaderOverItsPendingCapRefusesAtOnce(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.MaxPending = 5 })
+	l := c.leader(5 * time.Second)
+	srv := c.running[l].srv
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: "warm", Value: []byte("v")}); err != nil {
+		t.Fatal(err)
+	}
+	release := blockLoop(t, ctx, srv)
+	var ok, busy atomic.Int32
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Go(func() {
+			_, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: fmt.Sprint(i), Value: []byte("v")})
+			switch {
+			case err == nil:
+				ok.Add(1)
+			case errors.Is(err, raft.ErrBusy):
+				busy.Add(1)
+			default:
+				t.Error(err)
+			}
+		})
+	}
+	for len(srv.calls) < 20 {
+		time.Sleep(time.Millisecond)
+	}
+	release()
+	wg.Wait()
+	if ok.Load() != 5 || busy.Load() != 15 {
+		t.Fatalf("%d written and %d refused, want 5 and 15", ok.Load(), busy.Load())
+	}
+	if code := status.Code(fail(ctx, srv, raft.ErrBusy)); code != codes.ResourceExhausted {
+		t.Fatalf("a refusal reaches the client as %s", code)
+	}
+}
+
+func TestARequestWhoseClientGaveUpIsNotProposed(t *testing.T) {
+	c := newTestCluster(t, 3, nil)
+	l := c.leader(5 * time.Second)
+	srv := c.running[l].srv
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: "warm", Value: []byte("v")}); err != nil {
+		t.Fatal(err)
+	}
+	before := c.status(l).GetLastIndex()
+	release := blockLoop(t, ctx, srv)
+	short, stop := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer stop()
+	done := make(chan error, 1)
+	go func() {
+		_, err := srv.Submit(short, kv.Command{Op: kv.OpPut, Key: "late", Value: []byte("v")})
+		done <- err
+	}()
+	if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err %v", err)
+	}
+	release()
+	if err := srv.inLoop(ctx, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	if after := c.status(l).GetLastIndex(); after != before {
+		t.Fatalf("the log grew from %d to %d for a request nobody waited for", before, after)
 	}
 }
 

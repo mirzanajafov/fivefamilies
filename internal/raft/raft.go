@@ -14,6 +14,7 @@ var (
 	ErrConfNotReady  = errors.New("raft: the leader has not committed an entry of its own term yet")
 	ErrLearnerBehind = errors.New("raft: the learner has not caught up yet")
 	ErrBadConfChange = errors.New("raft: invalid membership change")
+	ErrBusy          = errors.New("raft: too many entries waiting to commit")
 )
 
 const campaignTransfer = 1
@@ -32,6 +33,7 @@ type Config struct {
 	MaxMsgBytes   int
 	MaxInflight   int
 	MaxLearnerLag uint64
+	MaxPending    uint64
 	LeaseTicks    int
 	Rand          Source
 	Bugs          Bug
@@ -220,6 +222,9 @@ func (r *Raft) Propose(data []byte) (uint64, error) {
 	}
 	if r.transferee != None {
 		return 0, ErrTransferring
+	}
+	if r.cfg.MaxPending > 0 && r.log.lastIndex()-r.log.committed >= r.cfg.MaxPending {
+		return 0, ErrBusy
 	}
 	e := r.appendEntry(EntryNormal, data)
 	r.pendingBcast = true
