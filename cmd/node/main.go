@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,6 +25,17 @@ import (
 )
 
 var plantable string
+
+func serveProfiles(addr string, logger *slog.Logger) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		logger.Error("serving profiles", "addr", addr, "err", err)
+	}
+}
 
 func parseCluster(s string) (map[raft.NodeID]string, error) {
 	nodes := map[raft.NodeID]string{}
@@ -81,6 +95,7 @@ func main() {
 	restore := flag.String("restore", "", "start a new cluster from this backup file when the data directory is empty (every node needs the same file)")
 	chaos := flag.Bool("chaos", false, "accept chaos requests (stall-disk, pause, isolate, crash) on the admin API")
 	level := flag.String("log-level", "info", "debug, info, warn or error")
+	profile := flag.String("pprof", "", "serve Go profiles on this address (off by default; for the lab, never published in production)")
 	flag.Parse()
 
 	var lvl slog.Level
@@ -181,6 +196,11 @@ func main() {
 			logger.Error("serving", "err", err)
 		}
 	}()
+	if *profile != "" {
+		runtime.SetMutexProfileFraction(10)
+		runtime.SetBlockProfileRate(int(100 * time.Microsecond))
+		go serveProfiles(*profile, logger)
+	}
 	logger.Info("node started", "id", *id, "addr", addr, "nodes", len(nodes), "election", *election, "lease", *lease)
 	srv.Run(ctx)
 	g.GracefulStop()

@@ -3,6 +3,7 @@ package lab
 import (
 	"context"
 	"fmt"
+	"iter"
 	"math/rand/v2"
 	"slices"
 	"time"
@@ -16,7 +17,26 @@ type ExperimentOptions struct {
 	GenCPUs  string
 	Quick    bool
 	Only     []string
+	Repeat   int
 	Log      func(format string, args ...any)
+}
+
+func rounds[T any](o ExperimentOptions, specs []T, name func(T) string) iter.Seq2[int, T] {
+	return func(yield func(int, T) bool) {
+		var picked []T
+		for _, sp := range specs {
+			if o.wants(name(sp)) {
+				picked = append(picked, sp)
+			}
+		}
+		for r := range max(1, o.Repeat) {
+			for i := range picked {
+				if !yield(r+1, picked[(i+r)%len(picked)]) {
+					return
+				}
+			}
+		}
+	}
 }
 
 func (o ExperimentOptions) wants(name string) bool {
@@ -57,19 +77,17 @@ func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []cu
 		specs = specs[:1]
 	}
 	var curves []Curve
-	for _, sp := range specs {
-		if !o.wants(sp.name) {
-			continue
-		}
+	for round, sp := range rounds(o, specs, func(sp curveSpec) string { return sp.name }) {
 		b := &BenchCluster{Nodes: sp.nodes, Flags: sp.node, NodeCPUs: o.NodeCPUs}
-		o.Log("%s: starting %d nodes", sp.name, sp.nodes)
+		o.Log("%s, round %d: starting %d nodes", sp.name, round, sp.nodes)
 		if err := b.Up(ctx); err != nil {
 			b.Down()
 			return curves, fmt.Errorf("%s: %w", sp.name, err)
 		}
 		c := b.Sweep(ctx, sp.name, o.sweep(), sp.gen)
+		c.Round = round
 		b.Down()
-		o.Log("%s: knee %.0f/s over %d steps", sp.name, c.Knee, len(c.Steps))
+		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
 		if err := SaveJSON(o.Out, file, curves); err != nil {
 			return curves, err
