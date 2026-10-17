@@ -143,7 +143,7 @@ func (c *Client) moveOn(failed string, md metadata.MD) {
 
 func retryable(err error) bool {
 	switch status.Code(err) {
-	case codes.Unavailable, codes.DeadlineExceeded, codes.Canceled:
+	case codes.Unavailable, codes.DeadlineExceeded, codes.Canceled, codes.ResourceExhausted:
 		return true
 	}
 	return false
@@ -174,7 +174,9 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 			}
 			return zero, err
 		}
-		c.moveOn(addr, md)
+		if status.Code(err) != codes.ResourceExhausted {
+			c.moveOn(addr, md)
+		}
 		select {
 		case <-ctx.Done():
 			return zero, ctx.Err()

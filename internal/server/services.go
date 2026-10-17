@@ -44,6 +44,8 @@ func fail(ctx context.Context, s *Server, err error) error {
 		return status.Error(codes.Unavailable, err.Error())
 	case errors.Is(err, raft.ErrConfPending), errors.Is(err, raft.ErrLearnerBehind), errors.Is(err, ErrTransferAborted):
 		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, raft.ErrBusy):
+		return status.Error(codes.ResourceExhausted, "too many writes waiting to commit; retry later")
 	case errors.Is(err, raft.ErrBadConfChange):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):

@@ -50,6 +50,7 @@ type Config struct {
 	WriteBeforeSend bool
 	MaxInflight     int
 	MaxMsgBytes     int
+	MaxPending      uint64
 	Batch           int
 	Chaos           bool
 	Crash           func()
@@ -201,6 +202,7 @@ func New(cfg Config) (*Server, error) {
 		CheckQuorum:   true,
 		LeaseTicks:    cfg.LeaseTicks,
 		MaxInflight:   cfg.MaxInflight,
+		MaxPending:    cfg.MaxPending,
 		MaxMsgBytes:   cfg.MaxMsgBytes,
 		Rand:          rngSource{},
 		Bugs:          cfg.Bugs,
@@ -531,6 +533,10 @@ type result struct {
 func (s *Server) run(ctx context.Context, f func(done node.Done)) (kv.Result, error) {
 	ch := make(chan result, 1)
 	call := func() {
+		if err := ctx.Err(); err != nil {
+			ch <- result{err: err}
+			return
+		}
 		f(func(res kv.Result, err error) { ch <- result{res, err} })
 	}
 	select {
