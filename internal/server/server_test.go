@@ -13,10 +13,13 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
+	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/snap"
 )
@@ -222,6 +225,96 @@ func TestAClusterWritesReadsAndSurvivesItsLeader(t *testing.T) {
 			t.Fatalf("nodes did not converge: revisions %v", revs)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestAClientStartsANewSessionAfterTheClusterForgetsItsOldOne(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.MaxSessions = 1 })
+	c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	forgotten, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer forgotten.Close()
+	other, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if _, err := forgotten.Put(ctx, "k", []byte("first")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.Put(ctx, "k", []byte("other")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgotten.Put(ctx, "k", []byte("lost")); !errors.Is(err, client.ErrSessionExpired) {
+		t.Fatalf("a write on a forgotten session: %v", err)
+	}
+	if _, err := forgotten.Put(ctx, "k", []byte("again")); err != nil {
+		t.Fatalf("the write after the session expired: %v", err)
+	}
+	if _, err := other.Put(ctx, "k", []byte("lost")); !errors.Is(err, client.ErrSessionExpired) {
+		t.Fatalf("a write on the session the new one evicted: %v", err)
+	}
+	if _, err := other.Put(ctx, "k", []byte("other again")); err != nil {
+		t.Fatalf("the evicted client's next write: %v", err)
+	}
+	if kv, _, err := forgotten.Get(ctx, "k", client.ReadIndex); err != nil || string(kv.Value) != "other again" {
+		t.Fatalf("read %q %v", kv.Value, err)
+	}
+}
+
+func TestNoAppliedResultTellsTheClientToRetry(t *testing.T) {
+	for applied := kv.OK + 1; applied <= kv.ErrTooManyLeases; applied++ {
+		switch code := status.Code(outcome(kv.Result{Code: applied})); code {
+		case codes.Unavailable, codes.DeadlineExceeded, codes.Canceled, codes.ResourceExhausted:
+			t.Errorf("%s reaches the client as %s, which it retries with the same sequence number", applied, code)
+		}
+	}
+}
+
+func TestAWriteGivesUpWhileWaitingBehindAnotherWrite(t *testing.T) {
+	c := newTestCluster(t, 3, nil)
+	leader := c.leader(5 * time.Second)
+	for id := range c.nodes {
+		if id != leader {
+			c.stop(id)
+		}
+	}
+	cl, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	stuck, cancel := context.WithCancel(context.Background())
+	waiting := make(chan struct{})
+	go func() {
+		defer close(waiting)
+		cl.Put(stuck, "k", []byte("waits for a quorum"))
+	}()
+	defer func() {
+		cancel()
+		<-waiting
+	}()
+	for c.running[leader].srv.counts.writes.Load() == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	ctx, cancelShort := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancelShort()
+	gaveUp := make(chan error, 1)
+	go func() {
+		_, err := cl.Put(ctx, "k", []byte("gives up"))
+		gaveUp <- err
+	}()
+	select {
+	case err := <-gaveUp:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("the second write returned %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the second write waited past its deadline for the first")
 	}
 }
 

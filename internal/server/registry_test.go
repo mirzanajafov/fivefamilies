@@ -30,6 +30,17 @@ func waitFor[T any](t *testing.T, ch <-chan T, within time.Duration, ok func(T) 
 	}
 }
 
+func waitRenewals(t *testing.T, reg *client.Registration, n int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for reg.Renewals() != n && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if reg.Renewals() != n {
+		t.Fatalf("renewals %d, want %d", reg.Renewals(), n)
+	}
+}
+
 func names(list []client.Instance) string {
 	return fmt.Sprint(list)
 }
@@ -93,6 +104,73 @@ func TestTheRegistryForgetsADeadInstance(t *testing.T) {
 	}
 }
 
+func TestARegistrationComesBackAfterTheClusterForgetsItsSession(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.MaxSessions = 1 })
+	c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cl, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	reg, err := cl.Register(ctx, "api", "one", "10.0.0.1:80", 300*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Deregister(context.Background(), reg)
+	other, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	seen, err := other.Discover(ctx, "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 1 })
+	lost := reg.Lease()
+	if err := other.Revoke(ctx, lost); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 0 })
+	back, _ := waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 1 })
+	waitRenewals(t, reg, 1)
+	if back[0].Addr != "10.0.0.1:80" || reg.Lease() == lost {
+		t.Fatalf("came back as %v on lease %d", back, reg.Lease())
+	}
+}
+
+func TestDeregisteringRemovesTheInstanceAfterTheClusterForgetsTheSession(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.MaxSessions = 1 })
+	c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cl, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	reg, err := cl.Register(ctx, "api", "one", "10.0.0.1:80", 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if _, err := other.Put(ctx, "k", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Deregister(ctx, reg); err != nil {
+		t.Fatalf("deregistering on a forgotten session: %v", err)
+	}
+	if kvs, err := other.Range(ctx, client.RegistryPrefix, 0); err != nil || len(kvs) != 0 {
+		t.Fatalf("still registered: %v %v", kvs, err)
+	}
+}
+
 func TestARegistrationOutlivesALeaderAndComesBackAfterItsLeaseIsLost(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
 	c.leader(5 * time.Second)
@@ -120,11 +198,5 @@ func TestARegistrationOutlivesALeaderAndComesBackAfterItsLeaseIsLost(t *testing.
 	}
 	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 0 })
 	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 1 })
-	deadline := time.Now().Add(time.Second)
-	for reg.Renewals() != 1 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if reg.Renewals() != 1 {
-		t.Fatalf("renewals %d after the lease was revoked under it", reg.Renewals())
-	}
+	waitRenewals(t, reg, 1)
 }
