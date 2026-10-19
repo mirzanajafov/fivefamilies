@@ -215,12 +215,11 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 			return rows, err
 		}
 		lctx, stopLoad := context.WithCancel(ctx)
-		fctx, stopFaults := context.WithCancel(ctx)
 		loadDone := make(chan error, 1)
 		go func() {
 			_, err := b.Generate(lctx, o.GenCPUs, "-rate", "300", "-duration", "1h", "-warmup", "0s", "-reads", "0", "-preload=false")
 			loadDone <- err
-			stopFaults()
+			stopLoad()
 		}()
 		row := E1bRow{Election: v.t, SyncStorage: v.sync}
 		type fault struct {
@@ -239,11 +238,11 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		if o.Quick {
 			faults = faults[:1]
 		}
-		wait(fctx, 2*time.Second)
+		wait(lctx, 2*time.Second)
 		for _, f := range faults {
 			out := FaultOutcome{Kind: f.kind, Duration: f.d, Target: f.target}
 			for range injections {
-				leader, err := agreedLeader(fctx, adm)
+				leader, err := agreedLeader(lctx, adm)
 				if err != nil {
 					break
 				}
@@ -251,32 +250,31 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 				if f.target == "follower" {
 					n = 1 + (leader+rng.IntN(4))%5
 				}
-				before := maxElections(adm.statuses(fctx, time.Second))
-				cctx, cancel := context.WithTimeout(fctx, 5*time.Second)
+				before := maxElections(adm.statuses(lctx, time.Second))
+				cctx, cancel := context.WithTimeout(lctx, 5*time.Second)
 				_, err = adm.admin(n).Chaos(cctx, &pb.ChaosRequest{Action: f.kind, DurationMs: uint64(f.d / time.Millisecond)})
 				cancel()
 				if err != nil {
 					o.Log("chaos on %d: %v", n, err)
 					continue
 				}
-				wait(fctx, f.d+4*v.t+time.Second)
-				after := maxElections(adm.statuses(fctx, time.Second))
+				wait(lctx, f.d+4*v.t+time.Second)
+				after := maxElections(adm.statuses(lctx, time.Second))
 				out.Injections++
 				if after > before {
 					out.WithElected++
 					out.Elections += after - before
 				}
 			}
-			if fctx.Err() != nil {
+			if lctx.Err() != nil {
 				break
 			}
 			o.Log("  %s %s %v: %d of %d followed by an election", f.kind, f.target, f.d, out.WithElected, out.Injections)
 			row.Faults = append(row.Faults, out)
 		}
-		generatorDied := fctx.Err() != nil
+		generatorDied := lctx.Err() != nil
 		stopLoad()
 		loadErr := <-loadDone
-		stopFaults()
 		adm.close()
 		b.Down()
 		if err := ctx.Err(); err != nil {

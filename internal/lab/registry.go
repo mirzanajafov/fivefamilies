@@ -206,5 +206,5 @@ func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, err
 		slices.Sort(gs)
 		res.Variants[v] = RegistryVariant{Median: gs[len(gs)/2], Min: gs[0], Max: gs[len(gs)-1], N: len(gs)}
 	}
-	return res, cmp.Or(runErr, ctx.Err())
+	return res, cmp.Or(ctx.Err(), runErr)
 }

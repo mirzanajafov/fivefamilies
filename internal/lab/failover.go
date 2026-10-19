@@ -194,7 +194,7 @@ func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, err
 		slices.Sort(us)
 		res.Median, res.Min, res.Max = us[len(us)/2], us[0], us[len(us)-1]
 	}
-	return res, cmp.Or(runErr, ctx.Err())
+	return res, cmp.Or(ctx.Err(), runErr)
 }
 
 func steady(ctx context.Context, adm *cluster) (int, error) {

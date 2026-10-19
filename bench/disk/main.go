@@ -143,17 +143,17 @@ func main() {
 	segment := flag.Int64("segment", 64<<20, "preallocated file size")
 	d := flag.Duration("duration", 10*time.Second, "time per configuration")
 	flag.Parse()
-	writerCounts, err := counts(*writers)
+	writerCounts, err := parseList(*writers, parseCount)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "-writers:", err)
 		os.Exit(2)
 	}
-	byteCounts, err := counts(*sizes)
+	byteCounts, err := parseList(*sizes, parseCount)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "-bytes:", err)
 		os.Exit(2)
 	}
-	modeList, err := parseModes(*modes)
+	modeList, err := parseList(*modes, parseMode)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "-modes:", err)
 		os.Exit(2)
@@ -182,26 +182,29 @@ func main() {
 
 var knownModes = []string{"append-fsync", "append-fdatasync", "prealloc-fsync", "prealloc-fdatasync"}
 
-func parseModes(list string) ([]string, error) {
-	var out []string
+func parseList[T any](list string, parse func(string) (T, error)) ([]T, error) {
+	var out []T
 	for s := range strings.SplitSeq(list, ",") {
-		mode := strings.TrimSpace(s)
-		if !slices.Contains(knownModes, mode) {
-			return nil, fmt.Errorf("unknown mode %q", mode)
+		v, err := parse(strings.TrimSpace(s))
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, mode)
+		out = append(out, v)
 	}
 	return out, nil
 }
 
-func counts(list string) ([]int, error) {
-	var out []int
-	for s := range strings.SplitSeq(list, ",") {
-		n, err := strconv.Atoi(strings.TrimSpace(s))
-		if err != nil || n <= 0 {
-			return nil, fmt.Errorf("%q is not a positive number", s)
-		}
-		out = append(out, n)
+func parseMode(s string) (string, error) {
+	if !slices.Contains(knownModes, s) {
+		return "", fmt.Errorf("unknown mode %q", s)
 	}
-	return out, nil
+	return s, nil
+}
+
+func parseCount(s string) (int, error) {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("%q is not a positive number", s)
+	}
+	return n, nil
 }
