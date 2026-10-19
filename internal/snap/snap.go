@@ -121,10 +121,10 @@ func readConf(b []byte) (raft.ConfState, []byte, bool) {
 	return raft.ConfState{Voters: lists[0], Learners: lists[1]}, b, true
 }
 
-func Clean(fs vfs.FS, keep raft.Snapshot) error {
+func RemoveBelow(fs vfs.FS, index uint64) error {
 	return removeIf(fs, func(n string) bool {
-		i, ok := index(n)
-		return ok && i < keep.Index
+		i, ok := parseIndex(n)
+		return ok && i < index
 	})
 }
 
@@ -132,7 +132,7 @@ func RemoveUnfinished(fs vfs.FS) error {
 	return removeIf(fs, func(n string) bool { return strings.HasSuffix(n, suffix+tmpSuffix) })
 }
 
-func index(name string) (uint64, bool) {
+func parseIndex(name string) (uint64, bool) {
 	base, ok := strings.CutSuffix(name, suffix)
 	if !ok {
 		return 0, false

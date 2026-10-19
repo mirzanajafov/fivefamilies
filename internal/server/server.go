@@ -458,8 +458,8 @@ func (s *Server) writer(ctx context.Context) {
 				s.die(fmt.Errorf("compacting the log: %w", err))
 				return
 			}
-			if err := snap.Clean(s.fs, *c); err != nil {
-				s.die(fmt.Errorf("cleaning snapshots: %w", err))
+			if err := snap.RemoveBelow(s.fs, c.Index); err != nil {
+				s.die(fmt.Errorf("removing old snapshots: %w", err))
 				return
 			}
 		}

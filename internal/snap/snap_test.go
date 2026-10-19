@@ -71,7 +71,10 @@ type syncHook struct {
 
 func (h syncHook) Create(name string) (vfs.File, error) {
 	f, err := h.FS.Create(name)
-	return hookedFile{File: f, onSync: h.onSync}, err
+	if err != nil {
+		return nil, err
+	}
+	return hookedFile{File: f, onSync: h.onSync}, nil
 }
 
 type hookedFile struct {
@@ -84,32 +87,49 @@ func (f hookedFile) Sync() error {
 	return f.File.Sync()
 }
 
-func TestCleaningAfterACompactionSparesSnapshotsSavedSinceThen(t *testing.T) {
+func writeFile(t *testing.T, fs vfs.FS, name string, data []byte) {
+	t.Helper()
+	f, err := fs.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemovingOldSnapshotsSparesTheOnesSavedSinceTheCompaction(t *testing.T) {
 	fs := vfs.NewMem()
-	w, _ := fs.Create("0000000000000001.wal")
-	w.Close()
+	writeFile(t, fs, "0000000000000001.wal", nil)
+	old := raft.Snapshot{Index: 5, Term: 1, Data: []byte("old")}
 	compacted := raft.Snapshot{Index: 10, Term: 1, Data: []byte("compacted")}
 	saved := raft.Snapshot{Index: 20, Term: 1, Data: []byte("saved")}
 	saving := raft.Snapshot{Index: 30, Term: 2, Data: []byte("saving")}
-	for _, s := range []raft.Snapshot{compacted, saved} {
+	for _, s := range []raft.Snapshot{old, compacted, saved} {
 		if err := Save(fs, s); err != nil {
 			t.Fatal(err)
 		}
 	}
-	cleanMidSave := syncHook{FS: fs, onSync: func() {
-		if err := Clean(fs, compacted); err != nil {
+	removeMidSave := syncHook{FS: fs, onSync: func() {
+		if err := RemoveBelow(fs, compacted.Index); err != nil {
 			t.Fatal(err)
 		}
 	}}
-	if err := Save(cleanMidSave, saving); err != nil {
+	if err := Save(removeMidSave, saving); err != nil {
 		t.Fatalf("a save with a cleanup in the middle failed: %v", err)
 	}
 	for _, s := range []raft.Snapshot{compacted, saved, saving} {
 		if got, err := Load(fs, s.Index, s.Term); err != nil || string(got.Data) != string(s.Data) {
-			t.Fatalf("snapshot %d after cleaning below %d: %v", s.Index, compacted.Index, err)
+			t.Fatalf("snapshot %d after removing those below %d: %v", s.Index, compacted.Index, err)
 		}
 	}
-	if err := Clean(fs, saving); err != nil {
+	if _, err := Load(fs, old.Index, old.Term); err == nil {
+		t.Fatalf("snapshot %d survived removing those below %d", old.Index, compacted.Index)
+	}
+	if err := RemoveBelow(fs, saving.Index); err != nil {
 		t.Fatal(err)
 	}
 	if names, _ := fs.List(); !slices.Equal(names, []string{"0000000000000001.wal", Name(30, 2)}) {
@@ -122,9 +142,7 @@ func TestUnfinishedSnapshotsAreRemovedAtStartup(t *testing.T) {
 	if err := Save(fs, raft.Snapshot{Index: 10, Term: 1, Data: []byte("x")}); err != nil {
 		t.Fatal(err)
 	}
-	f, _ := fs.Create(Name(20, 1) + tmpSuffix)
-	f.Write([]byte("half"))
-	f.Close()
+	writeFile(t, fs, Name(20, 1)+tmpSuffix, []byte("half"))
 	if err := RemoveUnfinished(fs); err != nil {
 		t.Fatal(err)
 	}
