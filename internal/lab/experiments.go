@@ -109,6 +109,7 @@ func E2(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		{"5 nodes, no pipelining", 5, withBase("-max-inflight", "1"), writes},
 		{"5 nodes, one event per Ready", 5, withBase("-batch", "1"), writes},
 		{"5 nodes, no cap on pending writes", 5, withBase("-max-pending", "0"), writes},
+		{"5 nodes, no snapshots", 5, withBase("-snapshot-every", "1000000000"), writes},
 		{"5 nodes, 1 KiB values", 5, withBase(), []string{"-reads", "0", "-value-bytes", "1024"}},
 	})
 }

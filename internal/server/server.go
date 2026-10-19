@@ -531,6 +531,14 @@ type result struct {
 }
 
 func (s *Server) run(ctx context.Context, f func(done node.Done)) (kv.Result, error) {
+	return s.call(ctx, false, f)
+}
+
+func (s *Server) admit(ctx context.Context, f func(done node.Done)) (kv.Result, error) {
+	return s.call(ctx, s.cfg.MaxPending > 0, f)
+}
+
+func (s *Server) call(ctx context.Context, refuse bool, f func(done node.Done)) (kv.Result, error) {
 	ch := make(chan result, 1)
 	call := func() {
 		if err := ctx.Err(); err != nil {
@@ -539,10 +547,18 @@ func (s *Server) run(ctx context.Context, f func(done node.Done)) (kv.Result, er
 		}
 		f(func(res kv.Result, err error) { ch <- result{res, err} })
 	}
-	select {
-	case s.calls <- call:
-	case <-ctx.Done():
-		return kv.Result{}, ctx.Err()
+	if refuse {
+		select {
+		case s.calls <- call:
+		default:
+			return kv.Result{}, raft.ErrBusy
+		}
+	} else {
+		select {
+		case s.calls <- call:
+		case <-ctx.Done():
+			return kv.Result{}, ctx.Err()
+		}
 	}
 	select {
 	case r := <-ch:
@@ -553,11 +569,11 @@ func (s *Server) run(ctx context.Context, f func(done node.Done)) (kv.Result, er
 }
 
 func (s *Server) Submit(ctx context.Context, cmd kv.Command) (kv.Result, error) {
-	return s.run(ctx, func(done node.Done) { s.node.Submit(cmd, done) })
+	return s.admit(ctx, func(done node.Done) { s.node.Submit(cmd, done) })
 }
 
 func (s *Server) Read(ctx context.Context, key string, lease bool) (kv.Result, error) {
-	return s.run(ctx, func(done node.Done) { s.node.Read(key, lease, done) })
+	return s.admit(ctx, func(done node.Done) { s.node.Read(key, lease, done) })
 }
 
 func (s *Server) ChangeMembers(ctx context.Context, cc raft.ConfChange) (uint64, raft.ConfState, error) {
