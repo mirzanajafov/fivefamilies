@@ -18,24 +18,21 @@ linters:
         - appendAssign
         - exitAfterDefer
     revive:
+      enable-default-rules: true
       rules:
-        - name: blank-imports
-        - name: context-keys-type
-        - name: dot-imports
-        - name: error-naming
-        - name: error-return
-        - name: error-strings
-        - name: errorf
-        - name: increment-decrement
-        - name: indent-error-flow
-        - name: range
-        - name: receiver-naming
-        - name: superfluous-else
-        - name: time-naming
-        - name: unexported-return
-        - name: unreachable-code
-        - name: var-declaration
-        - name: var-naming
+        - name: context-as-argument
+          arguments:
+            - allow-types-before: "*testing.T"
+        - name: empty-block
+          disabled: true
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+        - name: redefines-builtin-id
+          disabled: true
+        - name: unused-parameter
+          disabled: true
     staticcheck:
       checks:
         - all
@@ -48,7 +45,7 @@ linters:
         - -QF1001
   exclusions:
     paths:
-      - api/
+      - ^api/
 formatters:
   enable:
     - gofmt
