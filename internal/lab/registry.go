@@ -85,16 +85,20 @@ func (s *sighting) when(name string, gone bool) (time.Time, bool) {
 }
 
 func (s *sighting) await(ctx context.Context, name string, gone bool, limit time.Duration) (time.Time, error) {
-	deadline := time.Now().Add(limit)
-	for time.Now().Before(deadline) {
-		if t, ok := s.when(name, gone); ok {
-			return t, nil
+	var at time.Time
+	err := poll(ctx, 5*time.Millisecond, limit, func(context.Context) (bool, error) {
+		t, ok := s.when(name, gone)
+		at = t
+		return ok, nil
+	})
+	if err != nil {
+		verb := "appear"
+		if gone {
+			verb = "disappear"
 		}
-		if !wait(ctx, 5*time.Millisecond) {
-			return time.Time{}, ctx.Err()
-		}
+		return time.Time{}, fmt.Errorf("%s did not %s: %w", name, verb, err)
 	}
-	return time.Time{}, fmt.Errorf("%s did not %s within %v", name, map[bool]string{false: "appear", true: "disappear"}[gone], limit)
+	return at, nil
 }
 
 func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryResult, error) {

@@ -59,6 +59,9 @@ func newDisk(segBytes int64, salt func() uint64) *disk {
 }
 
 func (d *disk) open(chk *checker, idx int) (raft.Restore, wal.Recovery, error) {
+	if err := snap.RemoveUnfinished(d.fs); err != nil {
+		return raft.Restore{}, wal.Recovery{}, err
+	}
 	l, st, rec, err := wal.Open(d.fs, wal.Options{SegmentBytes: d.segBytes, Salt: d.salt})
 	if err != nil {
 		return st, rec, err

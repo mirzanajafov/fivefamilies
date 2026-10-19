@@ -20,8 +20,8 @@ func TestConversionRoundTrip(t *testing.T) {
 		{Type: raft.MsgReadIndex, From: 2, To: 1, Term: 4, Context: 12},
 	}
 	for _, m := range msgs {
-		if got := fromProto(toProto(m)); !reflect.DeepEqual(got, m) {
-			t.Fatalf("round trip changed %v into %v", m, got)
+		if got, err := fromProto(toProto(m)); err != nil || !reflect.DeepEqual(got, m) {
+			t.Fatalf("round trip changed %v into %v: %v", m, got, err)
 		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -123,6 +124,19 @@ func leaderOf(sts []*pb.StatusResponse) (int, uint64) {
 	return best, term
 }
 
+func agreedOn(sts []*pb.StatusResponse) int {
+	l, _ := leaderOf(sts)
+	if l == 0 {
+		return 0
+	}
+	for _, st := range sts {
+		if st == nil || st.GetLeader() != uint64(l) {
+			return 0
+		}
+	}
+	return l
+}
+
 func Run(ctx context.Context, opts Options) (Report, error) {
 	rep := Report{Options: opts, Started: time.Now()}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
@@ -144,15 +158,12 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		return rep, err
 	}
 	defer adm.close()
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		if l, _ := leaderOf(adm.statuses(ctx, time.Second)); l > 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			return rep, fmt.Errorf("no leader within 30 s of starting")
-		}
-		wait(ctx, 200*time.Millisecond)
+	err = poll(ctx, 200*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
+		l, _ := leaderOf(adm.statuses(ctx, time.Second))
+		return l > 0, nil
+	})
+	if err != nil {
+		return rep, fmt.Errorf("no leader after starting: %w", err)
 	}
 	start := time.Now()
 	w := &workload{addrs: addrs, workers: opts.Workers, keys: opts.Keys, read: opts.Read, opTimeout: opts.OpTimeout, seed: opts.Seed, start: start}
@@ -205,9 +216,27 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	rep.Ops, rep.Unknown, rep.FailedReads = len(hist), unknown, failedReads
 	v := check.Linearizable(hist, opts.CheckTimeout)
 	rep.Linearizable, rep.CheckTook = string(v.Result), v.Took
-	deadline = time.Now().Add(30 * time.Second)
-	for {
+	switch err := compareStates(ctx, adm, &rep); {
+	case err == nil:
+	case ctx.Err() != nil:
+		rep.Problems = append(rep.Problems, fmt.Sprintf("the nodes had not converged when the run ended: %v", ctx.Err()))
+	default:
+		rep.Problems = append(rep.Problems, fmt.Sprintf("nodes did not converge to one state after the heal: %v", err))
+	}
+	if opts.Out != "" {
+		if err := save(opts.Out, rep, w); err != nil {
+			return rep, err
+		}
+	}
+	return rep, nil
+}
+
+func compareStates(ctx context.Context, adm *cluster, rep *Report) error {
+	return poll(ctx, 500*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
 		sts := adm.statuses(ctx, 2*time.Second)
+		if ctx.Err() != nil && slices.Contains(sts, nil) {
+			return false, nil
+		}
 		rep.Hashes = rep.Hashes[:0]
 		equal := true
 		for _, st := range sts {
@@ -223,20 +252,9 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		}
 		if equal {
 			rep.StatesEqual, rep.StateIndex = true, sts[0].GetHashIndex()
-			break
 		}
-		if time.Now().After(deadline) {
-			rep.Problems = append(rep.Problems, "nodes did not converge to one state within 30 s of the heal")
-			break
-		}
-		wait(ctx, 500*time.Millisecond)
-	}
-	if opts.Out != "" {
-		if err := save(opts.Out, rep, w); err != nil {
-			return rep, err
-		}
-	}
-	return rep, nil
+		return equal, nil
+	})
 }
 
 func save(dir string, rep Report, w *workload) error {

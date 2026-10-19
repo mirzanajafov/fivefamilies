@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -200,6 +201,19 @@ func (t *Transport) sleep(ctx context.Context, backoff *time.Duration) {
 	*backoff = min(2**backoff, time.Second)
 }
 
+func (t *Transport) admit(pm *pb.RaftMessage, snapshotStream bool) (raft.Message, error) {
+	m, err := fromProto(pm)
+	switch {
+	case err != nil:
+		return raft.Message{}, err
+	case t.peers[m.From] == nil || m.To != t.id:
+		return raft.Message{}, fmt.Errorf("transport: node %d got a message from %d to %d", t.id, m.From, m.To)
+	case (m.Type == raft.MsgSnap) != snapshotStream:
+		return raft.Message{}, fmt.Errorf("transport: a %s on the wrong stream", m.Type)
+	}
+	return m, nil
+}
+
 func (t *Transport) receive(m raft.Message) {
 	if t.filter != nil && !t.filter.Allow(m.From, t.id) {
 		return
@@ -218,6 +232,8 @@ func (t *Transport) Server() pb.PeerServer {
 }
 
 func (s server) Send(stream grpc.ClientStreamingServer[pb.Batch, pb.Ack]) error {
+	refused := 0
+	var logged time.Time
 	for {
 		b, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -226,8 +242,17 @@ func (s server) Send(stream grpc.ClientStreamingServer[pb.Batch, pb.Ack]) error 
 		if err != nil {
 			return err
 		}
-		for _, m := range b.GetMessages() {
-			s.t.receive(fromProto(m))
+		for _, pm := range b.GetMessages() {
+			m, err := s.t.admit(pm, false)
+			if err != nil {
+				refused++
+				if time.Since(logged) >= time.Minute {
+					s.t.log.Warn("dropped messages a peer may not send", "from", pm.GetFrom(), "dropped", refused, "err", err)
+					logged, refused = time.Now(), 0
+				}
+				continue
+			}
+			s.t.receive(m)
 		}
 	}
 }
@@ -244,16 +269,22 @@ func (s server) InstallSnapshot(stream grpc.ClientStreamingServer[pb.SnapshotChu
 			return err
 		}
 		if msg == nil {
-			if c.GetMessage() == nil || c.GetMessage().GetSnapshot() == nil {
-				return errors.New("transport: snapshot stream without a snapshot message")
+			if c.GetMessage().GetSnapshot() == nil {
+				return errors.New("transport: a snapshot stream that starts without a snapshot message")
 			}
-			m := fromProto(c.GetMessage())
+			m, err := s.t.admit(c.GetMessage(), true)
+			if err != nil {
+				return err
+			}
 			msg = &m
 		}
 		data = append(data, c.GetData()...)
 	}
-	if msg == nil {
-		return errors.New("transport: empty snapshot stream")
+	switch {
+	case msg == nil:
+		return errors.New("transport: an empty snapshot stream")
+	case len(data) == 0:
+		return fmt.Errorf("transport: snapshot %d from node %d has no data", msg.Snapshot.Index, msg.From)
 	}
 	msg.Snapshot.Data = data
 	s.t.receive(*msg)
