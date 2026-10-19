@@ -14,7 +14,6 @@ import (
 
 const (
 	suffix     = ".snap"
-	tmpSuffix  = ".tmp"
 	headerSize = 36
 )
 
@@ -30,15 +29,6 @@ func Name(index, term uint64) string {
 }
 
 func Save(fs vfs.FS, s raft.Snapshot) error {
-	name := Name(s.Index, s.Term)
-	tmp := name + tmpSuffix
-	if err := fs.Remove(tmp); err != nil {
-		return err
-	}
-	f, err := fs.Create(tmp)
-	if err != nil {
-		return err
-	}
 	body := append(appendConf(nil, s.Conf), s.Data...)
 	hdr := make([]byte, headerSize)
 	copy(hdr, magic[:])
@@ -46,21 +36,7 @@ func Save(fs vfs.FS, s raft.Snapshot) error {
 	binary.LittleEndian.PutUint64(hdr[16:], s.Term)
 	binary.LittleEndian.PutUint64(hdr[24:], uint64(len(body)))
 	binary.LittleEndian.PutUint32(hdr[32:], crc32.Checksum(body, castagnoli))
-	if _, err := f.Write(append(hdr, body...)); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := fs.Rename(tmp, name); err != nil {
-		return err
-	}
-	return fs.SyncDir()
+	return vfs.WriteAtomic(fs, Name(s.Index, s.Term), append(hdr, body...))
 }
 
 func Load(fs vfs.FS, index, term uint64) (raft.Snapshot, error) {
@@ -130,7 +106,7 @@ func RemoveBelow(fs vfs.FS, index uint64) error {
 
 func RemoveUnfinished(fs vfs.FS) error {
 	return removeIf(fs, func(n string) bool {
-		saved, ok := strings.CutSuffix(n, tmpSuffix)
+		saved, ok := strings.CutSuffix(n, vfs.TempSuffix)
 		_, named := parseIndex(saved)
 		return ok && named
 	})

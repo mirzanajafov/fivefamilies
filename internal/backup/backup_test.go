@@ -23,6 +23,15 @@ func sample(t *testing.T) File {
 	return File{Rev: s.Rev(), Hash: s.Hash(), Data: s.Snapshot()}
 }
 
+func TestABackupPathMustNotNameADirectory(t *testing.T) {
+	dir := t.TempDir()
+	for _, path := range []string{dir, dir + string(filepath.Separator), filepath.Join(dir, "."), filepath.Join(dir, "sub", "..")} {
+		if err := Save(path, File{}); err == nil {
+			t.Errorf("%q was accepted", path)
+		}
+	}
+}
+
 func TestABackupRoundTrips(t *testing.T) {
 	f := sample(t)
 	path := filepath.Join(t.TempDir(), "x.backup")

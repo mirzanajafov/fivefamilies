@@ -24,7 +24,7 @@ func main() {
 	token := os.Getenv("FF_CHAOS_TOKEN")
 	s := supervisor.New(args)
 	if err := s.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, "starting the node:", err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	srv := &http.Server{Addr: *listen, Handler: supervisor.Handler(s, token), ReadHeaderTimeout: 5 * time.Second}
@@ -42,8 +42,8 @@ func main() {
 		for s.State().Running && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 		}
-	case err := <-s.Exited():
-		fmt.Fprintln(os.Stderr, "the node exited on its own:", err)
+	case err := <-s.Failed():
+		fmt.Fprintln(os.Stderr, err)
 		srv.Close()
 		os.Exit(1)
 	}
