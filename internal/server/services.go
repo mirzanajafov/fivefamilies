@@ -243,7 +243,7 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 	}
 	switch req.GetAction() {
 	case "stall-disk":
-		a.s.stall.set(d)
+		a.s.stalled.set(d)
 	case "pause":
 		a.s.paused.set(d)
 		select {

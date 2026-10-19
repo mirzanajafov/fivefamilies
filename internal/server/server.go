@@ -138,8 +138,8 @@ type Server struct {
 	status    atomic.Pointer[pb.StatusResponse]
 	counts    counters
 	isolated  isolation
-	stall     deadline
-	paused    deadline
+	stalled   fault
+	paused    fault
 	lastTerm  uint64
 	log       *slog.Logger
 	fatalled  atomic.Bool
@@ -450,7 +450,7 @@ func (s *Server) writer(ctx context.Context) {
 }
 
 func (s *Server) sync() bool {
-	s.stall.wait()
+	s.stalled.wait()
 	if s.cfg.FsyncMode == FsyncOff {
 		return true
 	}

@@ -277,10 +277,12 @@ func TestChaosIsBoundedAndOffByDefault(t *testing.T) {
 	}
 	c2 := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
 	c2.leader(5 * time.Second)
-	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "pause", DurationMs: uint64(2 * time.Minute / time.Millisecond)}); err == nil {
-		t.Fatal("a two-minute pause was accepted")
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
+	if _, err := c2.admin(1).Chaos(ctx2, &pb.ChaosRequest{Action: "pause", DurationMs: uint64(2 * time.Minute / time.Millisecond)}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("a two-minute pause got %v", err)
 	}
-	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "crash", DurationMs: 1}); status.Code(err) != codes.InvalidArgument {
+	if _, err := c2.admin(1).Chaos(ctx2, &pb.ChaosRequest{Action: "crash", DurationMs: 1}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("an unknown action got %v", err)
 	}
 	old := c2.leader(time.Second)
@@ -340,10 +342,28 @@ func TestEachIsolationOrHealReplacesTheOneBefore(t *testing.T) {
 	}
 }
 
+func notFirst(leader raft.NodeID) raft.NodeID {
+	if leader == 2 {
+		return 3
+	}
+	return 2
+}
+
+func caughtUp(t *testing.T, c *testCluster, leader, follower raft.NodeID, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for c.running[follower].srv.Status().GetCommit() < c.running[leader].srv.Status().GetCommit() {
+		if time.Now().After(deadline) {
+			t.Fatalf("node %d did not catch up within %v", follower, within)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestAHealEndsAStallAndAPauseThatHaveAlreadyBegun(t *testing.T) {
 	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
 	leader := c.leader(5 * time.Second)
-	follower := leader%3 + 1
+	follower := notFirst(leader)
 	cl, err := client.New(c.addrs(), client.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -358,7 +378,12 @@ func TestAHealEndsAStallAndAPauseThatHaveAlreadyBegun(t *testing.T) {
 		_, err := cl.Put(ctx, "k", []byte("v"))
 		written <- err
 	}()
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	select {
+	case err := <-written:
+		t.Fatalf("the write finished during the stall: %v", err)
+	default:
+	}
 	chaos(t, c, leader, "heal", 0)
 	chaos(t, c, follower, "heal", 0)
 	select {
@@ -369,13 +394,26 @@ func TestAHealEndsAStallAndAPauseThatHaveAlreadyBegun(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the write still waited for the stalled disk after the heal")
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for c.running[follower].srv.Status().GetCommit() < c.running[leader].srv.Status().GetCommit() {
-		if time.Now().After(deadline) {
-			t.Fatal("the paused node did not resume after the heal")
-		}
-		time.Sleep(10 * time.Millisecond)
+	caughtUp(t, c, leader, follower, 5*time.Second)
+}
+
+func TestALaterPauseReplacesAnEarlierOne(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
+	leader := c.leader(5 * time.Second)
+	follower := notFirst(leader)
+	cl, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer cl.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	chaos(t, c, follower, "pause", time.Minute)
+	chaos(t, c, follower, "pause", 200*time.Millisecond)
+	if _, err := cl.Put(ctx, "k", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	caughtUp(t, c, leader, follower, 3*time.Second)
 }
 
 func TestOneClientCanWriteFromManyGoroutines(t *testing.T) {
