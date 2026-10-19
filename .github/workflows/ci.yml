@@ -17,7 +17,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - run: test -z "$(gofmt -l .)"
       - run: sh scripts/protogen.sh && git diff --exit-code -- api
+      - run: go vet ./...
       - run: go test -race $(go list ./... | grep -v /internal/sim)
       - run: go test ./internal/sim/
 
@@ -28,11 +30,12 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: false
+          cache-dependency-path: "**/go.sum"
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
       - uses: golangci/golangci-lint-action@v9
+        if: ${{ !cancelled() }}
         with:
           version: v2.15.0
           working-directory: bench/etcd

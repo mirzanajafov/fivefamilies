@@ -22,7 +22,7 @@ linters:
       rules:
         - name: context-as-argument
           arguments:
-            - allow-types-before: "*testing.T"
+            - allow-types-before: "*testing.T,*testing.B,testing.TB"
         - name: empty-block
           disabled: true
         - name: exported
