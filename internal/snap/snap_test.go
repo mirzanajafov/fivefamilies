@@ -104,7 +104,6 @@ func writeFile(t *testing.T, fs vfs.FS, name string, data []byte) {
 func TestRemovingOldSnapshotsSparesTheOnesSavedSinceTheCompaction(t *testing.T) {
 	fs := vfs.NewMem()
 	writeFile(t, fs, "0000000000000001.wal", nil)
-	writeFile(t, fs, "keep-1.snap", nil)
 	old := raft.Snapshot{Index: 5, Term: 1, Data: []byte("old")}
 	compacted := raft.Snapshot{Index: 10, Term: 1, Data: []byte("compacted")}
 	saved := raft.Snapshot{Index: 20, Term: 1, Data: []byte("saved")}
@@ -133,8 +132,26 @@ func TestRemovingOldSnapshotsSparesTheOnesSavedSinceTheCompaction(t *testing.T) 
 	if err := RemoveBelow(fs, saving.Index); err != nil {
 		t.Fatal(err)
 	}
-	if names, _ := fs.List(); !slices.Equal(names, []string{"0000000000000001.wal", Name(30, 2), "keep-1.snap"}) {
+	if names, _ := fs.List(); !slices.Equal(names, []string{"0000000000000001.wal", Name(30, 2)}) {
 		t.Fatalf("left %v", names)
+	}
+}
+
+func TestCleanupLeavesFilesThatSaveNeverWrites(t *testing.T) {
+	fs := vfs.NewMem()
+	foreign := []string{"0000000000000001-1.snap", "000000000000000A-000000000000000a.snap", "zzzzzzzzzzzzzzzz-0000000000000001.snap", "keep-1.snap",
+		"0000000000000001-1.snap.tmp", "keep-1.snap.tmp", "other.tmp"}
+	for _, n := range foreign {
+		writeFile(t, fs, n, nil)
+	}
+	if err := RemoveBelow(fs, 1<<62); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveUnfinished(fs); err != nil {
+		t.Fatal(err)
+	}
+	if names, _ := fs.List(); !slices.Equal(names, slices.Sorted(slices.Values(foreign))) {
+		t.Fatalf("left %v of %v", names, foreign)
 	}
 }
 

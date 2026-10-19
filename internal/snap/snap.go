@@ -129,21 +129,22 @@ func RemoveBelow(fs vfs.FS, index uint64) error {
 }
 
 func RemoveUnfinished(fs vfs.FS) error {
-	return removeIf(fs, func(n string) bool { return strings.HasSuffix(n, suffix+tmpSuffix) })
+	return removeIf(fs, func(n string) bool {
+		saved, ok := strings.CutSuffix(n, tmpSuffix)
+		_, named := parseIndex(saved)
+		return ok && named
+	})
 }
 
 func parseIndex(name string) (uint64, bool) {
-	base, ok := strings.CutSuffix(name, suffix)
-	if !ok {
+	base, _ := strings.CutSuffix(name, suffix)
+	termHex, indexHex, _ := strings.Cut(base, "-")
+	term, termErr := strconv.ParseUint(termHex, 16, 64)
+	index, indexErr := strconv.ParseUint(indexHex, 16, 64)
+	if termErr != nil || indexErr != nil || Name(index, term) != name {
 		return 0, false
 	}
-	term, index, ok := strings.Cut(base, "-")
-	if !ok || len(term) != 16 || len(index) != 16 {
-		return 0, false
-	}
-	_, termErr := strconv.ParseUint(term, 16, 64)
-	i, indexErr := strconv.ParseUint(index, 16, 64)
-	return i, termErr == nil && indexErr == nil
+	return index, true
 }
 
 func removeIf(fs vfs.FS, match func(string) bool) error {
