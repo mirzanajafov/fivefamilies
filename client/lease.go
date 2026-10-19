@@ -37,15 +37,12 @@ func (c *Client) Grant(ctx context.Context, ttl time.Duration) (Lease, error) {
 }
 
 func (c *Client) Revoke(ctx context.Context, id uint64) error {
-	revoke := func() error {
-		_, err := write(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (*pb.LeaseRevokeResponse, error) {
-			return pb.NewLeaseClient(cc).Revoke(ctx, &pb.LeaseRevokeRequest{Client: session, Seq: seq, Id: id}, opts...)
-		})
-		return err
+	call := func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (*pb.LeaseRevokeResponse, error) {
+		return pb.NewLeaseClient(cc).Revoke(ctx, &pb.LeaseRevokeRequest{Client: session, Seq: seq, Id: id}, opts...)
 	}
-	err := revoke()
+	_, err := write(ctx, c, call)
 	if errors.Is(err, ErrSessionExpired) {
-		err = revoke()
+		_, err = write(ctx, c, call)
 	}
 	return leaseErr(err)
 }

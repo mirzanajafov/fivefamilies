@@ -265,10 +265,10 @@ func TestAClientStartsANewSessionAfterTheClusterForgetsItsOldOne(t *testing.T) {
 }
 
 func TestNoAppliedResultTellsTheClientToRetry(t *testing.T) {
-	for c := kv.OK + 1; c <= kv.ErrTooManyLeases; c++ {
-		switch code := status.Code(outcome(kv.Result{Code: c})); code {
+	for applied := kv.OK + 1; applied <= kv.ErrTooManyLeases; applied++ {
+		switch code := status.Code(outcome(kv.Result{Code: applied})); code {
 		case codes.Unavailable, codes.DeadlineExceeded, codes.Canceled, codes.ResourceExhausted:
-			t.Errorf("%s reaches the client as %s, which it retries with the same sequence number", c, code)
+			t.Errorf("%s reaches the client as %s, which it retries with the same sequence number", applied, code)
 		}
 	}
 }
@@ -276,20 +276,29 @@ func TestNoAppliedResultTellsTheClientToRetry(t *testing.T) {
 func TestAWriteGivesUpWhileWaitingBehindAnotherWrite(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
 	leader := c.leader(5 * time.Second)
-	for id := range raft.NodeID(3) {
-		if id+1 != leader {
-			c.stop(id + 1)
+	for id := range c.nodes {
+		if id != leader {
+			c.stop(id)
 		}
 	}
-	cl, err := client.New(c.addrs(), client.Options{AttemptTimeout: 100 * time.Millisecond})
+	cl, err := client.New(c.addrs(), client.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cl.Close()
 	stuck, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go cl.Put(stuck, "k", []byte("waits for a quorum"))
-	time.Sleep(100 * time.Millisecond)
+	waiting := make(chan struct{})
+	go func() {
+		defer close(waiting)
+		cl.Put(stuck, "k", []byte("waits for a quorum"))
+	}()
+	defer func() {
+		cancel()
+		<-waiting
+	}()
+	for c.running[leader].srv.counts.writes.Load() == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
 	ctx, cancelShort := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancelShort()
 	gaveUp := make(chan error, 1)

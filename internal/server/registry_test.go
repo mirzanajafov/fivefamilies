@@ -141,7 +141,7 @@ func TestARegistrationComesBackAfterTheClusterForgetsItsSession(t *testing.T) {
 	}
 }
 
-func TestDeregisteringWorksAfterTheClusterForgetsTheSession(t *testing.T) {
+func TestDeregisteringRemovesTheInstanceAfterTheClusterForgetsTheSession(t *testing.T) {
 	c := newTestCluster(t, 3, func(cfg *Config) { cfg.MaxSessions = 1 })
 	c.leader(5 * time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -151,7 +151,7 @@ func TestDeregisteringWorksAfterTheClusterForgetsTheSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cl.Close()
-	reg, err := cl.Register(ctx, "api", "one", "10.0.0.1:80", 300*time.Millisecond)
+	reg, err := cl.Register(ctx, "api", "one", "10.0.0.1:80", 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
