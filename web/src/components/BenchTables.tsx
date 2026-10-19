@@ -71,7 +71,6 @@ export function ElectionCosts({ rows }: { rows: E1bRow[] }) {
   const label = (f: E1bRow['faults'][number]) => `${f.kind === 'stall-disk' ? 'disk stall' : 'pause'} of ${ms(f.duration)} on the ${f.target}`
   const cell = (f?: E1bRow['faults'][number]) => (f ? `${f.elected} of ${f.injections}` : '')
   const first = plain[0]
-  const faults = first?.faults ?? []
   const relative = (f: E1bRow['faults'][number], election: number) => {
     const k = f.duration / election
     return `pause of ${k === 0.5 ? 'T/2' : k === 1 ? 'T' : `${k}T`} on the ${f.target}`
@@ -80,7 +79,7 @@ export function ElectionCosts({ rows }: { rows: E1bRow[] }) {
     <div className="grid gap-4">
       <Table
         head={['fault', ...plain.map((r) => `timeout ${ms(r.election)}`)]}
-        rows={faults.map((f, i) => [f.kind === 'pause' && first ? relative(f, first.election) : label(f), ...plain.map((r) => cell(r.faults[i]))])}
+        rows={first ? first.faults.map((f, i) => [f.kind === 'pause' ? relative(f, first.election) : label(f), ...plain.map((r) => cell(r.faults[i]))]) : []}
       />
       {sync.length > 0 && (
         <Table

@@ -1,5 +1,3 @@
-.next
-src/generated
 pnpm-lock.yaml
 tsconfig.json
 scripts/results.mjs
