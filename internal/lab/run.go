@@ -216,9 +216,9 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	rep.Ops, rep.Unknown, rep.FailedReads = len(hist), unknown, failedReads
 	v := check.Linearizable(hist, opts.CheckTimeout)
 	rep.Linearizable, rep.CheckTook = string(v.Result), v.Took
-	if ctx.Err() != nil {
-		rep.Problems = append(rep.Problems, "the run was cancelled before the nodes' states were compared")
-	} else if err := compareStates(ctx, adm, &rep); err != nil {
+	if err := compareStates(ctx, adm, &rep); ctx.Err() != nil {
+		rep.Problems = append(rep.Problems, fmt.Sprintf("the nodes' states were not compared: %v", ctx.Err()))
+	} else if err != nil {
 		rep.Problems = append(rep.Problems, fmt.Sprintf("nodes did not converge to one state after the heal: %v", err))
 	}
 	if opts.Out != "" {
@@ -232,6 +232,9 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 func compareStates(ctx context.Context, adm *cluster, rep *Report) error {
 	return poll(ctx, 500*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
 		sts := adm.statuses(ctx, 2*time.Second)
+		if ctx.Err() != nil {
+			return false, nil
+		}
 		rep.Hashes = rep.Hashes[:0]
 		equal := true
 		for _, st := range sts {

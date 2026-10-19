@@ -104,7 +104,7 @@ func (b *BenchCluster) phase(ctx context.Context, o ProfileOptions, name string,
 	collectErr := collect(ctx, o, &p, min(o.Seconds, seconds))
 	wg.Wait()
 	p.Report = report
-	if err := cmp.Or(genErr, collectErr); err != nil {
+	if err := cmp.Or(ctx.Err(), genErr, collectErr); err != nil {
 		p.Err = err.Error()
 	}
 	return p

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var errGaveUp = errors.New("gave up")
+var errGaveUp = errors.New("lab: gave up")
 
 func wait(ctx context.Context, d time.Duration) bool {
 	select {

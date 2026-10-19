@@ -45,8 +45,11 @@ func (c *cluster) settleMember(ctx context.Context, node int, want pb.MemberChan
 		cancel()
 		switch status.Code(err) {
 		case codes.OK:
-		case codes.Unavailable, codes.FailedPrecondition, codes.DeadlineExceeded:
-			last = err
+			last = nil
+		case codes.Unavailable, codes.FailedPrecondition, codes.DeadlineExceeded, codes.Canceled:
+			if ctx.Err() == nil {
+				last = err
+			}
 		default:
 			return false, err
 		}

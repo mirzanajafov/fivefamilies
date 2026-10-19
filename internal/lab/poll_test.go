@@ -32,13 +32,14 @@ func TestPollingGivesUpAfterItsLimit(t *testing.T) {
 }
 
 func TestEachCheckRunsWithinTheLimit(t *testing.T) {
+	start := time.Now()
 	var deadline time.Time
 	err := poll(context.Background(), time.Millisecond, time.Minute, func(ctx context.Context) (bool, error) {
 		deadline, _ = ctx.Deadline()
 		return true, nil
 	})
-	if err != nil || deadline.IsZero() || time.Until(deadline) > time.Minute {
-		t.Fatalf("the check's deadline was %v: %v", deadline, err)
+	if limit := deadline.Sub(start); err != nil || limit < time.Minute || limit > time.Minute+time.Second {
+		t.Fatalf("the check had %v to run: %v", limit, err)
 	}
 }
 
