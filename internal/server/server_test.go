@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -16,6 +18,7 @@ import (
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/snap"
 )
 
 type running struct {
@@ -219,6 +222,19 @@ func TestAClusterWritesReadsAndSurvivesItsLeader(t *testing.T) {
 			t.Fatalf("nodes did not converge: revisions %v", revs)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestANodeRemovesUnfinishedSnapshotsWhenItStarts(t *testing.T) {
+	c := newTestCluster(t, 1, nil)
+	c.stop(1)
+	unfinished := filepath.Join(c.dirs[1], snap.Name(7, 1)+".tmp")
+	if err := os.WriteFile(unfinished, []byte("half"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c.start(1)
+	if _, err := os.Stat(unfinished); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the unfinished snapshot is still there: %v", err)
 	}
 }
 

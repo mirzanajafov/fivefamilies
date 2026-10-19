@@ -285,6 +285,36 @@ func TestSnapshotsAreTakenAndTheLogCompactedOnlyAfterTheMarkerIsDurable(t *testi
 	}
 }
 
+func TestCompactionReportsTheDurableSnapshotNotOneStillBeingInstalled(t *testing.T) {
+	n, env, _ := newTestNodeConfig(t, 2, []raft.NodeID{1, 2, 3}, Config{SnapshotEvery: 5})
+	var ents []raft.Entry
+	for i := uint64(1); i <= 5; i++ {
+		ents = append(ents, raft.Entry{Index: i, Term: 1})
+	}
+	n.Receive(raft.Message{Type: raft.MsgApp, From: 1, To: 2, Term: 1, Entries: ents, Commit: 5})
+	n.Process()
+	for len(env.writes) > 0 && env.writes[0].Snapshot == nil {
+		w := env.writes[0]
+		env.writes = env.writes[1:]
+		n.WriteDone(w.Seq)
+		n.Process()
+	}
+	if len(env.writes) == 0 {
+		t.Fatal("the follower took no snapshot")
+	}
+	marker := env.writes[0]
+	env.writes = env.writes[1:]
+	n.Receive(raft.Message{Type: raft.MsgSnap, From: 1, To: 2, Term: 2, Snapshot: &raft.Snapshot{Index: 30, Term: 2, Data: []byte("state")}})
+	n.WriteDone(marker.Seq)
+	if len(env.compacted) != 1 || env.compacted[0].Index != marker.Snapshot.Index {
+		t.Fatalf("compacted %+v after the marker for %d was durable", env.compacted, marker.Snapshot.Index)
+	}
+	n.settle(env)
+	if last := env.compacted[len(env.compacted)-1]; last.Index != 30 {
+		t.Fatalf("compacted to %d after the install was durable", last.Index)
+	}
+}
+
 func TestAnInstalledSnapshotRestoresTheStateMachine(t *testing.T) {
 	n, env, app := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
 	s := &raft.Snapshot{Index: 30, Term: 2, Data: []byte("state")}
