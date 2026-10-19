@@ -31,7 +31,7 @@ type Options struct {
 	MuteSafety    bool
 	LeaseTicks    int
 	ClockSkew     float64
-	Reads         string
+	Reads         ReadMode
 	NoCatchUp     bool
 	Membership    bool
 	Leases        bool
@@ -208,10 +208,8 @@ func newSim(seed uint64, opts Options) *Sim {
 	rng := rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15))
 	s := &Sim{opts: opts, seed: seed, rng: rng, hash: fnvOffset}
 	s.sw = newSwarm(rng)
-	for m := readLog; m <= readFollower; m++ {
-		if opts.Reads == m.String() {
-			s.sw.readMode = m
-		}
+	if opts.Reads != ReadAny {
+		s.sw.readMode = opts.Reads
 	}
 	s.net = newNetwork(opts.Nodes)
 	s.net.loss, s.net.dup, s.net.base, s.net.jitter = s.sw.loss, s.sw.dup, s.sw.base, s.sw.jitter
@@ -362,7 +360,7 @@ func (s *Sim) boot(sn *simNode) {
 }
 
 func (s *Sim) leaseTicks() int {
-	if s.sw.readMode != readLease {
+	if s.sw.readMode != ReadLease {
 		return 0
 	}
 	return s.opts.LeaseTicks

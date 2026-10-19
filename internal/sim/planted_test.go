@@ -8,21 +8,21 @@ import (
 
 var canaries = []struct {
 	bug       raft.Bug
-	reads     string
+	reads     ReadMode
 	noPreVote bool
 	nets      []Category
 	seeds     []uint64
 }{
-	{raft.BugFigure8, "", false, []Category{CatSafety, CatPanic}, []uint64{853}},
-	{raft.BugStaleTerm, "", false, []Category{CatSafety, CatPanic}, []uint64{667}},
-	{raft.BugPrevTerm, "", false, []Category{CatSafety, CatPanic}, []uint64{19}},
-	{raft.BugAnyVote, "", false, []Category{CatSafety, CatPanic}, []uint64{3}},
-	{raft.BugNoFsync, "", false, []Category{CatSafety, CatPanic}, []uint64{1}},
-	{raft.BugFollowerRead, "follower", false, []Category{CatLinearizability}, []uint64{1}},
-	{raft.BugEarlyConf, "", true, []Category{CatSafety}, []uint64{7622}},
-	{raft.BugLocalKeepAlive, "", false, []Category{CatLease}, []uint64{981}},
-	{raft.BugWatchGap, "", false, []Category{CatWatch}, []uint64{2}},
-	{raft.BugWatchKeep, "", false, []Category{CatWatch}, []uint64{7}},
+	{raft.BugFigure8, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{853}},
+	{raft.BugStaleTerm, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{667}},
+	{raft.BugPrevTerm, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{19}},
+	{raft.BugAnyVote, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{3}},
+	{raft.BugNoFsync, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{1}},
+	{raft.BugFollowerRead, ReadFollower, false, []Category{CatLinearizability}, []uint64{1}},
+	{raft.BugEarlyConf, ReadAny, true, []Category{CatSafety}, []uint64{7622}},
+	{raft.BugLocalKeepAlive, ReadAny, false, []Category{CatLease}, []uint64{981}},
+	{raft.BugWatchGap, ReadAny, false, []Category{CatWatch}, []uint64{2}},
+	{raft.BugWatchKeep, ReadAny, false, []Category{CatWatch}, []uint64{7}},
 }
 
 func TestPlantedBugsAreCaught(t *testing.T) {
@@ -78,7 +78,7 @@ func TestEveryBugHasACanary(t *testing.T) {
 
 func TestATickMeasuredLeaseBreaksWithoutCatchUp(t *testing.T) {
 	opts := DefaultOptions()
-	opts.Reads = "lease"
+	opts.Reads = ReadLease
 	opts.NoCatchUp = true
 	if r := Run(172, opts); r.OK() || r.Category != CatLinearizability {
 		t.Fatalf("seed 172 without tick catch-up: %s %s", r.Category, r.Violation)

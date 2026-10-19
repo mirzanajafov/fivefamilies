@@ -81,20 +81,30 @@ type swarm struct {
 	segBytes      int64
 	snapEvery     uint64
 	retain        uint64
-	readMode      readMode
+	readMode      ReadMode
 }
 
-type readMode uint8
+type ReadMode uint8
 
 const (
-	readLog readMode = iota
-	readIndex
-	readLease
-	readFollower
+	ReadAny ReadMode = iota
+	ReadLog
+	ReadIndex
+	ReadLease
+	ReadFollower
 )
 
-func (m readMode) String() string {
-	return [...]string{"log", "index", "lease", "follower"}[m]
+func (m ReadMode) String() string {
+	return [...]string{"any", "log", "index", "lease", "follower"}[m]
+}
+
+func ParseReadMode(s string) (ReadMode, error) {
+	for m := ReadLog; m <= ReadFollower; m++ {
+		if s == m.String() {
+			return m, nil
+		}
+	}
+	return ReadAny, fmt.Errorf("sim: unknown read path %q", s)
 }
 
 func pick[T any](rng *rand.Rand, opts ...T) T {
@@ -131,7 +141,7 @@ func newSwarm(rng *rand.Rand) swarm {
 		segBytes:     pick[int64](rng, 16<<10, 64<<10, 1<<20),
 		snapEvery:    pick[uint64](rng, 0, 20, 200, 2000),
 		retain:       pick[uint64](rng, 0, 5, 50),
-		readMode:     pick(rng, readLog, readIndex, readLease, readFollower),
+		readMode:     pick(rng, ReadLog, ReadIndex, ReadLease, ReadFollower),
 	}
 	if rng.Float64() < 0.6 {
 		sw.partitionMean = between(rng, time.Second, 5*time.Second)

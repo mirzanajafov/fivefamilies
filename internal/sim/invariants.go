@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
@@ -28,6 +29,15 @@ const (
 	CatClient          Category = "client"
 	CatPanic           Category = "panic"
 )
+
+var Categories = []Category{CatSafety, CatLiveness, CatState, CatLinearizability, CatLease, CatWatch, CatClient, CatPanic}
+
+func ParseCategory(s string) (Category, error) {
+	if c := Category(s); slices.Contains(Categories, c) {
+		return c, nil
+	}
+	return "", fmt.Errorf("sim: unknown check %q", s)
+}
 
 type leadership struct {
 	id          raft.NodeID

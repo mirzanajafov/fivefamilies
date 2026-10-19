@@ -98,7 +98,7 @@ func (s *Sim) nextOp(c *simClient) {
 }
 
 func (s *Sim) sendRequest(c *simClient) {
-	if c.cmd.Op == kv.OpGet && s.sw.readMode == readFollower {
+	if c.cmd.Op == kv.OpGet && s.sw.readMode == ReadFollower {
 		c.target = s.rng.IntN(len(s.nodes))
 	}
 	c.attempt++
@@ -124,13 +124,13 @@ func (s *Sim) handleRequest(sn *simNode, req *clientReq) {
 		}
 		s.after(s.net.delay(s.rng), func() { s.clientResponse(req.client, req.attempt, seq, res, err) })
 	}
-	if req.cmd.Op == kv.OpGet && s.sw.readMode != readLog {
+	if req.cmd.Op == kv.OpGet && s.sw.readMode != ReadLog {
 		s.stats.LocalReads++
 		if s.opts.Trace != nil {
 			r := sn.n.Raft()
 			s.tracef("n%d read %s for client %d attempt %d (state %v term %d commit %d applied %d)", sn.id, req.cmd.Key, req.client.idx, req.attempt, r.State(), r.Term(), r.Committed(), r.Applied())
 		}
-		sn.n.Read(req.cmd.Key, s.sw.readMode == readLease, func(res kv.Result, err error) {
+		sn.n.Read(req.cmd.Key, s.sw.readMode == ReadLease, func(res kv.Result, err error) {
 			if s.opts.Trace != nil {
 				r := sn.n.Raft()
 				s.tracef("n%d answers read %s for client %d attempt %d: found %v %q rev %d err %v (state %v term %d)", sn.id, req.cmd.Key, req.client.idx, req.attempt, res.Found, res.KV.Value, res.Rev, err, r.State(), r.Term())

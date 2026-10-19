@@ -180,6 +180,29 @@ func soloLeader(t *testing.T, id raft.NodeID, st raft.Restore, data ...string) *
 	return r
 }
 
+func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
+	for _, m := range []ReadMode{ReadLog, ReadIndex, ReadLease, ReadFollower} {
+		if got, err := ParseReadMode(m.String()); err != nil || got != m {
+			t.Errorf("read path %s parsed as %s: %v", m, got, err)
+		}
+	}
+	for _, s := range []string{"", "any", "leases", "Lease"} {
+		if _, err := ParseReadMode(s); err == nil {
+			t.Errorf("read path %q was accepted", s)
+		}
+	}
+	for _, c := range Categories {
+		if got, err := ParseCategory(string(c)); err != nil || got != c {
+			t.Errorf("check %s parsed as %s: %v", c, got, err)
+		}
+	}
+	for _, s := range []string{"", "linearizabilty", "Safety"} {
+		if _, err := ParseCategory(s); err == nil {
+			t.Errorf("check %q was accepted", s)
+		}
+	}
+}
+
 func TestCheckerCatchesTwoLeadersInOneTerm(t *testing.T) {
 	c := newChecker(2)
 	c.observe(0, soloLeader(t, 1, raft.Restore{}))

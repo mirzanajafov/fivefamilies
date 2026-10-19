@@ -33,13 +33,25 @@ func main() {
 	noWatches := flag.Bool("no-watches", false, "run no watchers")
 	batch := flag.Bool("batch", false, "let a node take several events before it handles its Ready, as the server loop does")
 	noCatchUp := flag.Bool("no-catchup", false, "do not replay the ticks a paused node missed, to show what a lease measured in ticks does under pauses")
-	reads := flag.String("reads", "", "force one read path for every seed: log, index, lease or follower")
+	var reads sim.ReadMode
+	flag.Func("reads", "force one read path for every seed: log, index, lease or follower", func(s string) (err error) {
+		reads, err = sim.ParseReadMode(s)
+		return err
+	})
 	skew := flag.Float64("clock-skew", 0, "make one node's clock run this much faster (0.5 = 50%), to break the lease assumption")
 	checkTimeout := flag.Duration("check-timeout", 0, "time limit for one linearizability check")
-	bugs := flag.String("bug", "", "planted bugs to switch on, comma separated: figure8, staleterm, prevterm, anyvote, nofsync, followerread, earlyconf, localkeepalive, watchgap, watchkeep")
+	var planted raft.Bug
+	flag.Func("bug", "planted bugs to switch on, comma separated: figure8, staleterm, prevterm, anyvote, nofsync, followerread, earlyconf, localkeepalive, watchgap, watchkeep", func(s string) (err error) {
+		planted, err = raft.ParseBugs(s)
+		return err
+	})
 	mute := flag.Bool("mute-safety", false, "record protocol invariant violations without stopping, to see what the other checks catch")
 	first := flag.Bool("first", false, "stop handing out seeds after the first failure and report the lowest failing seed")
-	catch := flag.String("catch", "", "count a seed as failing only when this check fires (safety, liveness, linearizability, lease, watch, state, client, panic)")
+	var catch sim.Category
+	flag.Func("catch", "count a seed as failing only when this check fires (safety, liveness, linearizability, lease, watch, state, client, panic)", func(s string) (err error) {
+		catch, err = sim.ParseCategory(s)
+		return err
+	})
 	flag.Parse()
 
 	opts := sim.DefaultOptions()
@@ -53,7 +65,7 @@ func main() {
 		opts.Nodes = *nodes
 	}
 	opts.ClockSkew = *skew
-	opts.Reads = *reads
+	opts.Reads = reads
 	opts.NoCatchUp = *noCatchUp
 	opts.PreVote = !*noPreVote
 	opts.Membership = !*noMembers
@@ -62,11 +74,6 @@ func main() {
 	opts.Batch = *batch
 	if *checkTimeout > 0 {
 		opts.CheckTimeout = *checkTimeout
-	}
-	planted, err := raft.ParseBugs(*bugs)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
 	}
 	opts.Bugs = planted
 	opts.MuteSafety = *mute
@@ -79,7 +86,8 @@ func main() {
 		printResult(res)
 		if *viz != "" {
 			if err := porcupine.VisualizePath(check.KVModel, res.Info, *viz); err != nil {
-				fmt.Println("visualization:", err)
+				fmt.Fprintln(os.Stderr, "visualization:", err)
+				os.Exit(1)
 			}
 		}
 		if !res.OK() {
@@ -124,8 +132,8 @@ func main() {
 					unknown = append(unknown, res.Seed)
 				}
 				failing := !res.OK()
-				if *catch != "" {
-					_, failing = res.Detected[sim.Category(*catch)]
+				if catch != "" {
+					_, failing = res.Detected[catch]
 				}
 				if failing {
 					failed = append(failed, res)
@@ -176,7 +184,7 @@ func printResult(r sim.Result) {
 		status = fmt.Sprintf("FAIL (%s) at %v: %s", r.Category, r.At, r.Violation)
 	}
 	fmt.Printf("seed %d: %s\n  swarm: %s\n  stats: %+v\n  check: %s in %v\n", r.Seed, status, r.Swarm, r.Stats, r.Check, r.CheckTook.Round(time.Millisecond))
-	for _, cat := range []sim.Category{sim.CatSafety, sim.CatLiveness, sim.CatState, sim.CatLinearizability, sim.CatLease, sim.CatWatch, sim.CatClient, sim.CatPanic} {
+	for _, cat := range sim.Categories {
 		if msg, ok := r.Detected[cat]; ok {
 			fmt.Printf("  %s: %s\n", cat, msg)
 		}
