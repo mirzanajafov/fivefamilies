@@ -42,3 +42,11 @@ func TestLabSurvivesFaults(t *testing.T) {
 		t.Fatalf("linearizable %s, states equal %v, problems %v", rep.Linearizable, rep.StatesEqual, rep.Problems)
 	}
 }
+
+func TestARunWithAnUnknownReadPathOrFaultStopsBeforeStarting(t *testing.T) {
+	for _, o := range []Options{{Read: "leases"}, {Read: "index", Faults: []FaultKind{"partition"}}} {
+		if _, err := Run(context.Background(), o); err == nil {
+			t.Errorf("read %q with faults %v was accepted", o.Read, o.Faults)
+		}
+	}
+}

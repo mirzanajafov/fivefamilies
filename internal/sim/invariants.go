@@ -30,10 +30,12 @@ const (
 	CatPanic           Category = "panic"
 )
 
-var Categories = []Category{CatSafety, CatLiveness, CatState, CatLinearizability, CatLease, CatWatch, CatClient, CatPanic}
+func Categories() []Category {
+	return []Category{CatSafety, CatLiveness, CatState, CatLinearizability, CatLease, CatWatch, CatClient, CatPanic}
+}
 
 func ParseCategory(s string) (Category, error) {
-	if c := Category(s); slices.Contains(Categories, c) {
+	if c := Category(s); slices.Contains(Categories(), c) {
 		return c, nil
 	}
 	return "", fmt.Errorf("sim: unknown check %q", s)

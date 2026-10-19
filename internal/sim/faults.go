@@ -94,12 +94,16 @@ const (
 	ReadFollower
 )
 
+func ReadModes() []ReadMode {
+	return []ReadMode{ReadLog, ReadIndex, ReadLease, ReadFollower}
+}
+
 func (m ReadMode) String() string {
 	return [...]string{"any", "log", "index", "lease", "follower"}[m]
 }
 
 func ParseReadMode(s string) (ReadMode, error) {
-	for m := ReadLog; m <= ReadFollower; m++ {
+	for _, m := range append(ReadModes(), ReadAny) {
 		if s == m.String() {
 			return m, nil
 		}
@@ -141,7 +145,7 @@ func newSwarm(rng *rand.Rand) swarm {
 		segBytes:     pick[int64](rng, 16<<10, 64<<10, 1<<20),
 		snapEvery:    pick[uint64](rng, 0, 20, 200, 2000),
 		retain:       pick[uint64](rng, 0, 5, 50),
-		readMode:     pick(rng, ReadLog, ReadIndex, ReadLease, ReadFollower),
+		readMode:     pick(rng, ReadModes()...),
 	}
 	if rng.Float64() < 0.6 {
 		sw.partitionMean = between(rng, time.Second, 5*time.Second)

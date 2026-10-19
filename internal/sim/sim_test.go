@@ -181,17 +181,17 @@ func soloLeader(t *testing.T, id raft.NodeID, st raft.Restore, data ...string) *
 }
 
 func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
-	for _, m := range []ReadMode{ReadLog, ReadIndex, ReadLease, ReadFollower} {
+	for _, m := range append(ReadModes(), ReadAny) {
 		if got, err := ParseReadMode(m.String()); err != nil || got != m {
 			t.Errorf("read path %s parsed as %s: %v", m, got, err)
 		}
 	}
-	for _, s := range []string{"", "any", "leases", "Lease"} {
+	for _, s := range []string{"", "leases", "Lease"} {
 		if _, err := ParseReadMode(s); err == nil {
 			t.Errorf("read path %q was accepted", s)
 		}
 	}
-	for _, c := range Categories {
+	for _, c := range Categories() {
 		if got, err := ParseCategory(string(c)); err != nil || got != c {
 			t.Errorf("check %s parsed as %s: %v", c, got, err)
 		}

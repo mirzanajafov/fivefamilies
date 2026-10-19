@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -125,6 +126,15 @@ func leaderOf(sts []*pb.StatusResponse) (int, uint64) {
 
 func Run(ctx context.Context, opts Options) (Report, error) {
 	rep := Report{Options: opts, Started: time.Now()}
+	mode, err := client.ParseReadMode(opts.Read)
+	if err != nil {
+		return rep, err
+	}
+	for _, f := range opts.Faults {
+		if !slices.Contains(AllFaults, f) {
+			return rep, fmt.Errorf("lab: unknown fault %q", f)
+		}
+	}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{
 		"FF_BUG=" + opts.Bug, "FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease,
@@ -155,7 +165,6 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		wait(ctx, 200*time.Millisecond)
 	}
 	start := time.Now()
-	mode := map[string]client.ReadMode{"index": client.ReadIndex, "lease": client.ReadLease, "log": client.ReadLog}[opts.Read]
 	w := &workload{addrs: addrs, workers: opts.Workers, keys: opts.Keys, read: mode, opTimeout: opts.OpTimeout, seed: opts.Seed, start: start}
 	var mu sync.Mutex
 	current := 0

@@ -54,6 +54,11 @@ func main() {
 	if len(args) == 0 {
 		usage()
 	}
+	mode, err := client.ParseReadMode(*read)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		usage()
+	}
 	addrs := strings.Split(*endpoints, ",")
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
@@ -81,7 +86,6 @@ func main() {
 		fail(err)
 	}
 	defer c.Close()
-	mode := map[string]client.ReadMode{"index": client.ReadIndex, "lease": client.ReadLease, "log": client.ReadLog}[*read]
 	switch {
 	case args[0] == "put" && (len(args) == 3 || len(args) == 4):
 		var opts []client.WriteOption

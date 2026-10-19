@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -25,6 +26,18 @@ const (
 	ReadLease
 	ReadLog
 )
+
+func ParseReadMode(s string) (ReadMode, error) {
+	switch s {
+	case "index":
+		return ReadIndex, nil
+	case "lease":
+		return ReadLease, nil
+	case "log":
+		return ReadLog, nil
+	}
+	return ReadIndex, fmt.Errorf("client: unknown read mode %q", s)
+}
 
 var ErrSessionExpired = errors.New("client: the cluster forgot this session; the last write's outcome is unknown")
 
