@@ -217,7 +217,7 @@ func TestVisitorsGetBoundedChaos(t *testing.T) {
 	h.c.mu.Lock()
 	h.c.last.Ends = time.Now()
 	h.c.mu.Unlock()
-	if code, body := h.chaos(`{"action":"slow-disk","node":3,"seconds":1}`, "3.3.3.3", false); code != http.StatusTooManyRequests || !strings.Contains(body, "settling") {
+	if code, body := h.chaos(`{"action":"slow-disk","node":3,"seconds":1}`, "3.3.3.3", false); code != http.StatusTooManyRequests || !strings.Contains(body, "settling, so try again in 1 s") {
 		t.Fatalf("a fault right after the last one ended: %d %s", code, body)
 	}
 	if code, body := h.chaos(`{"action":"slow-disk","node":3,"seconds":30}`, "1.1.1.1", true); code != http.StatusOK {

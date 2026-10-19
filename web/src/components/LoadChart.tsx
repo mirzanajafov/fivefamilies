@@ -65,7 +65,7 @@ export function LoadChart({ curves, label }: { curves: Curve[]; label: string })
             {c.name}
           </span>
         ))}
-        <span className="muted">p99 latency; hollow points fell behind</span>
+        <span className="muted">p99 latency (hollow points fell behind)</span>
       </figcaption>
     </figure>
   )
