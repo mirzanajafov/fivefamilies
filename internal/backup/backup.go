@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
+	"github.com/mirzanajafov/fivefamilies/internal/vfs"
 )
 
 var (
@@ -90,30 +91,7 @@ func Save(path string, f File) error {
 	if err := Encode(&buf, f); err != nil {
 		return err
 	}
-	tmp := path + ".partial"
-	out, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	if _, err := out.Write(buf.Bytes()); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Sync(); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return err
-	}
-	if d, err := os.Open(filepath.Dir(path)); err == nil {
-		d.Sync()
-		d.Close()
-	}
-	return nil
+	return vfs.WriteAtomic(vfs.OS{Dir: filepath.Dir(path)}, filepath.Base(path), buf.Bytes())
 }
 
 func Load(path string) (File, Summary, error) {

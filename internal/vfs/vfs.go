@@ -88,3 +88,31 @@ func (o OS) SyncDir() error {
 	defer d.Close()
 	return d.Sync()
 }
+
+const TempSuffix = ".tmp"
+
+func WriteAtomic(fs FS, name string, data []byte) error {
+	tmp := name + TempSuffix
+	if err := fs.Remove(tmp); err != nil {
+		return err
+	}
+	f, err := fs.Create(tmp)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := fs.Rename(tmp, name); err != nil {
+		return err
+	}
+	return fs.SyncDir()
+}

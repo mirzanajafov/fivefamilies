@@ -2,7 +2,9 @@ package vfs
 
 import (
 	"bytes"
+	"errors"
 	"math/rand/v2"
+	"slices"
 	"testing"
 )
 
@@ -75,6 +77,34 @@ func TestMemFilesNeedADirectorySyncToSurviveACrash(t *testing.T) {
 	m.Crash(rand.New(rand.NewPCG(1, 1)))
 	if names, _ := m.List(); len(names) != 1 || names[0] != "renamed" {
 		t.Fatalf("after a synced rename: %v", names)
+	}
+}
+
+type unsyncableDir struct {
+	FS
+}
+
+func (unsyncableDir) SyncDir() error {
+	return errors.New("the directory could not be synced")
+}
+
+func TestAnAtomicWriteSurvivesACrashAndReportsAFailedDirectorySync(t *testing.T) {
+	m := NewMem()
+	if err := WriteAtomic(m, "kept", []byte("old")); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAtomic(m, "kept", []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	m.Crash(rand.New(rand.NewPCG(1, 1)))
+	if got, err := m.ReadFile("kept"); err != nil || string(got) != "new" {
+		t.Fatalf("after a crash: %q %v", got, err)
+	}
+	if names, _ := m.List(); !slices.Equal(names, []string{"kept"}) {
+		t.Fatalf("left %v", names)
+	}
+	if err := WriteAtomic(unsyncableDir{m}, "lost", []byte("x")); err == nil {
+		t.Fatal("a directory sync that failed was not reported")
 	}
 }
 

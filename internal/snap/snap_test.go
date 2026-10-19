@@ -49,7 +49,7 @@ func TestEveryFlippedByteIsCaught(t *testing.T) {
 
 func TestACrashBeforeTheRenameLeavesNoSnapshot(t *testing.T) {
 	fs := vfs.NewMem()
-	f, _ := fs.Create(Name(9, 1) + tmpSuffix)
+	f, _ := fs.Create(Name(9, 1) + vfs.TempSuffix)
 	f.Write([]byte("half"))
 	fs.Crash(rand.New(rand.NewPCG(1, 1)))
 	if _, err := Load(fs, 9, 1); err == nil {
@@ -161,7 +161,7 @@ func TestRemovingUnfinishedSavesLeavesEverythingElse(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, fs, "0000000000000001.wal", nil)
-	writeFile(t, fs, Name(20, 1)+tmpSuffix, []byte("half"))
+	writeFile(t, fs, Name(20, 1)+vfs.TempSuffix, []byte("half"))
 	if err := RemoveUnfinished(fs); err != nil {
 		t.Fatal(err)
 	}
