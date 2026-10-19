@@ -47,7 +47,7 @@ func TestLabSurvivesFaults(t *testing.T) {
 }
 
 func TestOnlyKnownFaultsParse(t *testing.T) {
-	for s, want := range map[string][]FaultKind{"all": AllFaults, "none": nil, "kill, pause": {FaultKill, FaultPause}} {
+	for s, want := range map[string][]FaultKind{"all": AllFaults, " none": nil, "kill, pause": {FaultKill, FaultPause}} {
 		if got, err := ParseFaults(s); err != nil || !slices.Equal(got, want) {
 			t.Errorf("%q parsed as %v: %v", s, got, err)
 		}

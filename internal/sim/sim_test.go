@@ -211,26 +211,39 @@ func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
 
 func TestACheckOrBugThatCanNeverFireIsRefused(t *testing.T) {
 	full := DefaultOptions()
-	for _, c := range Categories() {
-		if err := full.Reaches(c); err != nil {
-			t.Errorf("%s with everything on: %v", c, err)
-		}
-	}
 	for _, b := range raft.AllBugs() {
-		if err := full.Exercises(b); err != nil {
-			t.Errorf("%s with everything on: %v", b, err)
+		full.Bugs |= b
+	}
+	for _, c := range Categories() {
+		if err := full.Validate(c); err != nil {
+			t.Errorf("-catch %s with everything on and every bug planted: %v", c, err)
 		}
 	}
-	bare := DefaultOptions()
-	bare.Leases, bare.Watches, bare.Membership, bare.Reads = false, false, false, ReadIndex
-	for _, c := range []Category{CatLease, CatWatch} {
-		if bare.Reaches(c) == nil {
-			t.Errorf("%s was reachable with lease holders and watchers off", c)
+	for _, reads := range []ReadMode{ReadIndex, ReadLease, ReadFollower} {
+		o := DefaultOptions()
+		o.Bugs, o.Reads = raft.BugFollowerRead, reads
+		if err := o.Validate(""); err != nil {
+			t.Errorf("followerread with %s reads: %v", reads, err)
 		}
 	}
-	for _, b := range []raft.Bug{raft.BugLocalKeepAlive, raft.BugWatchGap, raft.BugWatchKeep, raft.BugEarlyConf, raft.BugFollowerRead} {
-		if bare.Exercises(b) == nil {
-			t.Errorf("%s was exercised with its part of the simulation off", b)
+	for name, c := range map[string]struct {
+		off   func(*Options)
+		bug   raft.Bug
+		catch Category
+	}{
+		"lease check without lease holders":       {func(o *Options) { o.Leases = false }, 0, CatLease},
+		"localkeepalive without lease holders":    {func(o *Options) { o.Leases = false }, raft.BugLocalKeepAlive, ""},
+		"watch check without watchers":            {func(o *Options) { o.Watches = false }, 0, CatWatch},
+		"watchgap without watchers":               {func(o *Options) { o.Watches = false }, raft.BugWatchGap, ""},
+		"watchkeep without watchers":              {func(o *Options) { o.Watches = false }, raft.BugWatchKeep, ""},
+		"earlyconf without membership changes":    {func(o *Options) { o.Membership = false }, raft.BugEarlyConf, ""},
+		"followerread with reads through the log": {func(o *Options) { o.Reads = ReadLog }, raft.BugFollowerRead, ""},
+	} {
+		o := DefaultOptions()
+		c.off(&o)
+		o.Bugs = c.bug
+		if o.Validate(c.catch) == nil {
+			t.Errorf("%s was accepted", name)
 		}
 	}
 }

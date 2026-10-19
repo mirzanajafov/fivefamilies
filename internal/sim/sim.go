@@ -41,26 +41,16 @@ type Options struct {
 	Trace         io.Writer
 }
 
-func (o Options) Reaches(c Category) error {
+func (o Options) Validate(catch Category) error {
 	switch {
-	case c == CatLease && !o.Leases:
+	case !o.Leases && (catch == CatLease || o.Bugs.Has(raft.BugLocalKeepAlive)):
 		return errors.New("sim: there are no lease holders")
-	case c == CatWatch && !o.Watches:
+	case !o.Watches && (catch == CatWatch || o.Bugs.Has(raft.BugWatchGap|raft.BugWatchKeep)):
 		return errors.New("sim: there are no watchers")
-	}
-	return nil
-}
-
-func (o Options) Exercises(b raft.Bug) error {
-	switch {
-	case b == raft.BugLocalKeepAlive && !o.Leases:
-		return errors.New("sim: there are no lease holders")
-	case (b == raft.BugWatchGap || b == raft.BugWatchKeep) && !o.Watches:
-		return errors.New("sim: there are no watchers")
-	case b == raft.BugEarlyConf && !o.Membership:
+	case !o.Membership && o.Bugs.Has(raft.BugEarlyConf):
 		return errors.New("sim: membership never changes")
-	case b == raft.BugFollowerRead && o.Reads != ReadAny && o.Reads != ReadFollower:
-		return fmt.Errorf("sim: every read takes the %s path", o.Reads)
+	case o.Reads == ReadLog && o.Bugs.Has(raft.BugFollowerRead):
+		return errors.New("sim: every read goes through the log")
 	}
 	return nil
 }

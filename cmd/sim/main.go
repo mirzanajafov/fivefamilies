@@ -50,7 +50,7 @@ func main() {
 	mute := flag.Bool("mute-safety", false, "record protocol invariant violations without stopping, to see what the other checks catch")
 	first := flag.Bool("first", false, "stop handing out seeds after the first failure and report the lowest failing seed")
 	var catch sim.Category
-	flag.Func("catch", "count a seed as failing when this check fires (another check fails it only by stopping the run first): "+list(sim.Categories()), func(s string) (err error) {
+	flag.Func("catch", "count a seed as failing only when this check fires (a seed another check stops early is reported apart): "+list(sim.Categories()), func(s string) (err error) {
 		catch, err = sim.ParseCategory(s)
 		return err
 	})
@@ -79,15 +79,9 @@ func main() {
 	}
 	opts.Bugs = planted
 	opts.MuteSafety = *mute
-	if err := opts.Reaches(catch); err != nil {
-		fmt.Fprintf(os.Stderr, "-catch %s can never fire: %v\n", catch, err)
+	if err := opts.Validate(catch); err != nil {
+		fmt.Fprintln(os.Stderr, "-catch or -bug can never fire:", err)
 		os.Exit(2)
-	}
-	for _, b := range raft.AllBugs() {
-		if err := opts.Exercises(b); planted.Has(b) && err != nil {
-			fmt.Fprintf(os.Stderr, "-bug %s is never exercised: %v\n", b, err)
-			os.Exit(2)
-		}
 	}
 
 	if *seed != 0 {
@@ -102,7 +96,7 @@ func main() {
 			}
 		}
 		fmt.Print(res.Stack)
-		if _, failing := verdict(res, catch); failing {
+		if _, out := verdict(res, catch); out != clean {
 			os.Exit(1)
 		}
 		return
@@ -116,7 +110,7 @@ func main() {
 	var failed []sim.Result
 	var total sim.Stats
 	var checkTotal, checkMax time.Duration
-	var unknown []uint64
+	var unknown, short []uint64
 	ran := 0
 	categories := map[sim.Category]int{}
 	detected := map[sim.Category]int{}
@@ -142,7 +136,8 @@ func main() {
 				if res.Check == porcupine.Unknown {
 					unknown = append(unknown, res.Seed)
 				}
-				if cat, failing := verdict(res, catch); failing {
+				switch cat, out := verdict(res, catch); out {
+				case caught:
 					failed = append(failed, res)
 					categories[cat]++
 					if lowest == 0 || res.Seed < lowest {
@@ -153,6 +148,8 @@ func main() {
 					} else {
 						printResult(res, catch)
 					}
+				case cutShort:
+					short = append(short, res.Seed)
 				}
 				mu.Unlock()
 			}
@@ -171,7 +168,14 @@ func main() {
 	if len(detected) > 0 {
 		fmt.Printf("seeds where each check fired: %v\n", detected)
 	}
+	if len(short) > 0 {
+		slices.Sort(short)
+		fmt.Printf("seeds another check stopped before %s could be judged: %v\n", catch, short)
+	}
 	if len(failed) == 0 {
+		if len(short) > 0 {
+			os.Exit(1)
+		}
 		return
 	}
 	fmt.Printf("failures by category: %v; lowest failing seed %d, the %dth of the batch\n", categories, lowest, lowest-*from+1)
@@ -185,20 +189,39 @@ func main() {
 	os.Exit(1)
 }
 
-func verdict(r sim.Result, catch sim.Category) (sim.Category, bool) {
+type outcome int
+
+const (
+	clean outcome = iota
+	caught
+	cutShort
+)
+
+func verdict(r sim.Result, catch sim.Category) (sim.Category, outcome) {
 	if _, fired := r.Detected[catch]; fired {
-		return catch, true
+		return catch, caught
 	}
-	return r.Category, !r.OK()
+	switch {
+	case r.OK():
+		return "", clean
+	case catch == "":
+		return r.Category, caught
+	case r.Check == "":
+		return r.Category, cutShort
+	}
+	return "", clean
 }
 
 func printResult(r sim.Result, catch sim.Category) {
 	status := "ok"
-	if cat, failing := verdict(r, catch); failing {
+	switch cat, out := verdict(r, catch); out {
+	case caught:
 		status = fmt.Sprintf("FAIL (%s)", cat)
 		if cat == r.Category {
 			status += fmt.Sprintf(" at %v: %s", r.At, r.Violation)
 		}
+	case cutShort:
+		status = fmt.Sprintf("STOPPED (%s) at %v before %s could be judged: %s", cat, r.At, catch, r.Violation)
 	}
 	fmt.Printf("seed %d: %s\n  swarm: %s\n  stats: %+v\n  check: %s in %v\n", r.Seed, status, r.Swarm, r.Stats, r.Check, r.CheckTook.Round(time.Millisecond))
 	for _, cat := range sim.Categories() {

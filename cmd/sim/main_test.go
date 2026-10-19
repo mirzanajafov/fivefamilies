@@ -3,29 +3,36 @@ package main
 import (
 	"testing"
 
+	"github.com/anishathalye/porcupine"
+
 	"github.com/mirzanajafov/fivefamilies/internal/sim"
 )
 
-func TestASeedFailsWhenTheCaughtCheckFiresOrAnotherStopsTheRun(t *testing.T) {
-	clean := sim.Result{}
-	muted := sim.Result{Detected: map[sim.Category]string{sim.CatSafety: "muted"}}
-	caught := sim.Result{Detected: map[sim.Category]string{sim.CatSafety: "muted", sim.CatLinearizability: "not linearizable"}}
-	stopped := sim.Result{Category: sim.CatPanic, Violation: "boom", Detected: map[sim.Category]string{sim.CatPanic: "boom"}}
+func TestASeedIsCaughtOnlyByItsCheckAndCutShortWhenAnotherStopsItFirst(t *testing.T) {
+	passed := sim.Result{Check: porcupine.Ok}
+	mutedSafety := sim.Result{Check: porcupine.Ok, Detected: map[sim.Category]string{sim.CatSafety: "two leaders"}}
+	illegal := sim.Result{Category: sim.CatLinearizability, Violation: "not linearizable", Check: porcupine.Illegal,
+		Detected: map[sim.Category]string{sim.CatLinearizability: "not linearizable"}}
+	stateAfterAGoodCheck := sim.Result{Category: sim.CatState, Violation: "hashes differ", Check: porcupine.Ok,
+		Detected: map[sim.Category]string{sim.CatState: "hashes differ"}}
+	panicked := sim.Result{Category: sim.CatPanic, Violation: "boom", Detected: map[sim.Category]string{sim.CatPanic: "boom"}}
 	for _, c := range []struct {
-		name    string
-		r       sim.Result
-		catch   sim.Category
-		cat     sim.Category
-		failing bool
+		name  string
+		r     sim.Result
+		catch sim.Category
+		cat   sim.Category
+		out   outcome
 	}{
-		{"a clean run", clean, "", "", false},
-		{"a stopped run", stopped, "", sim.CatPanic, true},
-		{"a muted violation with nothing caught", muted, sim.CatLinearizability, "", false},
-		{"the caught check firing", caught, sim.CatLinearizability, sim.CatLinearizability, true},
-		{"another check stopping the run first", stopped, sim.CatLinearizability, sim.CatPanic, true},
+		{"a clean run", passed, "", "", clean},
+		{"a panic", panicked, "", sim.CatPanic, caught},
+		{"a muted safety violation, caught", mutedSafety, sim.CatSafety, sim.CatSafety, caught},
+		{"a muted safety violation, not what is caught", mutedSafety, sim.CatLinearizability, "", clean},
+		{"a linearizability violation, caught", illegal, sim.CatLinearizability, sim.CatLinearizability, caught},
+		{"a state failure after linearizability passed", stateAfterAGoodCheck, sim.CatLinearizability, "", clean},
+		{"a panic before linearizability could be checked", panicked, sim.CatLinearizability, sim.CatPanic, cutShort},
 	} {
-		if cat, failing := verdict(c.r, c.catch); cat != c.cat || failing != c.failing {
-			t.Errorf("%s: %q %v, want %q %v", c.name, cat, failing, c.cat, c.failing)
+		if cat, out := verdict(c.r, c.catch); cat != c.cat || out != c.out {
+			t.Errorf("%s: %q %d, want %q %d", c.name, cat, out, c.cat, c.out)
 		}
 	}
 }

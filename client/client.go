@@ -40,7 +40,11 @@ func (m ReadMode) String() string {
 }
 
 func (m ReadMode) MarshalText() ([]byte, error) {
-	return []byte(m.String()), nil
+	switch m {
+	case ReadIndex, ReadLease, ReadLog:
+		return []byte(m.String()), nil
+	}
+	return nil, fmt.Errorf("client: unknown read mode %d", int(m))
 }
 
 func (m *ReadMode) UnmarshalText(b []byte) error {

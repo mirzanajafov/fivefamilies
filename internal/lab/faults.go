@@ -28,7 +28,7 @@ const (
 var AllFaults = []FaultKind{FaultKill, FaultKillLeader, FaultPause, FaultIsolate, FaultSplit, FaultBridge, FaultOneWay, FaultNetem, FaultMember, FaultTransfer}
 
 func ParseFaults(s string) ([]FaultKind, error) {
-	switch s {
+	switch strings.TrimSpace(s) {
 	case "all":
 		return AllFaults, nil
 	case "none":

@@ -50,6 +50,7 @@ func main() {
 	var mode client.ReadMode
 	flag.TextVar(&mode, "read", client.ReadIndex, "read path: index, lease or log")
 	timeout := flag.Duration("timeout", 10*time.Second, "overall timeout")
+	flag.Usage = usage
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {

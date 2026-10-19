@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -15,6 +16,26 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/lab"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
+
+func checkRun(read client.ReadMode, planted raft.Bug, election, heartbeat, lease string) error {
+	for _, d := range []string{election, heartbeat} {
+		if _, err := time.ParseDuration(d); err != nil {
+			return err
+		}
+	}
+	leaseLen, err := time.ParseDuration(lease)
+	switch {
+	case err != nil:
+		return err
+	case read == client.ReadLease && leaseLen <= 0:
+		return errors.New("-read lease needs a -lease longer than zero")
+	case planted.Has(raft.BugWatchGap | raft.BugWatchKeep | raft.BugLocalKeepAlive):
+		return errors.New("-bug: the lab runs no watchers or lease holders, so watch and lease bugs are never exercised")
+	case planted.Has(raft.BugFollowerRead) && read == client.ReadLog:
+		return errors.New("-bug followerread is never exercised when every read goes through the log")
+	}
+	return nil
+}
 
 func failover(args []string) {
 	fs := flag.NewFlagSet("failover", flag.ExitOnError)
@@ -275,9 +296,10 @@ func main() {
 	})
 	mean := flag.Duration("fault-every", 3*time.Second, "mean gap between faults")
 	var bug string
-	flag.Func("bug", "planted bug for every node", func(s string) error {
+	var planted raft.Bug
+	flag.Func("bug", "planted bug for every node", func(s string) (err error) {
 		bug = s
-		_, err := raft.ParseBugs(s)
+		planted, err = raft.ParseBugs(s)
 		return err
 	})
 	election := flag.String("election", "1s", "election timeout")
@@ -290,13 +312,8 @@ func main() {
 	build := flag.Bool("build", false, "build the lab images first")
 	flag.Parse()
 
-	leaseLen, err := time.ParseDuration(*lease)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "-lease:", err)
-		os.Exit(2)
-	}
-	if read == client.ReadLease && leaseLen <= 0 {
-		fmt.Fprintln(os.Stderr, "-read lease needs a -lease longer than zero")
+	if err := checkRun(read, planted, *election, *heartbeat, *lease); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 	opts := lab.Options{
