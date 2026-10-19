@@ -53,7 +53,6 @@ type Config struct {
 	MaxPending      uint64
 	Batch           int
 	Chaos           bool
-	Crash           func()
 }
 
 const (
@@ -97,9 +96,6 @@ func (c *Config) defaults() error {
 	default:
 		return fmt.Errorf("server: unknown fsync mode %q", c.FsyncMode)
 	}
-	if c.Crash == nil {
-		c.Crash = func() { os.Exit(137) }
-	}
 	if c.WatchProgress <= 0 {
 		c.WatchProgress = time.Second
 	}
@@ -132,17 +128,19 @@ type Server struct {
 	node      *node.Node
 	sm        *watch.Machine
 	tr        *transport.Transport
-	Filter    *Filter
 	inbound   chan raft.Message
 	calls     chan func()
 	jobs      chan diskJob
 	written   chan uint64
 	stopped   chan struct{}
+	quit      chan struct{}
 	lastTick  time.Time
 	lastWatch time.Time
 	status    atomic.Pointer[pb.StatusResponse]
 	counts    counters
-	stall     atomic.Int64
+	isolated  isolation
+	stalled   fault
+	paused    fault
 	lastTerm  uint64
 	log       *slog.Logger
 	fatalled  atomic.Bool
@@ -166,12 +164,12 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg:     cfg,
 		fs:      vfs.OS{Dir: cfg.DataDir},
-		Filter:  NewFilter(),
 		inbound: make(chan raft.Message, 4096),
 		calls:   make(chan func(), 1024),
 		jobs:    make(chan diskJob, 4096),
 		written: make(chan uint64, 1024),
 		stopped: make(chan struct{}),
+		quit:    make(chan struct{}),
 		log:     cfg.Logger.With("node", cfg.ID),
 	}
 	if err := snap.RemoveUnfinished(s.fs); err != nil {
@@ -215,7 +213,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s.raft = r
 	s.node = node.New(r, s, s.sm, node.Config{SnapshotEvery: cfg.SnapshotEvery, Retain: cfg.Retain, Tick: cfg.Tick, WriteBeforeSend: cfg.WriteBeforeSend})
-	tr, err := transport.New(cfg.ID, cfg.Nodes, s.deliver, s.Filter, s.log)
+	tr, err := transport.New(cfg.ID, cfg.Nodes, s.deliver, &s.isolated, s.log)
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +235,7 @@ func (s *Server) Register(g *grpc.Server) {
 }
 
 func (s *Server) Run(ctx context.Context) {
+	context.AfterFunc(ctx, func() { close(s.quit) })
 	var wg sync.WaitGroup
 	s.tr.Start(ctx)
 	wg.Go(func() { s.writer(ctx) })
@@ -327,16 +326,6 @@ func (s *Server) waitForDisk(ctx context.Context) {
 			return
 		}
 	}
-}
-
-func (s *Server) isolate(d time.Duration) {
-	for id := range s.cfg.Nodes {
-		if id != s.cfg.ID {
-			s.Filter.Block(s.cfg.ID, id)
-			s.Filter.Block(id, s.cfg.ID)
-		}
-	}
-	time.AfterFunc(d, s.Filter.Clear)
 }
 
 func (s *Server) leaderless() bool {
@@ -467,9 +456,7 @@ func (s *Server) writer(ctx context.Context) {
 }
 
 func (s *Server) sync() bool {
-	if d := time.Until(time.Unix(0, s.stall.Load())); d > 0 {
-		time.Sleep(d)
-	}
+	s.stalled.wait(s.quit)
 	if s.cfg.FsyncMode == FsyncOff {
 		return true
 	}

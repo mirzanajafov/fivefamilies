@@ -234,8 +234,7 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 		return nil, status.Error(codes.PermissionDenied, "chaos is off on this node")
 	}
 	if req.GetAction() == "heal" {
-		a.s.Filter.Clear()
-		a.s.stall.Store(0)
+		a.s.heal()
 		return &pb.ChaosResponse{}, nil
 	}
 	d := time.Duration(req.GetDurationMs()) * time.Millisecond
@@ -244,17 +243,16 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 	}
 	switch req.GetAction() {
 	case "stall-disk":
-		a.s.stall.Store(time.Now().Add(d).UnixNano())
+		a.s.stalled.set(d)
 	case "pause":
+		a.s.paused.set(d)
 		select {
-		case a.s.calls <- func() { time.Sleep(d) }:
+		case a.s.calls <- func() { a.s.paused.wait(a.s.quit) }:
 		case <-ctx.Done():
 			return nil, status.FromContextError(ctx.Err()).Err()
 		}
 	case "isolate":
-		a.s.isolate(d)
-	case "crash":
-		go a.s.cfg.Crash()
+		a.s.isolated.set(d)
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "unknown chaos action %q", req.GetAction())
 	}
