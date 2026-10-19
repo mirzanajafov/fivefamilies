@@ -97,10 +97,14 @@ func finderFor(path string) (finder, error) {
 		return byLine(markupComment.MatchString), nil
 	case ext == ".md":
 		return byLine(markdownComment.MatchString), nil
-	case ext == ".sum", ext == ".txt" && strings.HasPrefix(filepath.ToSlash(path), "bench/results/"):
-		return nil, nil
+	case ext == ".sum", ext == ".txt" && strings.HasPrefix(filepath.ToSlash(filepath.Clean(path)), "bench/results/profile/"):
+		return skip, nil
 	}
 	return nil, errors.New("no comment rule for this kind of file")
+}
+
+func skip(string, []byte) ([]int, error) {
+	return nil, nil
 }
 
 func goComments(path string, src []byte) ([]int, error) {
@@ -141,9 +145,6 @@ func comments(path string) ([]int, error) {
 	find, err := finderFor(path)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	if find == nil {
-		return nil, nil
 	}
 	src, err := os.ReadFile(path)
 	if err != nil {
