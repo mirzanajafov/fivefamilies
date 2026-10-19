@@ -75,19 +75,20 @@ var messageTypeNames = [...]string{
 	MsgTimeoutNow:    "TimeoutNow",
 }
 
-func (t MessageType) known() bool {
-	return int(t) < len(messageTypeNames) && messageTypeNames[t] != ""
-}
-
 func (t MessageType) String() string {
-	if t.known() {
+	if int(t) < len(messageTypeNames) && messageTypeNames[t] != "" {
 		return messageTypeNames[t]
 	}
 	return fmt.Sprintf("MessageType(%d)", uint8(t))
 }
 
 func (t MessageType) Remote() bool {
-	return t.known() && t != MsgStorageAck
+	switch t {
+	case MsgApp, MsgAppResp, MsgHeartbeat, MsgHeartbeatResp, MsgPreVote, MsgPreVoteResp, MsgVote, MsgVoteResp,
+		MsgSnap, MsgReadIndex, MsgReadIndexResp, MsgTimeoutNow:
+		return true
+	}
+	return false
 }
 
 type Message struct {

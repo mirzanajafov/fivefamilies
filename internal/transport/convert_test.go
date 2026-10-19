@@ -29,10 +29,10 @@ func TestConversionRoundTrip(t *testing.T) {
 
 func TestAPeerCannotSendLocalOrUnknownTypes(t *testing.T) {
 	bad := map[string]*pb.RaftMessage{
-		"no type":                {From: 2, To: 1, Term: 3},
-		"a storage ack":          {Type: uint32(raft.MsgStorageAck), From: 1, To: 1, Index: 9},
-		"a storage ack plus 256": {Type: uint32(raft.MsgStorageAck) + 256, From: 1, To: 1, Index: 9},
-		"a type after the last":  {Type: uint32(raft.MsgTimeoutNow) + 1, From: 2, To: 1},
+		"no type":               {From: 2, To: 1, Term: 3},
+		"a storage ack":         {Type: uint32(raft.MsgStorageAck), From: 1, To: 1, Index: 9},
+		"an append plus 256":    {Type: uint32(raft.MsgApp) + 256, From: 2, To: 1, Term: 3},
+		"a type after the last": {Type: uint32(raft.MsgTimeoutNow) + 1, From: 2, To: 1},
 		"an unknown entry type": {Type: uint32(raft.MsgApp), From: 2, To: 1, Term: 3,
 			Entries: []*pb.Entry{{Term: 3, Index: 1, Type: uint32(raft.EntryConfig) + 1}}},
 		"an entry type plus 256": {Type: uint32(raft.MsgApp), From: 2, To: 1, Term: 3,

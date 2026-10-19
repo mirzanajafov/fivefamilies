@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -200,6 +201,17 @@ func (t *Transport) sleep(ctx context.Context, backoff *time.Duration) {
 	*backoff = min(2**backoff, time.Second)
 }
 
+func (t *Transport) admit(pm *pb.RaftMessage) (raft.Message, error) {
+	m, err := fromProto(pm)
+	if err != nil {
+		return m, err
+	}
+	if _, ok := t.peers[m.From]; !ok || m.To != t.id {
+		return m, fmt.Errorf("transport: node %d got a message from %d to %d", t.id, m.From, m.To)
+	}
+	return m, nil
+}
+
 func (t *Transport) receive(m raft.Message) {
 	if t.filter != nil && !t.filter.Allow(m.From, t.id) {
 		return
@@ -227,9 +239,13 @@ func (s server) Send(stream grpc.ClientStreamingServer[pb.Batch, pb.Ack]) error 
 			return err
 		}
 		for _, pm := range b.GetMessages() {
-			m, err := fromProto(pm)
+			m, err := s.t.admit(pm)
+			if err == nil && m.Type == raft.MsgSnap {
+				err = errors.New("transport: a snapshot outside the snapshot stream")
+			}
 			if err != nil {
-				return err
+				s.t.log.Warn("dropped a message from a peer", "err", err)
+				continue
 			}
 			s.t.receive(m)
 		}
@@ -251,9 +267,12 @@ func (s server) InstallSnapshot(stream grpc.ClientStreamingServer[pb.SnapshotChu
 			if c.GetMessage() == nil || c.GetMessage().GetSnapshot() == nil {
 				return errors.New("transport: snapshot stream without a snapshot message")
 			}
-			m, err := fromProto(c.GetMessage())
+			m, err := s.t.admit(c.GetMessage())
 			if err != nil {
 				return err
+			}
+			if m.Type != raft.MsgSnap {
+				return fmt.Errorf("transport: the snapshot stream carried a %s", m.Type)
 			}
 			msg = &m
 		}
