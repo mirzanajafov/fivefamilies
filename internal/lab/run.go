@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -216,9 +217,11 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	rep.Ops, rep.Unknown, rep.FailedReads = len(hist), unknown, failedReads
 	v := check.Linearizable(hist, opts.CheckTimeout)
 	rep.Linearizable, rep.CheckTook = string(v.Result), v.Took
-	if err := compareStates(ctx, adm, &rep); ctx.Err() != nil {
-		rep.Problems = append(rep.Problems, fmt.Sprintf("the nodes' states were not compared: %v", ctx.Err()))
-	} else if err != nil {
+	switch err := compareStates(ctx, adm, &rep); {
+	case err == nil:
+	case ctx.Err() != nil:
+		rep.Problems = append(rep.Problems, fmt.Sprintf("the nodes had not converged when the run ended: %v", ctx.Err()))
+	default:
 		rep.Problems = append(rep.Problems, fmt.Sprintf("nodes did not converge to one state after the heal: %v", err))
 	}
 	if opts.Out != "" {
@@ -232,7 +235,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 func compareStates(ctx context.Context, adm *cluster, rep *Report) error {
 	return poll(ctx, 500*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
 		sts := adm.statuses(ctx, 2*time.Second)
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && slices.Contains(sts, nil) {
 			return false, nil
 		}
 		rep.Hashes = rep.Hashes[:0]

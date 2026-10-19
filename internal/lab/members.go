@@ -26,11 +26,16 @@ func (c *cluster) leader(ctx context.Context) (int, *pb.StatusResponse) {
 	return l, sts[l-1]
 }
 
+var errNoLeader = errors.New("lab: no node reports a leader")
+
 func (c *cluster) settleMember(ctx context.Context, node int, want pb.MemberChange, done func(*pb.StatusResponse) bool, limit time.Duration) error {
 	var last error
 	err := poll(ctx, 100*time.Millisecond, limit, func(ctx context.Context) (bool, error) {
 		l, st := c.leader(ctx)
 		if l == 0 {
+			if ctx.Err() == nil {
+				last = errNoLeader
+			}
 			return false, nil
 		}
 		if done(st) {
@@ -43,13 +48,14 @@ func (c *cluster) settleMember(ctx context.Context, node int, want pb.MemberChan
 		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		_, err := c.admin(l).ChangeMembers(cctx, &pb.ChangeMembersRequest{Change: change, Node: uint64(node)})
 		cancel()
+		if ctx.Err() != nil {
+			return false, nil
+		}
 		switch status.Code(err) {
 		case codes.OK:
 			last = nil
-		case codes.Unavailable, codes.FailedPrecondition, codes.DeadlineExceeded, codes.Canceled:
-			if ctx.Err() == nil {
-				last = err
-			}
+		case codes.Unavailable, codes.FailedPrecondition, codes.DeadlineExceeded:
+			last = err
 		default:
 			return false, err
 		}

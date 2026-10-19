@@ -81,11 +81,13 @@ func (e *EtcdCluster) Up(ctx context.Context) error {
 	}
 	var last error
 	err = poll(ctx, 500*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
-		_, err := e.Leader(ctx)
-		if err != nil && ctx.Err() == nil {
-			last = err
+		pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, probeErr := e.Leader(pctx)
+		cancel()
+		if probeErr != nil && ctx.Err() == nil {
+			last = probeErr
 		}
-		return err == nil, nil
+		return probeErr == nil, nil
 	})
 	if errors.Is(err, errGaveUp) && last != nil {
 		err = fmt.Errorf("%w, the last probe said: %w", err, last)
