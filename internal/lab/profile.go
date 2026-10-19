@@ -83,7 +83,7 @@ func (b *BenchCluster) leader(ctx context.Context) (int, error) {
 	return steady(ctx, adm)
 }
 
-func (b *BenchCluster) phase(ctx context.Context, o ProfileOptions, name string, rate float64, profile bool) ProfilePhase {
+func (b *BenchCluster) phase(ctx context.Context, o ProfileOptions, name string, rate float64, seconds int) ProfilePhase {
 	p := ProfilePhase{Name: name, Rate: rate}
 	if err := b.Quiet(ctx); err != nil {
 		p.Err = err.Error()
@@ -95,10 +95,6 @@ func (b *BenchCluster) phase(ctx context.Context, o ProfileOptions, name string,
 		return p
 	}
 	p.Leader, p.Follower = l, l%b.Nodes+1
-	seconds := o.Seconds
-	if !profile {
-		seconds = int(o.OverloadFor / time.Second)
-	}
 	args := append([]string{"-rate", fmt.Sprint(rate), "-duration", fmt.Sprintf("%ds", seconds+4), "-warmup", "3s"}, o.GenFlags...)
 	var wg sync.WaitGroup
 	wg.Go(func() {
@@ -108,53 +104,57 @@ func (b *BenchCluster) phase(ctx context.Context, o ProfileOptions, name string,
 			p.Err = err.Error()
 		}
 	})
-	if profile {
-		raw := filepath.Join(o.Out, "raw")
-		if err := os.MkdirAll(raw, 0o755); err != nil {
-			p.Err = err.Error()
-			wg.Wait()
-			return p
-		}
-		if wait(ctx, 4*time.Second) {
-			var mu sync.Mutex
-			var fetches sync.WaitGroup
-			get := func(node int, what, path string) {
-				fetches.Go(func() {
-					ext := ".pprof"
-					if what == "trace" {
-						ext = ".trace"
-					}
-					file := filepath.Join(raw, fmt.Sprintf("%s-%s-n%d%s", name, what, node, ext))
-					if err := fetchProfile(ctx, profileURL(node, path), file); err != nil {
-						o.Log("%s: %s on n%d: %v", name, what, node, err)
-						return
-					}
-					mu.Lock()
-					p.Files = append(p.Files, file)
-					mu.Unlock()
-				})
-			}
-			for _, n := range []int{p.Leader, p.Follower} {
-				get(n, "cpu", fmt.Sprintf("profile?seconds=%d", o.Seconds))
-				if o.Trace > 0 {
-					get(n, "trace", fmt.Sprintf("trace?seconds=%d", int(o.Trace/time.Second)))
-				}
-			}
-			if wait(ctx, time.Duration(o.Seconds)*time.Second/2) {
-				get(p.Leader, "goroutine", "goroutine")
-			}
-			fetches.Wait()
-			for _, n := range []int{p.Leader, p.Follower} {
-				get(n, "mutex", "mutex")
-				get(n, "block", "block")
-				get(n, "heap", "heap")
-			}
-			fetches.Wait()
-			slices.Sort(p.Files)
-		}
+	if err := collect(ctx, o, &p, min(o.Seconds, seconds)); err != nil {
+		p.Err = err.Error()
 	}
 	wg.Wait()
 	return p
+}
+
+func collect(ctx context.Context, o ProfileOptions, p *ProfilePhase, seconds int) error {
+	raw := filepath.Join(o.Out, "raw")
+	if err := os.MkdirAll(raw, 0o755); err != nil {
+		return err
+	}
+	if !wait(ctx, 4*time.Second) {
+		return ctx.Err()
+	}
+	var mu sync.Mutex
+	var fetches sync.WaitGroup
+	get := func(node int, what, path string) {
+		fetches.Go(func() {
+			ext := ".pprof"
+			if what == "trace" {
+				ext = ".trace"
+			}
+			file := filepath.Join(raw, fmt.Sprintf("%s-%s-n%d%s", p.Name, what, node, ext))
+			if err := fetchProfile(ctx, profileURL(node, path), file); err != nil {
+				o.Log("%s: %s on n%d: %v", p.Name, what, node, err)
+				return
+			}
+			mu.Lock()
+			p.Files = append(p.Files, file)
+			mu.Unlock()
+		})
+	}
+	for _, n := range []int{p.Leader, p.Follower} {
+		get(n, "cpu", fmt.Sprintf("profile?seconds=%d", seconds))
+		if o.Trace > 0 {
+			get(n, "trace", fmt.Sprintf("trace?seconds=%d", int(o.Trace/time.Second)))
+		}
+	}
+	if wait(ctx, time.Duration(seconds)*time.Second/2) {
+		get(p.Leader, "goroutine", "goroutine")
+	}
+	fetches.Wait()
+	for _, n := range []int{p.Leader, p.Follower} {
+		get(n, "mutex", "mutex")
+		get(n, "block", "block")
+		get(n, "heap", "heap")
+	}
+	fetches.Wait()
+	slices.Sort(p.Files)
+	return nil
 }
 
 func Profile(ctx context.Context, o ProfileOptions) (ProfileReport, error) {
@@ -169,15 +169,15 @@ func Profile(ctx context.Context, o ProfileOptions) (ProfileReport, error) {
 	type step struct {
 		name    string
 		rate    float64
-		profile bool
+		seconds int
 	}
-	plan := []step{{"before", o.Rate, true}}
+	plan := []step{{"before", o.Rate, o.Seconds}}
 	if o.Overload > 0 {
-		plan = append(plan, step{"overload", o.Overload, false}, step{"after", o.Rate, true})
+		plan = append(plan, step{"overload", o.Overload, int(o.OverloadFor / time.Second)}, step{"after", o.Rate, o.Seconds})
 	}
 	for _, step := range plan {
 		o.Log("%s: %.0f/s", step.name, step.rate)
-		p := b.phase(ctx, o, step.name, step.rate, step.profile)
+		p := b.phase(ctx, o, step.name, step.rate, step.seconds)
 		s := p.Report.Summary
 		o.Log("%s: achieved %.0f/s, p50 %v, p99 %v, %d errors, leader n%d %s", step.name, s.Achieved, s.All.P50, s.All.P99, s.All.Error, p.Leader, p.Err)
 		rep.Phases = append(rep.Phases, p)
