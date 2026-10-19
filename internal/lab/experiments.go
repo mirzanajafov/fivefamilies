@@ -1,6 +1,7 @@
 package lab
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"iter"
@@ -213,10 +214,10 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 			return rows, err
 		}
 		lctx, stopLoad := context.WithCancel(ctx)
-		loadDone := make(chan struct{})
+		loadDone := make(chan error, 1)
 		go func() {
-			b.Generate(lctx, o.GenCPUs, "-rate", "300", "-duration", "1h", "-warmup", "0s", "-reads", "0", "-preload=false")
-			close(loadDone)
+			_, err := b.Generate(lctx, o.GenCPUs, "-rate", "300", "-duration", "1h", "-warmup", "0s", "-reads", "0", "-preload=false")
+			loadDone <- err
 		}()
 		row := E1bRow{Election: v.t, SyncStorage: v.sync}
 		type fault struct {
@@ -266,10 +267,21 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 			o.Log("  %s %s %v: %d of %d followed by an election", f.kind, f.target, f.d, out.WithElected, out.Injections)
 			row.Faults = append(row.Faults, out)
 		}
+		var loadErr error
+		select {
+		case err := <-loadDone:
+			loadErr = cmp.Or(ctx.Err(), fmt.Errorf("e1b: the load generator stopped before the faults were over, so the row would describe an idle cluster: %w", err))
+		default:
+		}
 		stopLoad()
-		<-loadDone
+		if loadErr == nil {
+			<-loadDone
+		}
 		adm.close()
 		b.Down()
+		if loadErr != nil {
+			return rows, loadErr
+		}
 		rows = append(rows, row)
 		if err := SaveJSON(o.Out, "e1b.json", rows); err != nil {
 			return rows, err

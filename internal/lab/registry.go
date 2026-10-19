@@ -2,11 +2,9 @@ package lab
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -137,6 +135,7 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 	go sg.follow(seen)
 	rng := rand.New(rand.NewPCG(opts.Seed, 11))
 	network := d.Project + "_lab"
+	var runErr error
 	for t := 0; t < 2*opts.Trials && ctx.Err() == nil; t++ {
 		variant := "instance"
 		if t%2 == 1 {
@@ -144,13 +143,15 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 		}
 		leader, err := steady(ctx, adm)
 		if err != nil {
-			return res, err
+			runErr = err
+			break
 		}
 		tr := RegistryTrial{Variant: variant, Instance: fmt.Sprintf("i%d", t)}
 		name := fmt.Sprintf("%s-reg-%d", d.Project, t)
 		if _, err := d.cmd(ctx, nil, "run", "-d", "--name", name, "--network", network, "--entrypoint", "ffctl", "fivefamilies-lab-node",
 			"-endpoints", strings.Join(inside, ","), "register", "bench", tr.Instance, "10.9.9.9:80", opts.TTL.String()); err != nil {
-			return res, err
+			runErr = err
+			break
 		}
 		appeared, err := sg.await(ctx, tr.Instance, false, 20*time.Second)
 		if err != nil {
@@ -189,13 +190,9 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 		res.Variants[v] = RegistryVariant{Median: gs[len(gs)/2], Min: gs[0], Max: gs[len(gs)-1], N: len(gs)}
 	}
 	if out != "" {
-		if err := os.MkdirAll(out, 0o755); err != nil {
-			return res, err
-		}
-		b, _ := json.MarshalIndent(res, "", "  ")
-		if err := os.WriteFile(filepath.Join(out, "registry.json"), append(b, '\n'), 0o644); err != nil {
-			return res, err
+		if err := SaveJSON(out, "registry.json", res); err != nil {
+			return res, errors.Join(runErr, err)
 		}
 	}
-	return res, nil
+	return res, runErr
 }

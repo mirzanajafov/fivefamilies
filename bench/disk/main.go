@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -142,13 +143,20 @@ func main() {
 	segment := flag.Int64("segment", 64<<20, "preallocated file size")
 	d := flag.Duration("duration", 10*time.Second, "time per configuration")
 	flag.Parse()
+	writerCounts, err := counts(*writers)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "-writers:", err)
+		os.Exit(2)
+	}
+	byteCounts, err := counts(*sizes)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "-bytes:", err)
+		os.Exit(2)
+	}
 	var out []result
 	for mode := range strings.SplitSeq(*modes, ",") {
-		for ws := range strings.SplitSeq(*writers, ",") {
-			for bs := range strings.SplitSeq(*sizes, ",") {
-				var w, b int
-				fmt.Sscan(ws, &w)
-				fmt.Sscan(bs, &b)
+		for _, w := range writerCounts {
+			for _, b := range byteCounts {
 				r, err := run(filepath.Join(*dir, mode), mode, w, b, *segment, *d)
 				if err != nil {
 					fmt.Fprintln(os.Stderr, mode, err)
@@ -161,5 +169,20 @@ func main() {
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(out)
+	if err := enc.Encode(out); err != nil {
+		fmt.Fprintln(os.Stderr, "writing the results:", err)
+		os.Exit(1)
+	}
+}
+
+func counts(list string) ([]int, error) {
+	var out []int
+	for s := range strings.SplitSeq(list, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(s))
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("%q is not a positive number", s)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }

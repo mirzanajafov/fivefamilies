@@ -4,10 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -115,10 +114,12 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 		return res, err
 	}
 	defer adm.close()
+	var runErr error
 	for t := 0; t < opts.Trials && ctx.Err() == nil; t++ {
 		leader, err := steady(ctx, adm)
 		if err != nil {
-			return res, err
+			runErr = err
+			break
 		}
 		trial := Trial{Killed: leader}
 		type genResult struct {
@@ -179,16 +180,11 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 		res.Median, res.Min, res.Max = us[len(us)/2], us[0], us[len(us)-1]
 	}
 	if out != "" {
-		if err := os.MkdirAll(out, 0o755); err != nil {
-			return res, err
-		}
-		b, _ := json.MarshalIndent(res, "", "  ")
-		name := fmt.Sprintf("election-%s.json", opts.Election)
-		if err := os.WriteFile(filepath.Join(out, name), append(b, '\n'), 0o644); err != nil {
-			return res, err
+		if err := SaveJSON(out, fmt.Sprintf("election-%s.json", opts.Election), res); err != nil {
+			return res, errors.Join(runErr, err)
 		}
 	}
-	return res, nil
+	return res, runErr
 }
 
 func steady(ctx context.Context, adm *cluster) (int, error) {
