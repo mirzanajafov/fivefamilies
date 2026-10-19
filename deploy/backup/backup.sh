@@ -18,7 +18,7 @@ run_once() {
     log "kept $(du -h "$target" | cut -f1) $target"
     find "$BACKUPS" -name 'fivefamilies-*.backup' -mtime +"$KEEP_DAYS" -delete
   else
-    rm -f "$target" "$target.partial"
+    rm -f "$target" "$target.tmp"
     log "FAILED"
     return 1
   fi

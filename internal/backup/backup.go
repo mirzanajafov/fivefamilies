@@ -2,6 +2,7 @@ package backup
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
+	"github.com/mirzanajafov/fivefamilies/internal/vfs"
 )
 
 var (
@@ -86,34 +88,16 @@ func Check(f File) (Summary, error) {
 }
 
 func Save(path string, f File) error {
+	path = filepath.Clean(path)
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return fmt.Errorf("backup: %q is a directory", path)
+	}
+	dir, name := filepath.Split(path)
 	var buf bytes.Buffer
 	if err := Encode(&buf, f); err != nil {
 		return err
 	}
-	tmp := path + ".partial"
-	out, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	if _, err := out.Write(buf.Bytes()); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Sync(); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return err
-	}
-	if d, err := os.Open(filepath.Dir(path)); err == nil {
-		d.Sync()
-		d.Close()
-	}
-	return nil
+	return vfs.WriteAtomic(vfs.OS{Dir: cmp.Or(dir, ".")}, name, buf.Bytes())
 }
 
 func Load(path string) (File, Summary, error) {

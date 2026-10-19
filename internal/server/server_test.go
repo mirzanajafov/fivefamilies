@@ -22,6 +22,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/snap"
+	"github.com/mirzanajafov/fivefamilies/internal/vfs"
 )
 
 type running struct {
@@ -321,7 +322,7 @@ func TestAWriteGivesUpWhileWaitingBehindAnotherWrite(t *testing.T) {
 func TestANodeRemovesUnfinishedSnapshotsWhenItStarts(t *testing.T) {
 	c := newTestCluster(t, 1, nil)
 	c.stop(1)
-	unfinished := filepath.Join(c.dirs[1], snap.Name(7, 1)+".tmp")
+	unfinished := filepath.Join(c.dirs[1], snap.Name(7, 1)+vfs.TempSuffix)
 	if err := os.WriteFile(unfinished, []byte("half"), 0o600); err != nil {
 		t.Fatal(err)
 	}
