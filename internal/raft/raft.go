@@ -287,7 +287,9 @@ func (r *Raft) Transferring() NodeID {
 
 func (r *Raft) Step(m Message) {
 	if m.Type == MsgStorageAck {
-		r.handleStorageAck(m)
+		if m.From == r.id {
+			r.handleStorageAck(m)
+		}
 		return
 	}
 	if (m.Type == MsgVote || m.Type == MsgPreVote) && !r.conf().IsMember(m.From) {
