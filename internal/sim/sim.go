@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -31,13 +32,27 @@ type Options struct {
 	MuteSafety    bool
 	LeaseTicks    int
 	ClockSkew     float64
-	Reads         string
+	Reads         ReadMode
 	NoCatchUp     bool
 	Membership    bool
 	Leases        bool
 	Watches       bool
 	Batch         bool
 	Trace         io.Writer
+}
+
+func (o Options) Validate(catch Category) error {
+	switch {
+	case !o.Leases && (catch == CatLease || o.Bugs.Has(raft.BugLocalKeepAlive)):
+		return errors.New("sim: there are no lease holders")
+	case !o.Watches && (catch == CatWatch || o.Bugs.Has(raft.BugWatchGap|raft.BugWatchKeep)):
+		return errors.New("sim: there are no watchers")
+	case !o.Membership && o.Bugs.Has(raft.BugEarlyConf):
+		return errors.New("sim: membership never changes")
+	case o.Reads == ReadLog && o.Bugs.Has(raft.BugFollowerRead):
+		return errors.New("sim: every read goes through the log")
+	}
+	return nil
 }
 
 func DefaultOptions() Options {
@@ -208,10 +223,8 @@ func newSim(seed uint64, opts Options) *Sim {
 	rng := rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15))
 	s := &Sim{opts: opts, seed: seed, rng: rng, hash: fnvOffset}
 	s.sw = newSwarm(rng)
-	for m := readLog; m <= readFollower; m++ {
-		if opts.Reads == m.String() {
-			s.sw.readMode = m
-		}
+	if opts.Reads != ReadAny {
+		s.sw.readMode = opts.Reads
 	}
 	s.net = newNetwork(opts.Nodes)
 	s.net.loss, s.net.dup, s.net.base, s.net.jitter = s.sw.loss, s.sw.dup, s.sw.base, s.sw.jitter
@@ -362,7 +375,7 @@ func (s *Sim) boot(sn *simNode) {
 }
 
 func (s *Sim) leaseTicks() int {
-	if s.sw.readMode != readLease {
+	if s.sw.readMode != ReadLease {
 		return 0
 	}
 	return s.opts.LeaseTicks

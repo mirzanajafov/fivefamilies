@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,13 +35,25 @@ func main() {
 	noWatches := flag.Bool("no-watches", false, "run no watchers")
 	batch := flag.Bool("batch", false, "let a node take several events before it handles its Ready, as the server loop does")
 	noCatchUp := flag.Bool("no-catchup", false, "do not replay the ticks a paused node missed, to show what a lease measured in ticks does under pauses")
-	reads := flag.String("reads", "", "force one read path for every seed: log, index, lease or follower")
+	var reads sim.ReadMode
+	flag.Func("reads", "force one read path for every seed (any, the default, picks one per seed): "+list(sim.ReadModes()), func(s string) (err error) {
+		reads, err = sim.ParseReadMode(s)
+		return err
+	})
 	skew := flag.Float64("clock-skew", 0, "make one node's clock run this much faster (0.5 = 50%), to break the lease assumption")
 	checkTimeout := flag.Duration("check-timeout", 0, "time limit for one linearizability check")
-	bugs := flag.String("bug", "", "planted bugs to switch on, comma separated: figure8, staleterm, prevterm, anyvote, nofsync, followerread, earlyconf, localkeepalive, watchgap, watchkeep")
+	var planted raft.Bug
+	flag.Func("bug", "planted bugs to switch on, comma separated: "+list(raft.AllBugs()), func(s string) (err error) {
+		planted, err = raft.ParseBugs(s)
+		return err
+	})
 	mute := flag.Bool("mute-safety", false, "record protocol invariant violations without stopping, to see what the other checks catch")
 	first := flag.Bool("first", false, "stop handing out seeds after the first failure and report the lowest failing seed")
-	catch := flag.String("catch", "", "count a seed as failing only when this check fires (safety, liveness, linearizability, lease, watch, state, client, panic)")
+	var catch sim.Category
+	flag.Func("catch", "count a seed as failing only when this check fires (a seed another check stops early is reported apart): "+list(sim.Categories()), func(s string) (err error) {
+		catch, err = sim.ParseCategory(s)
+		return err
+	})
 	flag.Parse()
 
 	opts := sim.DefaultOptions()
@@ -53,7 +67,7 @@ func main() {
 		opts.Nodes = *nodes
 	}
 	opts.ClockSkew = *skew
-	opts.Reads = *reads
+	opts.Reads = reads
 	opts.NoCatchUp = *noCatchUp
 	opts.PreVote = !*noPreVote
 	opts.Membership = !*noMembers
@@ -63,27 +77,26 @@ func main() {
 	if *checkTimeout > 0 {
 		opts.CheckTimeout = *checkTimeout
 	}
-	planted, err := raft.ParseBugs(*bugs)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
-	}
 	opts.Bugs = planted
 	opts.MuteSafety = *mute
+	if err := opts.Validate(catch); err != nil {
+		fmt.Fprintln(os.Stderr, "-catch or -bug can never fire:", err)
+		os.Exit(2)
+	}
 
 	if *seed != 0 {
 		if *trace {
 			opts.Trace = os.Stdout
 		}
 		res := sim.Run(*seed, opts)
-		printResult(res)
+		printResult(res, catch)
 		if *viz != "" {
-			if err := porcupine.VisualizePath(check.KVModel, res.Info, *viz); err != nil {
-				fmt.Println("visualization:", err)
+			if err := visualize(res, *viz); err != nil {
+				fmt.Fprintln(os.Stderr, "visualization:", err)
 			}
 		}
-		if !res.OK() {
-			fmt.Print(res.Stack)
+		fmt.Print(res.Stack)
+		if _, out := verdict(res, catch); out != clean {
 			os.Exit(1)
 		}
 		return
@@ -97,7 +110,7 @@ func main() {
 	var failed []sim.Result
 	var total sim.Stats
 	var checkTotal, checkMax time.Duration
-	var unknown []uint64
+	var unknown, short []uint64
 	ran := 0
 	categories := map[sim.Category]int{}
 	detected := map[sim.Category]int{}
@@ -123,21 +136,20 @@ func main() {
 				if res.Check == porcupine.Unknown {
 					unknown = append(unknown, res.Seed)
 				}
-				failing := !res.OK()
-				if *catch != "" {
-					_, failing = res.Detected[sim.Category(*catch)]
-				}
-				if failing {
+				switch cat, out := verdict(res, catch); out {
+				case caught:
 					failed = append(failed, res)
-					categories[res.Category]++
+					categories[cat]++
 					if lowest == 0 || res.Seed < lowest {
 						lowest = res.Seed
 					}
 					if *first {
 						stop.Store(true)
 					} else {
-						printResult(res)
+						printResult(res, catch)
 					}
+				case cutShort:
+					short = append(short, res.Seed)
 				}
 				mu.Unlock()
 			}
@@ -156,31 +168,82 @@ func main() {
 	if len(detected) > 0 {
 		fmt.Printf("seeds where each check fired: %v\n", detected)
 	}
+	if len(short) > 0 {
+		slices.Sort(short)
+		fmt.Printf("seeds another check stopped before %s could be judged: %v\n", catch, short)
+	}
 	if len(failed) == 0 {
+		if len(short) > 0 {
+			os.Exit(1)
+		}
 		return
 	}
 	fmt.Printf("failures by category: %v; lowest failing seed %d, the %dth of the batch\n", categories, lowest, lowest-*from+1)
 	if *first {
 		for _, f := range failed {
 			if f.Seed == lowest {
-				printResult(f)
+				printResult(f, catch)
 			}
 		}
 	}
 	os.Exit(1)
 }
 
-func printResult(r sim.Result) {
+type outcome int
+
+const (
+	clean outcome = iota
+	caught
+	cutShort
+)
+
+func verdict(r sim.Result, catch sim.Category) (sim.Category, outcome) {
+	if _, fired := r.Detected[catch]; fired {
+		return catch, caught
+	}
+	switch {
+	case r.OK():
+		return "", clean
+	case catch == "":
+		return r.Category, caught
+	case r.Check == "":
+		return r.Category, cutShort
+	}
+	return "", clean
+}
+
+func printResult(r sim.Result, catch sim.Category) {
 	status := "ok"
-	if !r.OK() {
-		status = fmt.Sprintf("FAIL (%s) at %v: %s", r.Category, r.At, r.Violation)
+	switch cat, out := verdict(r, catch); out {
+	case caught:
+		status = fmt.Sprintf("FAIL (%s)", cat)
+		if cat == r.Category {
+			status += fmt.Sprintf(" at %v: %s", r.At, r.Violation)
+		}
+	case cutShort:
+		status = fmt.Sprintf("STOPPED (%s) at %v before %s could be judged: %s", cat, r.At, catch, r.Violation)
 	}
 	fmt.Printf("seed %d: %s\n  swarm: %s\n  stats: %+v\n  check: %s in %v\n", r.Seed, status, r.Swarm, r.Stats, r.Check, r.CheckTook.Round(time.Millisecond))
-	for _, cat := range []sim.Category{sim.CatSafety, sim.CatLiveness, sim.CatState, sim.CatLinearizability, sim.CatLease, sim.CatWatch, sim.CatClient, sim.CatPanic} {
+	for _, cat := range sim.Categories() {
 		if msg, ok := r.Detected[cat]; ok {
 			fmt.Printf("  %s: %s\n", cat, msg)
 		}
 	}
+}
+
+func visualize(r sim.Result, path string) error {
+	if r.Check == "" {
+		return errors.New("the linearizability check did not run for this seed")
+	}
+	return porcupine.VisualizePath(check.KVModel, r.Info, path)
+}
+
+func list[T any](values []T) string {
+	names := make([]string, len(values))
+	for i, v := range values {
+		names[i] = fmt.Sprint(v)
+	}
+	return strings.Join(names, ", ")
 }
 
 func addStats(a, b sim.Stats) sim.Stats {

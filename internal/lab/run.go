@@ -20,24 +20,24 @@ import (
 )
 
 type Options struct {
-	Seed         uint64        `json:"seed"`
-	Duration     time.Duration `json:"duration_ns"`
-	Settle       time.Duration `json:"settle_ns"`
-	Workers      int           `json:"workers"`
-	Keys         int           `json:"keys"`
-	Read         string        `json:"read"`
-	Faults       []FaultKind   `json:"faults"`
-	FaultMean    time.Duration `json:"fault_mean_ns"`
-	Bug          string        `json:"bug,omitempty"`
-	Election     string        `json:"election"`
-	Heartbeat    string        `json:"heartbeat"`
-	Lease        string        `json:"lease"`
-	OpTimeout    time.Duration `json:"op_timeout_ns"`
-	CheckTimeout time.Duration `json:"check_timeout_ns"`
-	Out          string        `json:"-"`
-	Keep         bool          `json:"-"`
-	Project      string        `json:"-"`
-	File         string        `json:"-"`
+	Seed         uint64          `json:"seed"`
+	Duration     time.Duration   `json:"duration_ns"`
+	Settle       time.Duration   `json:"settle_ns"`
+	Workers      int             `json:"workers"`
+	Keys         int             `json:"keys"`
+	Read         client.ReadMode `json:"read"`
+	Faults       []FaultKind     `json:"faults"`
+	FaultMean    time.Duration   `json:"fault_mean_ns"`
+	Bug          string          `json:"bug,omitempty"`
+	Election     string          `json:"election"`
+	Heartbeat    string          `json:"heartbeat"`
+	Lease        string          `json:"lease"`
+	OpTimeout    time.Duration   `json:"op_timeout_ns"`
+	CheckTimeout time.Duration   `json:"check_timeout_ns"`
+	Out          string          `json:"-"`
+	Keep         bool            `json:"-"`
+	Project      string          `json:"-"`
+	File         string          `json:"-"`
 }
 
 type LeaderChange struct {
@@ -166,8 +166,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		return rep, fmt.Errorf("no leader after starting: %w", err)
 	}
 	start := time.Now()
-	mode := map[string]client.ReadMode{"index": client.ReadIndex, "lease": client.ReadLease, "log": client.ReadLog}[opts.Read]
-	w := &workload{addrs: addrs, workers: opts.Workers, keys: opts.Keys, read: mode, opTimeout: opts.OpTimeout, seed: opts.Seed, start: start}
+	w := &workload{addrs: addrs, workers: opts.Workers, keys: opts.Keys, read: opts.Read, opTimeout: opts.OpTimeout, seed: opts.Seed, start: start}
 	var mu sync.Mutex
 	current := 0
 	pollCtx, stopPoll := context.WithCancel(ctx)

@@ -47,8 +47,10 @@ func usage() {
 
 func main() {
 	endpoints := flag.String("endpoints", "127.0.0.1:3151,127.0.0.1:3152,127.0.0.1:3153", "node addresses")
-	read := flag.String("read", "index", "read path: index, lease or log")
+	var mode client.ReadMode
+	flag.TextVar(&mode, "read", client.ReadIndex, "read path: index, lease or log")
 	timeout := flag.Duration("timeout", 10*time.Second, "overall timeout")
+	flag.Usage = usage
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
@@ -81,7 +83,6 @@ func main() {
 		fail(err)
 	}
 	defer c.Close()
-	mode := map[string]client.ReadMode{"index": client.ReadIndex, "lease": client.ReadLease, "log": client.ReadLog}[*read]
 	switch {
 	case args[0] == "put" && (len(args) == 3 || len(args) == 4):
 		var opts []client.WriteOption

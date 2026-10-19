@@ -180,6 +180,74 @@ func soloLeader(t *testing.T, id raft.NodeID, st raft.Restore, data ...string) *
 	return r
 }
 
+func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
+	modes := map[string]ReadMode{"any": ReadAny, "log": ReadLog, "index": ReadIndex, "lease": ReadLease, "follower": ReadFollower}
+	for s, want := range modes {
+		if got, err := ParseReadMode(s); err != nil || got != want {
+			t.Errorf("read path %q parsed as %s: %v", s, got, err)
+		}
+	}
+	for _, s := range []string{"", "leases", "Lease"} {
+		if _, err := ParseReadMode(s); err == nil {
+			t.Errorf("read path %q was accepted", s)
+		}
+	}
+	checks := map[string]Category{"safety": CatSafety, "liveness": CatLiveness, "linearizability": CatLinearizability, "state": CatState,
+		"client": CatClient, "panic": CatPanic, "lease": CatLease, "watch": CatWatch}
+	for s, want := range checks {
+		if got, err := ParseCategory(s); err != nil || got != want {
+			t.Errorf("check %q parsed as %s: %v", s, got, err)
+		}
+	}
+	if len(Categories()) != len(checks) || len(ReadModes())+1 != len(modes) {
+		t.Errorf("%d checks and %d read paths, this test names %d and %d", len(Categories()), len(ReadModes())+1, len(checks), len(modes))
+	}
+	for _, s := range []string{"", "linearizabilty", "Safety"} {
+		if _, err := ParseCategory(s); err == nil {
+			t.Errorf("check %q was accepted", s)
+		}
+	}
+}
+
+func TestACheckOrBugThatCanNeverFireIsRefused(t *testing.T) {
+	full := DefaultOptions()
+	for _, b := range raft.AllBugs() {
+		full.Bugs |= b
+	}
+	for _, c := range Categories() {
+		if err := full.Validate(c); err != nil {
+			t.Errorf("-catch %s with everything on and every bug planted: %v", c, err)
+		}
+	}
+	for _, reads := range []ReadMode{ReadIndex, ReadLease, ReadFollower} {
+		o := DefaultOptions()
+		o.Bugs, o.Reads = raft.BugFollowerRead, reads
+		if err := o.Validate(""); err != nil {
+			t.Errorf("followerread with %s reads: %v", reads, err)
+		}
+	}
+	for name, c := range map[string]struct {
+		off   func(*Options)
+		bug   raft.Bug
+		catch Category
+	}{
+		"lease check without lease holders":       {func(o *Options) { o.Leases = false }, 0, CatLease},
+		"localkeepalive without lease holders":    {func(o *Options) { o.Leases = false }, raft.BugLocalKeepAlive, ""},
+		"watch check without watchers":            {func(o *Options) { o.Watches = false }, 0, CatWatch},
+		"watchgap without watchers":               {func(o *Options) { o.Watches = false }, raft.BugWatchGap, ""},
+		"watchkeep without watchers":              {func(o *Options) { o.Watches = false }, raft.BugWatchKeep, ""},
+		"earlyconf without membership changes":    {func(o *Options) { o.Membership = false }, raft.BugEarlyConf, ""},
+		"followerread with reads through the log": {func(o *Options) { o.Reads = ReadLog }, raft.BugFollowerRead, ""},
+	} {
+		o := DefaultOptions()
+		c.off(&o)
+		o.Bugs = c.bug
+		if o.Validate(c.catch) == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}
+
 func TestCheckerCatchesTwoLeadersInOneTerm(t *testing.T) {
 	c := newChecker(2)
 	c.observe(0, soloLeader(t, 1, raft.Restore{}))

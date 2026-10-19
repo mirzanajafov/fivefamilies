@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -25,6 +26,36 @@ const (
 	ReadLease
 	ReadLog
 )
+
+func (m ReadMode) String() string {
+	switch m {
+	case ReadIndex:
+		return "index"
+	case ReadLease:
+		return "lease"
+	case ReadLog:
+		return "log"
+	}
+	return fmt.Sprintf("ReadMode(%d)", int(m))
+}
+
+func (m ReadMode) MarshalText() ([]byte, error) {
+	switch m {
+	case ReadIndex, ReadLease, ReadLog:
+		return []byte(m.String()), nil
+	}
+	return nil, fmt.Errorf("client: unknown read mode %d", int(m))
+}
+
+func (m *ReadMode) UnmarshalText(b []byte) error {
+	for _, known := range []ReadMode{ReadIndex, ReadLease, ReadLog} {
+		if string(b) == known.String() {
+			*m = known
+			return nil
+		}
+	}
+	return fmt.Errorf("client: unknown read mode %q", b)
+}
 
 var ErrSessionExpired = errors.New("client: the cluster forgot this session; the last write's outcome is unknown")
 
