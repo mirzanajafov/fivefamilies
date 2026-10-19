@@ -358,7 +358,7 @@ func (n *Node) WriteDone(seq uint64) {
 			if err := n.r.Compact(*pw.compact, n.cfg.Retain); err != nil {
 				panic(fmt.Sprintf("node: compacting to %d: %v", pw.compact.Index, err))
 			}
-			n.env.Compacted(*n.r.LatestSnapshot())
+			n.env.Compacted(*pw.compact)
 		}
 	}
 }

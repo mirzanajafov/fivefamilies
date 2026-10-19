@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/snap"
 )
 
 type running struct {
@@ -313,6 +315,19 @@ func TestAWriteGivesUpWhileWaitingBehindAnotherWrite(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the second write waited past its deadline for the first")
+	}
+}
+
+func TestANodeRemovesUnfinishedSnapshotsWhenItStarts(t *testing.T) {
+	c := newTestCluster(t, 1, nil)
+	c.stop(1)
+	unfinished := filepath.Join(c.dirs[1], snap.Name(7, 1)+".tmp")
+	if err := os.WriteFile(unfinished, []byte("half"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c.start(1)
+	if _, err := os.Stat(unfinished); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the unfinished snapshot is still there: %v", err)
 	}
 }
 

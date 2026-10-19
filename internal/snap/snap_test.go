@@ -64,20 +64,108 @@ func TestACrashBeforeTheRenameLeavesNoSnapshot(t *testing.T) {
 	}
 }
 
-func TestCleanKeepsOnlyTheNewest(t *testing.T) {
-	fs := vfs.NewMem()
-	for i := uint64(1); i <= 3; i++ {
-		Save(fs, raft.Snapshot{Index: i * 10, Term: 1, Data: []byte{byte(i)}})
+type syncHook struct {
+	vfs.FS
+	onSync func()
+}
+
+func (h syncHook) Create(name string) (vfs.File, error) {
+	f, err := h.FS.Create(name)
+	if err != nil {
+		return nil, err
 	}
-	f, _ := fs.Create("stray.snap.tmp")
-	f.Close()
-	w, _ := fs.Create("0000000000000001.wal")
-	w.Close()
-	if err := Clean(fs, raft.Snapshot{Index: 30, Term: 1}); err != nil {
+	return hookedFile{File: f, onSync: h.onSync}, nil
+}
+
+type hookedFile struct {
+	vfs.File
+	onSync func()
+}
+
+func (f hookedFile) Sync() error {
+	f.onSync()
+	return f.File.Sync()
+}
+
+func writeFile(t *testing.T, fs vfs.FS, name string, data []byte) {
+	t.Helper()
+	f, err := fs.Create(name)
+	if err != nil {
 		t.Fatal(err)
 	}
-	names, _ := fs.List()
-	if len(names) != 2 || !slices.Contains(names, "0000000000000001.wal") || !slices.Contains(names, Name(30, 1)) {
+	if _, err := f.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemovingOldSnapshotsSparesTheOnesSavedSinceTheCompaction(t *testing.T) {
+	fs := vfs.NewMem()
+	writeFile(t, fs, "0000000000000001.wal", nil)
+	old := raft.Snapshot{Index: 5, Term: 1, Data: []byte("old")}
+	compacted := raft.Snapshot{Index: 10, Term: 1, Data: []byte("compacted")}
+	saved := raft.Snapshot{Index: 20, Term: 1, Data: []byte("saved")}
+	saving := raft.Snapshot{Index: 30, Term: 2, Data: []byte("saving")}
+	for _, s := range []raft.Snapshot{old, compacted, saved} {
+		if err := Save(fs, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removeMidSave := syncHook{FS: fs, onSync: func() {
+		if err := RemoveBelow(fs, compacted.Index); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	if err := Save(removeMidSave, saving); err != nil {
+		t.Fatalf("a save with a cleanup in the middle failed: %v", err)
+	}
+	for _, s := range []raft.Snapshot{compacted, saved, saving} {
+		if got, err := Load(fs, s.Index, s.Term); err != nil || string(got.Data) != string(s.Data) {
+			t.Fatalf("snapshot %d after removing those below %d: %v", s.Index, compacted.Index, err)
+		}
+	}
+	if _, err := Load(fs, old.Index, old.Term); err == nil {
+		t.Fatalf("snapshot %d survived removing those below %d", old.Index, compacted.Index)
+	}
+	if err := RemoveBelow(fs, saving.Index); err != nil {
+		t.Fatal(err)
+	}
+	if names, _ := fs.List(); !slices.Equal(names, []string{"0000000000000001.wal", Name(30, 2)}) {
+		t.Fatalf("left %v", names)
+	}
+}
+
+func TestCleanupLeavesFilesThatSaveNeverWrites(t *testing.T) {
+	fs := vfs.NewMem()
+	foreign := []string{"0000000000000001-1.snap", "000000000000000A-000000000000000a.snap", "zzzzzzzzzzzzzzzz-0000000000000001.snap", "keep-1.snap",
+		"0000000000000001-1.snap.tmp", "keep-1.snap.tmp", "other.tmp"}
+	for _, n := range foreign {
+		writeFile(t, fs, n, nil)
+	}
+	if err := RemoveBelow(fs, 1<<62); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveUnfinished(fs); err != nil {
+		t.Fatal(err)
+	}
+	if names, _ := fs.List(); !slices.Equal(names, slices.Sorted(slices.Values(foreign))) {
+		t.Fatalf("left %v of %v", names, foreign)
+	}
+}
+
+func TestRemovingUnfinishedSavesLeavesEverythingElse(t *testing.T) {
+	fs := vfs.NewMem()
+	if err := Save(fs, raft.Snapshot{Index: 10, Term: 1, Data: []byte("x")}); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, fs, "0000000000000001.wal", nil)
+	writeFile(t, fs, Name(20, 1)+tmpSuffix, []byte("half"))
+	if err := RemoveUnfinished(fs); err != nil {
+		t.Fatal(err)
+	}
+	if names, _ := fs.List(); !slices.Equal(names, []string{Name(10, 1), "0000000000000001.wal"}) {
 		t.Fatalf("left %v", names)
 	}
 }
