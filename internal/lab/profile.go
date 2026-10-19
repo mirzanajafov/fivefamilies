@@ -1,8 +1,8 @@
 package lab
 
 import (
+	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -101,10 +101,10 @@ func (b *BenchCluster) phase(ctx context.Context, o ProfileOptions, name string,
 	var genErr error
 	var wg sync.WaitGroup
 	wg.Go(func() { report, genErr = b.Generate(ctx, o.GenCPUs, args...) })
-	err = collect(ctx, o, &p, min(o.Seconds, seconds))
+	collectErr := collect(ctx, o, &p, min(o.Seconds, seconds))
 	wg.Wait()
 	p.Report = report
-	if err := errors.Join(genErr, err); err != nil {
+	if err := cmp.Or(genErr, collectErr); err != nil {
 		p.Err = err.Error()
 	}
 	return p

@@ -52,8 +52,11 @@ func (c *cluster) settleMember(ctx context.Context, node int, want pb.MemberChan
 		}
 		return false, nil
 	})
+	if errors.Is(err, errGaveUp) && last != nil {
+		err = fmt.Errorf("%w, the last answer was: %w", err, last)
+	}
 	if err != nil {
-		return fmt.Errorf("membership of node %d did not settle: %w", node, errors.Join(err, last))
+		return fmt.Errorf("membership of node %d did not settle: %w", node, err)
 	}
 	return nil
 }

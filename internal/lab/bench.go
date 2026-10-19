@@ -3,6 +3,7 @@ package lab
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -224,10 +225,10 @@ func settle(ctx context.Context, probe func(context.Context) (uint64, bool)) err
 		last, was = at, idle
 		return quiet, nil
 	})
-	if err != nil {
+	if errors.Is(err, errGaveUp) {
 		return fmt.Errorf("the cluster was still working through its backlog: %w", err)
 	}
-	return nil
+	return err
 }
 
 func (b *BenchCluster) Quiet(ctx context.Context) error {

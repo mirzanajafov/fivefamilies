@@ -195,12 +195,12 @@ func steady(ctx context.Context, adm *cluster) (int, error) {
 	var leader int
 	err := poll(ctx, 200*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
 		sts := adm.statuses(ctx, time.Second)
-		l, _ := leaderOf(sts)
+		l := agreedOn(sts)
 		if l == 0 {
 			return false, nil
 		}
 		for _, st := range sts {
-			if st == nil || st.GetLeader() != uint64(l) || st.GetCommit() != sts[l-1].GetCommit() {
+			if st.GetCommit() != sts[l-1].GetCommit() {
 				return false, nil
 			}
 		}

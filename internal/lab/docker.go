@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 )
 
 type Docker struct {
@@ -120,31 +119,6 @@ func (d *Docker) Heal(ctx context.Context) error {
 func (d *Docker) Running(ctx context.Context, n int) bool {
 	out, err := d.cmd(ctx, nil, "inspect", "-f", "{{.State.Running}} {{.State.Paused}}", d.container(fmt.Sprintf("n%d", n)))
 	return err == nil && out == "true false"
-}
-
-func wait(ctx context.Context, d time.Duration) bool {
-	select {
-	case <-ctx.Done():
-		return false
-	case <-time.After(d):
-		return true
-	}
-}
-
-func poll(ctx context.Context, every, limit time.Duration, done func(context.Context) (bool, error)) error {
-	lctx, cancel := context.WithTimeout(ctx, limit)
-	defer cancel()
-	for {
-		if ok, err := done(lctx); ok || err != nil {
-			return err
-		}
-		if !wait(lctx, every) {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			return fmt.Errorf("gave up after %v", limit)
-		}
-	}
 }
 
 func (d *Docker) Exited(ctx context.Context, n int) (string, bool) {

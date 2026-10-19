@@ -3,6 +3,7 @@ package lab
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -78,10 +79,14 @@ func (e *EtcdCluster) Up(ctx context.Context) error {
 	if err := e.d.compose(ctx, nil, "up", "-d"); err != nil {
 		return err
 	}
+	var last error
 	err = poll(ctx, 500*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
-		_, err := e.Leader(ctx)
-		return err == nil, nil
+		_, last = e.Leader(ctx)
+		return last == nil, nil
 	})
+	if errors.Is(err, errGaveUp) {
+		err = fmt.Errorf("%w, the last probe said: %w", err, last)
+	}
 	if err != nil {
 		return fmt.Errorf("etcd did not elect a leader: %w", err)
 	}

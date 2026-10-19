@@ -26,8 +26,30 @@ func TestPollingGivesUpAfterItsLimit(t *testing.T) {
 	err := poll(context.Background(), time.Millisecond, 20*time.Millisecond, func(context.Context) (bool, error) {
 		return false, nil
 	})
-	if err == nil || errors.Is(err, context.DeadlineExceeded) {
+	if !errors.Is(err, errGaveUp) {
 		t.Fatalf("polling past its limit returned %v", err)
+	}
+}
+
+func TestEachCheckRunsWithinTheLimit(t *testing.T) {
+	var deadline time.Time
+	err := poll(context.Background(), time.Millisecond, time.Minute, func(ctx context.Context) (bool, error) {
+		deadline, _ = ctx.Deadline()
+		return true, nil
+	})
+	if err != nil || deadline.IsZero() || time.Until(deadline) > time.Minute {
+		t.Fatalf("the check's deadline was %v: %v", deadline, err)
+	}
+}
+
+func TestPollingReportsTheCallersOwnDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	err := poll(ctx, time.Millisecond, time.Minute, func(context.Context) (bool, error) {
+		return false, nil
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("polling past the caller's deadline returned %v", err)
 	}
 }
 

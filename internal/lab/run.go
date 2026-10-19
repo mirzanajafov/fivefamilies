@@ -123,6 +123,19 @@ func leaderOf(sts []*pb.StatusResponse) (int, uint64) {
 	return best, term
 }
 
+func agreedOn(sts []*pb.StatusResponse) int {
+	l, _ := leaderOf(sts)
+	if l == 0 {
+		return 0
+	}
+	for _, st := range sts {
+		if st == nil || st.GetLeader() != uint64(l) {
+			return 0
+		}
+	}
+	return l
+}
+
 func Run(ctx context.Context, opts Options) (Report, error) {
 	rep := Report{Options: opts, Started: time.Now()}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
@@ -203,7 +216,21 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	rep.Ops, rep.Unknown, rep.FailedReads = len(hist), unknown, failedReads
 	v := check.Linearizable(hist, opts.CheckTimeout)
 	rep.Linearizable, rep.CheckTook = string(v.Result), v.Took
-	err = poll(ctx, 500*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
+	if ctx.Err() != nil {
+		rep.Problems = append(rep.Problems, "the run was cancelled before the nodes' states were compared")
+	} else if err := compareStates(ctx, adm, &rep); err != nil {
+		rep.Problems = append(rep.Problems, fmt.Sprintf("nodes did not converge to one state after the heal: %v", err))
+	}
+	if opts.Out != "" {
+		if err := save(opts.Out, rep, w); err != nil {
+			return rep, err
+		}
+	}
+	return rep, nil
+}
+
+func compareStates(ctx context.Context, adm *cluster, rep *Report) error {
+	return poll(ctx, 500*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
 		sts := adm.statuses(ctx, 2*time.Second)
 		rep.Hashes = rep.Hashes[:0]
 		equal := true
@@ -223,15 +250,6 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		}
 		return equal, nil
 	})
-	if err != nil {
-		rep.Problems = append(rep.Problems, fmt.Sprintf("nodes did not converge to one state after the heal: %v", err))
-	}
-	if opts.Out != "" {
-		if err := save(opts.Out, rep, w); err != nil {
-			return rep, err
-		}
-	}
-	return rep, nil
 }
 
 func save(dir string, rep Report, w *workload) error {

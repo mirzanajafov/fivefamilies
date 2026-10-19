@@ -92,7 +92,11 @@ func (s *sighting) await(ctx context.Context, name string, gone bool, limit time
 		return ok, nil
 	})
 	if err != nil {
-		return time.Time{}, fmt.Errorf("%s did not %s: %w", name, map[bool]string{false: "appear", true: "disappear"}[gone], err)
+		verb := "appear"
+		if gone {
+			verb = "disappear"
+		}
+		return time.Time{}, fmt.Errorf("%s did not %s: %w", name, verb, err)
 	}
 	return at, nil
 }
