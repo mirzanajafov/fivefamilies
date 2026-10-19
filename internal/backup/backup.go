@@ -2,6 +2,7 @@ package backup
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -87,11 +88,15 @@ func Check(f File) (Summary, error) {
 }
 
 func Save(path string, f File) error {
+	dir, name := filepath.Split(path)
+	if name == "" {
+		return fmt.Errorf("backup: %q names a directory, not a file", path)
+	}
 	var buf bytes.Buffer
 	if err := Encode(&buf, f); err != nil {
 		return err
 	}
-	return vfs.WriteAtomic(vfs.OS{Dir: filepath.Dir(path)}, filepath.Base(path), buf.Bytes())
+	return vfs.WriteAtomic(vfs.OS{Dir: cmp.Or(dir, ".")}, name, buf.Bytes())
 }
 
 func Load(path string) (File, Summary, error) {

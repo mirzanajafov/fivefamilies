@@ -23,6 +23,12 @@ func sample(t *testing.T) File {
 	return File{Rev: s.Rev(), Hash: s.Hash(), Data: s.Snapshot()}
 }
 
+func TestABackupPathMustNameAFile(t *testing.T) {
+	if err := Save(t.TempDir()+string(filepath.Separator), File{}); err == nil {
+		t.Fatal("a path ending in a separator was accepted")
+	}
+}
+
 func TestABackupRoundTrips(t *testing.T) {
 	f := sample(t)
 	path := filepath.Join(t.TempDir(), "x.backup")

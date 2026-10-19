@@ -9,6 +9,8 @@ import (
 	"sort"
 )
 
+const TempSuffix = ".tmp"
+
 type File interface {
 	io.Writer
 	Sync() error
@@ -89,30 +91,30 @@ func (o OS) SyncDir() error {
 	return d.Sync()
 }
 
-const TempSuffix = ".tmp"
-
 func WriteAtomic(fs FS, name string, data []byte) error {
 	tmp := name + TempSuffix
 	if err := fs.Remove(tmp); err != nil {
 		return err
 	}
-	f, err := fs.Create(tmp)
+	if err := writeSynced(fs, tmp, data); err != nil {
+		return errors.Join(err, fs.Remove(tmp))
+	}
+	if err := fs.Rename(tmp, name); err != nil {
+		return errors.Join(err, fs.Remove(tmp))
+	}
+	return fs.SyncDir()
+}
+
+func writeSynced(fs FS, name string, data []byte) error {
+	f, err := fs.Create(name)
 	if err != nil {
 		return err
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
+		return errors.Join(err, f.Close())
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
+		return errors.Join(err, f.Close())
 	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := fs.Rename(tmp, name); err != nil {
-		return err
-	}
-	return fs.SyncDir()
+	return f.Close()
 }
