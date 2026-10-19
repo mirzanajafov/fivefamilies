@@ -26,6 +26,7 @@ type Config struct {
 	AdminToken  string
 	Poll        time.Duration
 	IdlePoll    time.Duration
+	DownAfter   time.Duration
 	Window      time.Duration
 	Idle        time.Duration
 	Clients     int
@@ -50,6 +51,9 @@ func (c *Config) defaults() error {
 	}
 	if c.IdlePoll <= 0 {
 		c.IdlePoll = time.Second
+	}
+	if c.DownAfter <= 0 {
+		c.DownAfter = time.Second
 	}
 	if c.Window <= 0 {
 		c.Window = 10 * time.Second
@@ -89,6 +93,7 @@ type Controller struct {
 
 	mu       sync.Mutex
 	nodes    []NodeView
+	silent   []time.Time
 	prev     []*pb.StatusResponse
 	prevAt   time.Time
 	leader   int
@@ -124,6 +129,7 @@ func New(cfg Config) (*Controller, error) {
 		c.admins = append(c.admins, pb.NewAdminClient(conn))
 	}
 	c.nodes = make([]NodeView, len(cfg.Nodes))
+	c.silent = make([]time.Time, len(cfg.Nodes))
 	for i := range c.nodes {
 		c.nodes[i].ID = i + 1
 	}
