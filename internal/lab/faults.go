@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,24 @@ const (
 )
 
 var AllFaults = []FaultKind{FaultKill, FaultKillLeader, FaultPause, FaultIsolate, FaultSplit, FaultBridge, FaultOneWay, FaultNetem, FaultMember, FaultTransfer}
+
+func ParseFaults(s string) ([]FaultKind, error) {
+	switch s {
+	case "all":
+		return AllFaults, nil
+	case "none":
+		return nil, nil
+	}
+	var kinds []FaultKind
+	for name := range strings.SplitSeq(s, ",") {
+		k := FaultKind(strings.TrimSpace(name))
+		if !slices.Contains(AllFaults, k) {
+			return nil, fmt.Errorf("lab: unknown fault %q", k)
+		}
+		kinds = append(kinds, k)
+	}
+	return kinds, nil
+}
 
 type FaultRecord struct {
 	Kind     FaultKind     `json:"kind"`

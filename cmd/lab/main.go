@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/lab"
+	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
 func failover(args []string) {
@@ -264,10 +266,20 @@ func main() {
 	settle := flag.Duration("settle", 5*time.Second, "time after the heal before the workload stops")
 	workers := flag.Int("workers", 6, "concurrent clients, each with its own session")
 	keys := flag.Int("keys", 3, "keys the clients share")
-	read := flag.String("read", "index", "read path: index, lease or log")
-	faults := flag.String("faults", "all", "comma separated fault kinds, all, or none")
+	var read client.ReadMode
+	flag.TextVar(&read, "read", client.ReadIndex, "read path: index, lease or log")
+	faults := lab.AllFaults
+	flag.Func("faults", "comma separated fault kinds, all (the default) or none", func(s string) (err error) {
+		faults, err = lab.ParseFaults(s)
+		return err
+	})
 	mean := flag.Duration("fault-every", 3*time.Second, "mean gap between faults")
-	bug := flag.String("bug", "", "planted bug for every node")
+	var bug string
+	flag.Func("bug", "planted bug for every node", func(s string) error {
+		bug = s
+		_, err := raft.ParseBugs(s)
+		return err
+	})
 	election := flag.String("election", "1s", "election timeout")
 	heartbeat := flag.String("heartbeat", "100ms", "heartbeat interval")
 	lease := flag.String("lease", "0s", "lease length (needed for -read lease)")
@@ -278,20 +290,20 @@ func main() {
 	build := flag.Bool("build", false, "build the lab images first")
 	flag.Parse()
 
+	leaseLen, err := time.ParseDuration(*lease)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "-lease:", err)
+		os.Exit(2)
+	}
+	if read == client.ReadLease && leaseLen <= 0 {
+		fmt.Fprintln(os.Stderr, "-read lease needs a -lease longer than zero")
+		os.Exit(2)
+	}
 	opts := lab.Options{
-		Seed: *seed, Duration: *duration, Settle: *settle, Workers: *workers, Keys: *keys, Read: *read,
-		FaultMean: *mean, Bug: *bug, Election: *election, Heartbeat: *heartbeat, Lease: *lease,
+		Seed: *seed, Duration: *duration, Settle: *settle, Workers: *workers, Keys: *keys, Read: read, Faults: faults,
+		FaultMean: *mean, Bug: bug, Election: *election, Heartbeat: *heartbeat, Lease: *lease,
 		OpTimeout: *opTimeout, CheckTimeout: *checkTimeout, Out: *out, Keep: *keep,
 		Project: "fflab", File: filepath.Join("lab", "compose.yml"),
-	}
-	switch *faults {
-	case "all":
-		opts.Faults = lab.AllFaults
-	case "none":
-	default:
-		for f := range strings.SplitSeq(*faults, ",") {
-			opts.Faults = append(opts.Faults, lab.FaultKind(strings.TrimSpace(f)))
-		}
 	}
 	if opts.Out == "" {
 		opts.Out = filepath.Join("bench", "results", "lab", time.Now().UTC().Format("20060102-150405"))

@@ -5,8 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/mirzanajafov/fivefamilies/client"
 )
 
 func TestLabSurvivesFaults(t *testing.T) {
@@ -25,7 +28,7 @@ func TestLabSurvivesFaults(t *testing.T) {
 	defer cancel()
 	rep, err := Run(ctx, Options{
 		Seed: uint64(time.Now().UnixNano()), Duration: 30 * time.Second, Settle: 3 * time.Second,
-		Workers: 6, Keys: 3, Read: "index", Faults: AllFaults, FaultMean: 2 * time.Second,
+		Workers: 6, Keys: 3, Read: client.ReadIndex, Faults: AllFaults, FaultMean: 2 * time.Second,
 		Election: "1s", Heartbeat: "100ms", Lease: "0s", OpTimeout: 2 * time.Minute, CheckTimeout: 5 * time.Minute,
 		Project: "fflabtest", File: filepath.Join(root, "lab", "compose.yml"),
 	})
@@ -43,10 +46,15 @@ func TestLabSurvivesFaults(t *testing.T) {
 	}
 }
 
-func TestARunWithAnUnknownReadPathOrFaultStopsBeforeStarting(t *testing.T) {
-	for _, o := range []Options{{Read: "leases"}, {Read: "index", Faults: []FaultKind{"partition"}}} {
-		if _, err := Run(context.Background(), o); err == nil {
-			t.Errorf("read %q with faults %v was accepted", o.Read, o.Faults)
+func TestOnlyKnownFaultsParse(t *testing.T) {
+	for s, want := range map[string][]FaultKind{"all": AllFaults, "none": nil, "kill, pause": {FaultKill, FaultPause}} {
+		if got, err := ParseFaults(s); err != nil || !slices.Equal(got, want) {
+			t.Errorf("%q parsed as %v: %v", s, got, err)
+		}
+	}
+	for _, s := range []string{"", "kil", "kill,partition"} {
+		if got, err := ParseFaults(s); err == nil {
+			t.Errorf("%q was accepted as %v", s, got)
 		}
 	}
 }

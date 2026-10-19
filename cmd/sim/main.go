@@ -36,7 +36,7 @@ func main() {
 	batch := flag.Bool("batch", false, "let a node take several events before it handles its Ready, as the server loop does")
 	noCatchUp := flag.Bool("no-catchup", false, "do not replay the ticks a paused node missed, to show what a lease measured in ticks does under pauses")
 	var reads sim.ReadMode
-	flag.Func("reads", "force one read path for every seed: "+list(sim.ReadModes()), func(s string) (err error) {
+	flag.Func("reads", "force one read path for every seed (any, the default, picks one per seed): "+list(sim.ReadModes()), func(s string) (err error) {
 		reads, err = sim.ParseReadMode(s)
 		return err
 	})
@@ -50,15 +50,11 @@ func main() {
 	mute := flag.Bool("mute-safety", false, "record protocol invariant violations without stopping, to see what the other checks catch")
 	first := flag.Bool("first", false, "stop handing out seeds after the first failure and report the lowest failing seed")
 	var catch sim.Category
-	flag.Func("catch", "count a seed as failing only when this check fires: "+list(sim.Categories()), func(s string) (err error) {
+	flag.Func("catch", "count a seed as failing when this check fires (another check fails it only by stopping the run first): "+list(sim.Categories()), func(s string) (err error) {
 		catch, err = sim.ParseCategory(s)
 		return err
 	})
 	flag.Parse()
-	if (catch == sim.CatLease && *noLeases) || (catch == sim.CatWatch && *noWatches) {
-		fmt.Fprintf(os.Stderr, "-catch %s can never fire with that part of the simulation switched off\n", catch)
-		os.Exit(2)
-	}
 
 	opts := sim.DefaultOptions()
 	if *chaos > 0 {
@@ -83,6 +79,16 @@ func main() {
 	}
 	opts.Bugs = planted
 	opts.MuteSafety = *mute
+	if err := opts.Reaches(catch); err != nil {
+		fmt.Fprintf(os.Stderr, "-catch %s can never fire: %v\n", catch, err)
+		os.Exit(2)
+	}
+	for _, b := range raft.AllBugs() {
+		if err := opts.Exercises(b); planted.Has(b) && err != nil {
+			fmt.Fprintf(os.Stderr, "-bug %s is never exercised: %v\n", b, err)
+			os.Exit(2)
+		}
+	}
 
 	if *seed != 0 {
 		if *trace {
@@ -180,11 +186,10 @@ func main() {
 }
 
 func verdict(r sim.Result, catch sim.Category) (sim.Category, bool) {
-	if catch == "" {
-		return r.Category, !r.OK()
+	if _, fired := r.Detected[catch]; fired {
+		return catch, true
 	}
-	_, fired := r.Detected[catch]
-	return catch, fired
+	return r.Category, !r.OK()
 }
 
 func printResult(r sim.Result, catch sim.Category) {

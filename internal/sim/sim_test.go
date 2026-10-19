@@ -181,9 +181,10 @@ func soloLeader(t *testing.T, id raft.NodeID, st raft.Restore, data ...string) *
 }
 
 func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
-	for _, m := range append(ReadModes(), ReadAny) {
-		if got, err := ParseReadMode(m.String()); err != nil || got != m {
-			t.Errorf("read path %s parsed as %s: %v", m, got, err)
+	modes := map[string]ReadMode{"any": ReadAny, "log": ReadLog, "index": ReadIndex, "lease": ReadLease, "follower": ReadFollower}
+	for s, want := range modes {
+		if got, err := ParseReadMode(s); err != nil || got != want {
+			t.Errorf("read path %q parsed as %s: %v", s, got, err)
 		}
 	}
 	for _, s := range []string{"", "leases", "Lease"} {
@@ -191,14 +192,45 @@ func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
 			t.Errorf("read path %q was accepted", s)
 		}
 	}
-	for _, c := range Categories() {
-		if got, err := ParseCategory(string(c)); err != nil || got != c {
-			t.Errorf("check %s parsed as %s: %v", c, got, err)
+	checks := map[string]Category{"safety": CatSafety, "liveness": CatLiveness, "linearizability": CatLinearizability, "state": CatState,
+		"client": CatClient, "panic": CatPanic, "lease": CatLease, "watch": CatWatch}
+	for s, want := range checks {
+		if got, err := ParseCategory(s); err != nil || got != want {
+			t.Errorf("check %q parsed as %s: %v", s, got, err)
 		}
+	}
+	if len(Categories()) != len(checks) || len(ReadModes())+1 != len(modes) {
+		t.Errorf("%d checks and %d read paths, this test names %d and %d", len(Categories()), len(ReadModes())+1, len(checks), len(modes))
 	}
 	for _, s := range []string{"", "linearizabilty", "Safety"} {
 		if _, err := ParseCategory(s); err == nil {
 			t.Errorf("check %q was accepted", s)
+		}
+	}
+}
+
+func TestACheckOrBugThatCanNeverFireIsRefused(t *testing.T) {
+	full := DefaultOptions()
+	for _, c := range Categories() {
+		if err := full.Reaches(c); err != nil {
+			t.Errorf("%s with everything on: %v", c, err)
+		}
+	}
+	for _, b := range raft.AllBugs() {
+		if err := full.Exercises(b); err != nil {
+			t.Errorf("%s with everything on: %v", b, err)
+		}
+	}
+	bare := DefaultOptions()
+	bare.Leases, bare.Watches, bare.Membership, bare.Reads = false, false, false, ReadIndex
+	for _, c := range []Category{CatLease, CatWatch} {
+		if bare.Reaches(c) == nil {
+			t.Errorf("%s was reachable with lease holders and watchers off", c)
+		}
+	}
+	for _, b := range []raft.Bug{raft.BugLocalKeepAlive, raft.BugWatchGap, raft.BugWatchKeep, raft.BugEarlyConf, raft.BugFollowerRead} {
+		if bare.Exercises(b) == nil {
+			t.Errorf("%s was exercised with its part of the simulation off", b)
 		}
 	}
 }

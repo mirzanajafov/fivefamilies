@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -38,6 +39,30 @@ type Options struct {
 	Watches       bool
 	Batch         bool
 	Trace         io.Writer
+}
+
+func (o Options) Reaches(c Category) error {
+	switch {
+	case c == CatLease && !o.Leases:
+		return errors.New("sim: there are no lease holders")
+	case c == CatWatch && !o.Watches:
+		return errors.New("sim: there are no watchers")
+	}
+	return nil
+}
+
+func (o Options) Exercises(b raft.Bug) error {
+	switch {
+	case b == raft.BugLocalKeepAlive && !o.Leases:
+		return errors.New("sim: there are no lease holders")
+	case (b == raft.BugWatchGap || b == raft.BugWatchKeep) && !o.Watches:
+		return errors.New("sim: there are no watchers")
+	case b == raft.BugEarlyConf && !o.Membership:
+		return errors.New("sim: membership never changes")
+	case b == raft.BugFollowerRead && o.Reads != ReadAny && o.Reads != ReadFollower:
+		return fmt.Errorf("sim: every read takes the %s path", o.Reads)
+	}
+	return nil
 }
 
 func DefaultOptions() Options {

@@ -7,7 +7,6 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"time"
 
@@ -20,24 +19,24 @@ import (
 )
 
 type Options struct {
-	Seed         uint64        `json:"seed"`
-	Duration     time.Duration `json:"duration_ns"`
-	Settle       time.Duration `json:"settle_ns"`
-	Workers      int           `json:"workers"`
-	Keys         int           `json:"keys"`
-	Read         string        `json:"read"`
-	Faults       []FaultKind   `json:"faults"`
-	FaultMean    time.Duration `json:"fault_mean_ns"`
-	Bug          string        `json:"bug,omitempty"`
-	Election     string        `json:"election"`
-	Heartbeat    string        `json:"heartbeat"`
-	Lease        string        `json:"lease"`
-	OpTimeout    time.Duration `json:"op_timeout_ns"`
-	CheckTimeout time.Duration `json:"check_timeout_ns"`
-	Out          string        `json:"-"`
-	Keep         bool          `json:"-"`
-	Project      string        `json:"-"`
-	File         string        `json:"-"`
+	Seed         uint64          `json:"seed"`
+	Duration     time.Duration   `json:"duration_ns"`
+	Settle       time.Duration   `json:"settle_ns"`
+	Workers      int             `json:"workers"`
+	Keys         int             `json:"keys"`
+	Read         client.ReadMode `json:"read"`
+	Faults       []FaultKind     `json:"faults"`
+	FaultMean    time.Duration   `json:"fault_mean_ns"`
+	Bug          string          `json:"bug,omitempty"`
+	Election     string          `json:"election"`
+	Heartbeat    string          `json:"heartbeat"`
+	Lease        string          `json:"lease"`
+	OpTimeout    time.Duration   `json:"op_timeout_ns"`
+	CheckTimeout time.Duration   `json:"check_timeout_ns"`
+	Out          string          `json:"-"`
+	Keep         bool            `json:"-"`
+	Project      string          `json:"-"`
+	File         string          `json:"-"`
 }
 
 type LeaderChange struct {
@@ -126,15 +125,6 @@ func leaderOf(sts []*pb.StatusResponse) (int, uint64) {
 
 func Run(ctx context.Context, opts Options) (Report, error) {
 	rep := Report{Options: opts, Started: time.Now()}
-	mode, err := client.ParseReadMode(opts.Read)
-	if err != nil {
-		return rep, err
-	}
-	for _, f := range opts.Faults {
-		if !slices.Contains(AllFaults, f) {
-			return rep, fmt.Errorf("lab: unknown fault %q", f)
-		}
-	}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{
 		"FF_BUG=" + opts.Bug, "FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease,
@@ -165,7 +155,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		wait(ctx, 200*time.Millisecond)
 	}
 	start := time.Now()
-	w := &workload{addrs: addrs, workers: opts.Workers, keys: opts.Keys, read: mode, opTimeout: opts.OpTimeout, seed: opts.Seed, start: start}
+	w := &workload{addrs: addrs, workers: opts.Workers, keys: opts.Keys, read: opts.Read, opTimeout: opts.OpTimeout, seed: opts.Seed, start: start}
 	var mu sync.Mutex
 	current := 0
 	pollCtx, stopPoll := context.WithCancel(ctx)

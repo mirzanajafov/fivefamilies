@@ -47,16 +47,12 @@ func usage() {
 
 func main() {
 	endpoints := flag.String("endpoints", "127.0.0.1:3151,127.0.0.1:3152,127.0.0.1:3153", "node addresses")
-	read := flag.String("read", "index", "read path: index, lease or log")
+	var mode client.ReadMode
+	flag.TextVar(&mode, "read", client.ReadIndex, "read path: index, lease or log")
 	timeout := flag.Duration("timeout", 10*time.Second, "overall timeout")
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
-		usage()
-	}
-	mode, err := client.ParseReadMode(*read)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
 		usage()
 	}
 	addrs := strings.Split(*endpoints, ",")

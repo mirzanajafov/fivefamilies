@@ -27,16 +27,30 @@ const (
 	ReadLog
 )
 
-func ParseReadMode(s string) (ReadMode, error) {
-	switch s {
-	case "index":
-		return ReadIndex, nil
-	case "lease":
-		return ReadLease, nil
-	case "log":
-		return ReadLog, nil
+func (m ReadMode) String() string {
+	switch m {
+	case ReadIndex:
+		return "index"
+	case ReadLease:
+		return "lease"
+	case ReadLog:
+		return "log"
 	}
-	return ReadIndex, fmt.Errorf("client: unknown read mode %q", s)
+	return fmt.Sprintf("ReadMode(%d)", int(m))
+}
+
+func (m ReadMode) MarshalText() ([]byte, error) {
+	return []byte(m.String()), nil
+}
+
+func (m *ReadMode) UnmarshalText(b []byte) error {
+	for _, known := range []ReadMode{ReadIndex, ReadLease, ReadLog} {
+		if string(b) == known.String() {
+			*m = known
+			return nil
+		}
+	}
+	return fmt.Errorf("client: unknown read mode %q", b)
 }
 
 var ErrSessionExpired = errors.New("client: the cluster forgot this session; the last write's outcome is unknown")
