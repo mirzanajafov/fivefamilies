@@ -11,17 +11,34 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 )
+
+var (
+	hashComment  = regexp.MustCompile(`^\s*#`)
+	slashComment = regexp.MustCompile(`^\s*(//|/\*|\{\s*/\*)`)
+	hashTypes    = []string{".yml", ".yaml", ".gitignore", ".dockerignore", ".gitattributes", ".prettierignore"}
+	slashTypes   = []string{".ts", ".tsx", ".js", ".mjs", ".proto"}
+	markupTypes  = []string{".svg", ".md", ".html"}
+	plainTypes   = []string{".json", ".sum", ".txt"}
+)
+
+type finder func(path string, src []byte) ([]int, error)
+
+func parseGo(path string, src []byte) (*token.FileSet, *ast.File, error) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+	return fset, f, err
+}
 
 func strip(path string) error {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+	fset, f, err := parseGo(path, src)
 	if err != nil {
 		return err
 	}
@@ -55,39 +72,29 @@ func strip(path string) error {
 	return os.WriteFile(path, out, 0o644)
 }
 
-func comments(path string) ([]int, error) {
-	src, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+func finderFor(name string) (finder, error) {
+	ext := filepath.Ext(name)
+	switch {
+	case ext == ".go":
+		return goComments, nil
+	case ext == ".sh":
+		return byLine(hashComment, true), nil
+	case strings.Contains(strings.ToLower(name), "dockerfile"), slices.Contains(hashTypes, ext):
+		return byLine(hashComment, false), nil
+	case slices.Contains(slashTypes, ext), name == "go.mod", name == "tsconfig.json":
+		return byLine(slashComment, false), nil
+	case ext == ".css":
+		return anywhere("/*"), nil
+	case slices.Contains(markupTypes, ext):
+		return anywhere("<!--"), nil
+	case slices.Contains(plainTypes, ext):
+		return nil, nil
 	}
-	name := filepath.Base(path)
-	switch filepath.Ext(name) {
-	case ".go":
-		return goComments(path, src)
-	case ".ts", ".tsx", ".mjs", ".css", ".proto":
-		return linesStarting(src, "//", "/*", "{/*"), nil
-	case ".svg":
-		return linesStarting(src, "<!--"), nil
-	case ".yml", ".yaml", ".sh", ".gitignore", ".dockerignore", ".gitattributes":
-		return hashComments(src), nil
-	}
-	if strings.HasPrefix(name, "Dockerfile") {
-		return hashComments(src), nil
-	}
-	return nil, nil
-}
-
-func hashComments(src []byte) []int {
-	lines := linesStarting(src, "#")
-	if len(lines) > 0 && lines[0] == 1 && bytes.HasPrefix(src, []byte("#!")) {
-		return lines[1:]
-	}
-	return lines
+	return nil, fmt.Errorf("%s: no comment rule for this kind of file", name)
 }
 
 func goComments(path string, src []byte) ([]int, error) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+	fset, f, err := parseGo(path, src)
 	if err != nil {
 		return nil, err
 	}
@@ -100,15 +107,44 @@ func goComments(path string, src []byte) ([]int, error) {
 	return lines, nil
 }
 
-func linesStarting(src []byte, prefixes ...string) []int {
-	var lines []int
-	for i, line := range strings.Split(string(src), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if slices.ContainsFunc(prefixes, func(p string) bool { return strings.HasPrefix(trimmed, p) }) {
-			lines = append(lines, i+1)
+func textLines(src []byte) []string {
+	return strings.Split(string(bytes.TrimPrefix(src, []byte{0xef, 0xbb, 0xbf})), "\n")
+}
+
+func byLine(comment *regexp.Regexp, shebang bool) finder {
+	return func(_ string, src []byte) ([]int, error) {
+		var lines []int
+		for i, line := range textLines(src) {
+			if comment.MatchString(line) && !(shebang && i == 0 && strings.HasPrefix(line, "#!")) {
+				lines = append(lines, i+1)
+			}
 		}
+		return lines, nil
 	}
-	return lines
+}
+
+func anywhere(marker string) finder {
+	return func(_ string, src []byte) ([]int, error) {
+		var lines []int
+		for i, line := range textLines(src) {
+			if strings.Contains(line, marker) {
+				lines = append(lines, i+1)
+			}
+		}
+		return lines, nil
+	}
+}
+
+func comments(path string) ([]int, error) {
+	find, err := finderFor(filepath.Base(path))
+	if err != nil || find == nil {
+		return nil, err
+	}
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return find(path, src)
 }
 
 func check(paths []string) int {
@@ -131,15 +167,16 @@ func main() {
 	checkOnly := flag.Bool("check", false, "report comments in the files given instead of stripping a directory of Go files")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: nocomments <dir> | nocomments -check <file>...")
+		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if *checkOnly {
+	if *checkOnly && flag.NArg() > 0 {
 		if check(flag.Args()) > 0 {
 			os.Exit(1)
 		}
 		return
 	}
-	if flag.NArg() != 1 {
+	if *checkOnly || flag.NArg() != 1 {
 		flag.Usage()
 		os.Exit(2)
 	}
