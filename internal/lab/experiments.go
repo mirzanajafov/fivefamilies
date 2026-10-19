@@ -3,6 +3,7 @@ package lab
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"math/rand/v2"
@@ -237,9 +238,24 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 			faults = faults[:1]
 		}
 		wait(ctx, 2*time.Second)
+		var loadErr error
+		loadStopped := func() bool {
+			select {
+			case err := <-loadDone:
+				loadErr = cmp.Or(ctx.Err(), err, errors.New("it exited"))
+			default:
+			}
+			return loadErr != nil
+		}
 		for _, f := range faults {
+			if loadStopped() {
+				break
+			}
 			out := FaultOutcome{Kind: f.kind, Duration: f.d, Target: f.target}
 			for range injections {
+				if loadStopped() {
+					break
+				}
 				leader, err := agreedLeader(ctx, adm)
 				if err != nil {
 					break
@@ -267,20 +283,18 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 			o.Log("  %s %s %v: %d of %d followed by an election", f.kind, f.target, f.d, out.WithElected, out.Injections)
 			row.Faults = append(row.Faults, out)
 		}
-		var loadErr error
-		select {
-		case err := <-loadDone:
-			loadErr = cmp.Or(ctx.Err(), fmt.Errorf("e1b: the load generator stopped before the faults were over, so the row would describe an idle cluster: %w", err))
-		default:
-		}
+		running := !loadStopped()
 		stopLoad()
-		if loadErr == nil {
+		if running {
 			<-loadDone
 		}
 		adm.close()
 		b.Down()
+		if err := ctx.Err(); err != nil {
+			return rows, err
+		}
 		if loadErr != nil {
-			return rows, loadErr
+			return rows, fmt.Errorf("the load generator stopped before the faults were over, so the row would describe an idle cluster: %w", loadErr)
 		}
 		rows = append(rows, row)
 		if err := SaveJSON(o.Out, "e1b.json", rows); err != nil {

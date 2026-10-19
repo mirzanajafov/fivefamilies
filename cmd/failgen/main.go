@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -90,7 +89,6 @@ func main() {
 	rate := flag.Int("rate", 200, "writes per second")
 	duration := flag.Duration("duration", 10*time.Second, "how long to write")
 	timeout := flag.Duration("timeout", 300*time.Millisecond, "per-request timeout")
-	out := flag.String("out", "", "file for the samples (JSON lines)")
 	coldKV := flag.Bool("cold", false, "watch leadership over separate connections, so the write connections to followers stay cold until the leader dies")
 	flag.Parse()
 
@@ -149,24 +147,10 @@ func main() {
 	wg.Wait()
 	stopWatch()
 	ww.Wait()
-	if err := writeSamples(*out, samples); err != nil {
+	if err := encodeAll(os.Stdout, samples); err != nil {
 		fmt.Fprintln(os.Stderr, "writing the samples:", err)
 		os.Exit(1)
 	}
-}
-
-func writeSamples(path string, samples []sample) error {
-	if path == "" {
-		return encodeAll(os.Stdout, samples)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	if err := encodeAll(f, samples); err != nil {
-		return errors.Join(err, f.Close())
-	}
-	return f.Close()
 }
 
 func encodeAll(w io.Writer, samples []sample) error {

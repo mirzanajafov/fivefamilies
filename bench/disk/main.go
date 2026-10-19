@@ -137,7 +137,7 @@ func run(dir, mode string, writers, size int, segment int64, d time.Duration) (r
 
 func main() {
 	dir := flag.String("dir", "disktest", "directory for the test files")
-	modes := flag.String("modes", "append-fsync,append-fdatasync,prealloc-fsync,prealloc-fdatasync", "modes to run, comma separated")
+	modes := flag.String("modes", strings.Join(knownModes, ","), "modes to run, comma separated")
 	writers := flag.String("writers", "1,5", "concurrent writers, each with its own file, comma separated")
 	sizes := flag.String("bytes", "512,16384", "bytes written before each sync, comma separated")
 	segment := flag.Int64("segment", 64<<20, "preallocated file size")
@@ -152,6 +152,12 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "-bytes:", err)
 		os.Exit(2)
+	}
+	for mode := range strings.SplitSeq(*modes, ",") {
+		if !slices.Contains(knownModes, mode) {
+			fmt.Fprintf(os.Stderr, "-modes: unknown mode %q\n", mode)
+			os.Exit(2)
+		}
 	}
 	var out []result
 	for mode := range strings.SplitSeq(*modes, ",") {
@@ -174,6 +180,8 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+var knownModes = []string{"append-fsync", "append-fdatasync", "prealloc-fsync", "prealloc-fdatasync"}
 
 func counts(list string) ([]int, error) {
 	var out []int

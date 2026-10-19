@@ -2,21 +2,22 @@ package main
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
+	"errors"
 	"testing"
 )
 
+type fullDisk struct{}
+
+func (fullDisk) Write([]byte) (int, error) {
+	return 0, errors.New("no space left on device")
+}
+
 func TestSamplesAreWrittenOneALineAndAFailedWriteIsReported(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "samples.jsonl")
-	if err := writeSamples(path, []sample{{Node: 1, Ok: true}, {Node: 2}}); err != nil {
-		t.Fatal(err)
+	var b bytes.Buffer
+	if err := encodeAll(&b, []sample{{Node: 1, Ok: true}, {Node: 2}}); err != nil || bytes.Count(b.Bytes(), []byte("\n")) != 2 {
+		t.Fatalf("wrote %q: %v", b.String(), err)
 	}
-	b, err := os.ReadFile(path)
-	if err != nil || bytes.Count(b, []byte("\n")) != 2 {
-		t.Fatalf("wrote %q: %v", b, err)
-	}
-	if err := writeSamples(t.TempDir(), []sample{{Node: 1}}); err == nil {
-		t.Fatal("writing to a directory was not reported")
+	if err := encodeAll(fullDisk{}, []sample{{Node: 1}}); err == nil {
+		t.Fatal("a write that failed was not reported")
 	}
 }

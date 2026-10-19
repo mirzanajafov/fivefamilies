@@ -2,6 +2,7 @@ package lab
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -56,6 +57,7 @@ type FailoverResult struct {
 	Median  time.Duration   `json:"median_ns"`
 	Min     time.Duration   `json:"min_ns"`
 	Max     time.Duration   `json:"max_ns"`
+	Err     string          `json:"error,omitempty"`
 }
 
 func gaps(samples []sample, from, to int64) time.Duration {
@@ -178,6 +180,10 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 	if len(us) > 0 {
 		slices.Sort(us)
 		res.Median, res.Min, res.Max = us[len(us)/2], us[0], us[len(us)-1]
+	}
+	runErr = cmp.Or(runErr, ctx.Err())
+	if runErr != nil {
+		res.Err = runErr.Error()
 	}
 	if out != "" {
 		if err := SaveJSON(out, fmt.Sprintf("election-%s.json", opts.Election), res); err != nil {

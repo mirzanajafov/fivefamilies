@@ -1,6 +1,7 @@
 package lab
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -43,6 +44,7 @@ type RegistryResult struct {
 	Options  RegistryOptions            `json:"options"`
 	Trials   []RegistryTrial            `json:"trials"`
 	Variants map[string]RegistryVariant `json:"variants"`
+	Err      string                     `json:"error,omitempty"`
 }
 
 type sighting struct {
@@ -150,6 +152,7 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 		name := fmt.Sprintf("%s-reg-%d", d.Project, t)
 		if _, err := d.cmd(ctx, nil, "run", "-d", "--name", name, "--network", network, "--entrypoint", "ffctl", "fivefamilies-lab-node",
 			"-endpoints", strings.Join(inside, ","), "register", "bench", tr.Instance, "10.9.9.9:80", opts.TTL.String()); err != nil {
+			d.cmd(context.Background(), nil, "rm", "-f", name)
 			runErr = err
 			break
 		}
@@ -188,6 +191,10 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 	for v, gs := range byVariant {
 		slices.Sort(gs)
 		res.Variants[v] = RegistryVariant{Median: gs[len(gs)/2], Min: gs[0], Max: gs[len(gs)-1], N: len(gs)}
+	}
+	runErr = cmp.Or(runErr, ctx.Err())
+	if runErr != nil {
+		res.Err = runErr.Error()
 	}
 	if out != "" {
 		if err := SaveJSON(out, "registry.json", res); err != nil {
