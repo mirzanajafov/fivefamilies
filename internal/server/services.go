@@ -247,7 +247,7 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 	case "pause":
 		a.s.paused.set(d)
 		select {
-		case a.s.calls <- a.s.paused.wait:
+		case a.s.calls <- func() { a.s.paused.wait(a.s.quit) }:
 		case <-ctx.Done():
 			return nil, status.FromContextError(ctx.Err()).Err()
 		}

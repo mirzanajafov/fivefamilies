@@ -270,19 +270,17 @@ func TestADiskStallOnTheLeaderCausesAnElectionOnlyWithSynchronousStorage(t *test
 func TestChaosIsBoundedAndOffByDefault(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
 	c.leader(5 * time.Second)
+	c2 := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
+	c2.leader(5 * time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := c.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "pause", DurationMs: 100}); err == nil {
 		t.Fatal("chaos ran on a node started without it")
 	}
-	c2 := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
-	c2.leader(5 * time.Second)
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel2()
-	if _, err := c2.admin(1).Chaos(ctx2, &pb.ChaosRequest{Action: "pause", DurationMs: uint64(2 * time.Minute / time.Millisecond)}); status.Code(err) != codes.InvalidArgument {
+	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "pause", DurationMs: uint64(2 * time.Minute / time.Millisecond)}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("a two-minute pause got %v", err)
 	}
-	if _, err := c2.admin(1).Chaos(ctx2, &pb.ChaosRequest{Action: "crash", DurationMs: 1}); status.Code(err) != codes.InvalidArgument {
+	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "crash", DurationMs: 1}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("an unknown action got %v", err)
 	}
 	old := c2.leader(time.Second)
@@ -342,14 +340,14 @@ func TestEachIsolationOrHealReplacesTheOneBefore(t *testing.T) {
 	}
 }
 
-func notFirst(leader raft.NodeID) raft.NodeID {
+func followerTheClientDoesNotUse(leader raft.NodeID) raft.NodeID {
 	if leader == 2 {
 		return 3
 	}
 	return 2
 }
 
-func caughtUp(t *testing.T, c *testCluster, leader, follower raft.NodeID, within time.Duration) {
+func waitCaughtUp(t *testing.T, c *testCluster, leader, follower raft.NodeID, within time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(within)
 	for c.running[follower].srv.Status().GetCommit() < c.running[leader].srv.Status().GetCommit() {
@@ -363,7 +361,7 @@ func caughtUp(t *testing.T, c *testCluster, leader, follower raft.NodeID, within
 func TestAHealEndsAStallAndAPauseThatHaveAlreadyBegun(t *testing.T) {
 	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
 	leader := c.leader(5 * time.Second)
-	follower := notFirst(leader)
+	follower := followerTheClientDoesNotUse(leader)
 	cl, err := client.New(c.addrs(), client.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -384,6 +382,9 @@ func TestAHealEndsAStallAndAPauseThatHaveAlreadyBegun(t *testing.T) {
 		t.Fatalf("the write finished during the stall: %v", err)
 	default:
 	}
+	if c.running[follower].srv.paused.remaining() <= 0 {
+		t.Fatal("the follower is not paused")
+	}
 	chaos(t, c, leader, "heal", 0)
 	chaos(t, c, follower, "heal", 0)
 	select {
@@ -394,13 +395,13 @@ func TestAHealEndsAStallAndAPauseThatHaveAlreadyBegun(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the write still waited for the stalled disk after the heal")
 	}
-	caughtUp(t, c, leader, follower, 5*time.Second)
+	waitCaughtUp(t, c, leader, follower, 5*time.Second)
 }
 
 func TestALaterPauseReplacesAnEarlierOne(t *testing.T) {
 	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
 	leader := c.leader(5 * time.Second)
-	follower := notFirst(leader)
+	follower := followerTheClientDoesNotUse(leader)
 	cl, err := client.New(c.addrs(), client.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -410,10 +411,13 @@ func TestALaterPauseReplacesAnEarlierOne(t *testing.T) {
 	defer cancel()
 	chaos(t, c, follower, "pause", time.Minute)
 	chaos(t, c, follower, "pause", 200*time.Millisecond)
+	if r := c.running[follower].srv.paused.remaining(); r <= 0 || r > 200*time.Millisecond {
+		t.Fatalf("the later pause left %v of pausing", r)
+	}
 	if _, err := cl.Put(ctx, "k", []byte("v")); err != nil {
 		t.Fatal(err)
 	}
-	caughtUp(t, c, leader, follower, 3*time.Second)
+	waitCaughtUp(t, c, leader, follower, 3*time.Second)
 }
 
 func TestOneClientCanWriteFromManyGoroutines(t *testing.T) {

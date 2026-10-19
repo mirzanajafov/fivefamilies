@@ -133,6 +133,7 @@ type Server struct {
 	jobs      chan diskJob
 	written   chan uint64
 	stopped   chan struct{}
+	quit      chan struct{}
 	lastTick  time.Time
 	lastWatch time.Time
 	status    atomic.Pointer[pb.StatusResponse]
@@ -168,6 +169,7 @@ func New(cfg Config) (*Server, error) {
 		jobs:    make(chan diskJob, 4096),
 		written: make(chan uint64, 1024),
 		stopped: make(chan struct{}),
+		quit:    make(chan struct{}),
 		log:     cfg.Logger.With("node", cfg.ID),
 	}
 	l, st, rec, err := wal.Open(s.fs, wal.Options{SegmentBytes: cfg.SegmentBytes, Salt: randomUint64})
@@ -230,6 +232,7 @@ func (s *Server) Register(g *grpc.Server) {
 }
 
 func (s *Server) Run(ctx context.Context) {
+	context.AfterFunc(ctx, func() { close(s.quit) })
 	var wg sync.WaitGroup
 	s.tr.Start(ctx)
 	wg.Go(func() { s.writer(ctx) })
@@ -450,7 +453,7 @@ func (s *Server) writer(ctx context.Context) {
 }
 
 func (s *Server) sync() bool {
-	s.stalled.wait()
+	s.stalled.wait(s.quit)
 	if s.cfg.FsyncMode == FsyncOff {
 		return true
 	}

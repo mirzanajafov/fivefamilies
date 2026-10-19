@@ -7,14 +7,14 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
-var epoch = time.Now()
+var processStart = time.Now()
 
 type fault struct {
 	ends atomic.Int64
 }
 
 func (f *fault) set(d time.Duration) {
-	f.ends.Store(int64(time.Since(epoch) + d))
+	f.ends.Store(int64(time.Since(processStart) + d))
 }
 
 func (f *fault) clear() {
@@ -26,12 +26,16 @@ func (f *fault) remaining() time.Duration {
 	if ends == 0 {
 		return 0
 	}
-	return time.Duration(ends) - time.Since(epoch)
+	return time.Duration(ends) - time.Since(processStart)
 }
 
-func (f *fault) wait() {
+func (f *fault) wait(quit <-chan struct{}) {
 	for r := f.remaining(); r > 0; r = f.remaining() {
-		time.Sleep(min(r, 10*time.Millisecond))
+		select {
+		case <-quit:
+			return
+		case <-time.After(min(r, 10*time.Millisecond)):
+		}
 	}
 }
 
