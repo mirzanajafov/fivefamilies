@@ -42,7 +42,7 @@ export const faultLabels: Record<string, string> = {
 }
 
 export const realness: Record<string, string> = {
-  kill: 'a real SIGKILL; the process restarts when the fault ends',
+  kill: 'a real SIGKILL, and the process restarts when the fault ends',
   pause: 'a real SIGSTOP, then SIGCONT',
   isolate: 'in-process: the node drops every message to and from the others',
   'slow-disk': 'in-process: every fsync waits until the fault ends',
@@ -75,5 +75,5 @@ export function outcome(f: Fault): string {
   if (!f.on_leader) return `${what}. It was not the Don, so nobody had to wait.`
   if (!f.failover || !f.failover.new_leader) return `${what}. The Don kept the seat.`
   const ms = (ns: number) => `${(ns / 1e6).toFixed(0)} ms`
-  return `${what}. ${family(f.failover.new_leader)} took over after ${ms(f.failover.election_ns)}; clients waited ${ms(f.failover.client_gap_ns)} between two acknowledged writes.`
+  return `${what}. ${family(f.failover.new_leader)} took over after ${ms(f.failover.election_ns)}, and clients waited ${ms(f.failover.client_gap_ns)} between two acknowledged writes.`
 }

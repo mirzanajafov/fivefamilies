@@ -27,7 +27,7 @@ suite('words', () => {
       id: 1, action: 'kill', node: 3, duration_ns: 3e9, started: '', ends: '', by: 'visitor', on_leader: true, old_leader: 3, old_term: 6,
       failover: { election_ns: 1.28e9, client_gap_ns: 1.81e9, new_leader: 4 },
     }
-    expect(outcome(f)).toBe('Family III was killed. Family IV took over after 1280 ms; clients waited 1810 ms between two acknowledged writes.')
+    expect(outcome(f)).toBe('Family III was killed. Family IV took over after 1280 ms, and clients waited 1810 ms between two acknowledged writes.')
     expect(outcome({ ...f, on_leader: false })).toBe('Family III was killed. It was not the Don, so nobody had to wait.')
   })
 })
