@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -17,12 +18,13 @@ import (
 )
 
 var (
-	hashComment  = regexp.MustCompile(`^\s*#`)
-	slashComment = regexp.MustCompile(`^\s*(//|/\*|\{\s*/\*)`)
-	hashTypes    = []string{".yml", ".yaml", ".gitignore", ".dockerignore", ".gitattributes", ".prettierignore"}
-	slashTypes   = []string{".ts", ".tsx", ".js", ".mjs", ".proto"}
-	markupTypes  = []string{".svg", ".md", ".html"}
-	plainTypes   = []string{".json", ".sum", ".txt"}
+	hashComment     = regexp.MustCompile(`^\s*#`)
+	slashComment    = regexp.MustCompile(`^\s*(//|/\*)|\{\s*/\*`)
+	markupComment   = regexp.MustCompile(`<!--`)
+	markdownComment = regexp.MustCompile(`<!--|^\s*\[//\]:`)
+	cssString       = regexp.MustCompile(`"[^"]*"|'[^']*'`)
+	hashTypes       = []string{".yml", ".yaml", ".gitignore", ".dockerignore", ".gitattributes", ".prettierignore"}
+	slashTypes      = []string{".ts", ".tsx", ".mjs", ".proto", ".json", ".mod"}
 )
 
 type finder func(path string, src []byte) ([]int, error)
@@ -72,25 +74,33 @@ func strip(path string) error {
 	return os.WriteFile(path, out, 0o644)
 }
 
-func finderFor(name string) (finder, error) {
+func isDockerfile(name string) bool {
+	lower := strings.ToLower(name)
+	return lower == "dockerfile" || strings.HasPrefix(lower, "dockerfile.")
+}
+
+func finderFor(path string) (finder, error) {
+	name := filepath.Base(path)
 	ext := filepath.Ext(name)
 	switch {
 	case ext == ".go":
 		return goComments, nil
 	case ext == ".sh":
-		return byLine(hashComment, true), nil
-	case strings.Contains(strings.ToLower(name), "dockerfile"), slices.Contains(hashTypes, ext):
-		return byLine(hashComment, false), nil
-	case slices.Contains(slashTypes, ext), name == "go.mod", name == "tsconfig.json":
-		return byLine(slashComment, false), nil
+		return shellComments, nil
+	case slices.Contains(hashTypes, ext), isDockerfile(name):
+		return byLine(hashComment.MatchString), nil
+	case slices.Contains(slashTypes, ext):
+		return byLine(slashComment.MatchString), nil
 	case ext == ".css":
-		return anywhere("/*"), nil
-	case slices.Contains(markupTypes, ext):
-		return anywhere("<!--"), nil
-	case slices.Contains(plainTypes, ext):
+		return byLine(func(line string) bool { return strings.Contains(cssString.ReplaceAllString(line, ""), "/*") }), nil
+	case ext == ".svg":
+		return byLine(markupComment.MatchString), nil
+	case ext == ".md":
+		return byLine(markdownComment.MatchString), nil
+	case ext == ".sum", ext == ".txt" && strings.HasPrefix(filepath.ToSlash(path), "bench/results/"):
 		return nil, nil
 	}
-	return nil, fmt.Errorf("%s: no comment rule for this kind of file", name)
+	return nil, errors.New("no comment rule for this kind of file")
 }
 
 func goComments(path string, src []byte) ([]int, error) {
@@ -107,15 +117,11 @@ func goComments(path string, src []byte) ([]int, error) {
 	return lines, nil
 }
 
-func textLines(src []byte) []string {
-	return strings.Split(string(bytes.TrimPrefix(src, []byte{0xef, 0xbb, 0xbf})), "\n")
-}
-
-func byLine(comment *regexp.Regexp, shebang bool) finder {
+func byLine(isComment func(string) bool) finder {
 	return func(_ string, src []byte) ([]int, error) {
 		var lines []int
-		for i, line := range textLines(src) {
-			if comment.MatchString(line) && !(shebang && i == 0 && strings.HasPrefix(line, "#!")) {
+		for i, line := range strings.Split(string(bytes.TrimPrefix(src, []byte{0xef, 0xbb, 0xbf})), "\n") {
+			if isComment(line) {
 				lines = append(lines, i+1)
 			}
 		}
@@ -123,22 +129,21 @@ func byLine(comment *regexp.Regexp, shebang bool) finder {
 	}
 }
 
-func anywhere(marker string) finder {
-	return func(_ string, src []byte) ([]int, error) {
-		var lines []int
-		for i, line := range textLines(src) {
-			if strings.Contains(line, marker) {
-				lines = append(lines, i+1)
-			}
-		}
-		return lines, nil
+func shellComments(path string, src []byte) ([]int, error) {
+	lines, err := byLine(hashComment.MatchString)(path, src)
+	if len(lines) > 0 && lines[0] == 1 && bytes.HasPrefix(src, []byte("#!")) {
+		lines = lines[1:]
 	}
+	return lines, err
 }
 
 func comments(path string) ([]int, error) {
-	find, err := finderFor(filepath.Base(path))
-	if err != nil || find == nil {
-		return nil, err
+	find, err := finderFor(path)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if find == nil {
+		return nil, nil
 	}
 	src, err := os.ReadFile(path)
 	if err != nil {
@@ -163,31 +168,42 @@ func check(paths []string) int {
 	return found
 }
 
-func main() {
-	checkOnly := flag.Bool("check", false, "report comments in the files given instead of stripping a directory of Go files")
-	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: nocomments <dir> | nocomments -check <file>...")
-		flag.PrintDefaults()
-	}
-	flag.Parse()
-	if *checkOnly && flag.NArg() > 0 {
-		if check(flag.Args()) > 0 {
-			os.Exit(1)
-		}
-		return
-	}
-	if *checkOnly || flag.NArg() != 1 {
-		flag.Usage()
-		os.Exit(2)
-	}
-	err := filepath.WalkDir(flag.Arg(0), func(path string, d fs.DirEntry, err error) error {
+func stripDir(dir string) error {
+	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}
 		return strip(path)
 	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+}
+
+func run(args []string) int {
+	flags := flag.NewFlagSet("nocomments", flag.ContinueOnError)
+	checkOnly := flags.Bool("check", false, "report comments in the files given instead of stripping a directory of Go files")
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "usage: nocomments <dir> | nocomments -check <file>...")
+		flags.PrintDefaults()
 	}
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	switch {
+	case *checkOnly && flags.NArg() > 0:
+		if check(flags.Args()) > 0 {
+			return 1
+		}
+		return 0
+	case !*checkOnly && flags.NArg() == 1:
+		if err := stripDir(flags.Arg(0)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
+	flags.Usage()
+	return 2
+}
+
+func main() {
+	os.Exit(run(os.Args[1:]))
 }
