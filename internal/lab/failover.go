@@ -100,6 +100,19 @@ func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]sample, 
 }
 
 func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverResult, error) {
+	res, err := runFailover(ctx, opts)
+	if err != nil {
+		res.Err = err.Error()
+	}
+	if out != "" {
+		if serr := SaveJSON(out, fmt.Sprintf("election-%s.json", opts.Election), res); serr != nil {
+			return res, errors.Join(err, serr)
+		}
+	}
+	return res, err
+}
+
+func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, error) {
 	res := FailoverResult{Options: opts}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{"FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease, "FF_BUG="}
@@ -181,16 +194,7 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 		slices.Sort(us)
 		res.Median, res.Min, res.Max = us[len(us)/2], us[0], us[len(us)-1]
 	}
-	runErr = cmp.Or(runErr, ctx.Err())
-	if runErr != nil {
-		res.Err = runErr.Error()
-	}
-	if out != "" {
-		if err := SaveJSON(out, fmt.Sprintf("election-%s.json", opts.Election), res); err != nil {
-			return res, errors.Join(runErr, err)
-		}
-	}
-	return res, runErr
+	return res, cmp.Or(runErr, ctx.Err())
 }
 
 func steady(ctx context.Context, adm *cluster) (int, error) {

@@ -215,10 +215,12 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 			return rows, err
 		}
 		lctx, stopLoad := context.WithCancel(ctx)
+		fctx, stopFaults := context.WithCancel(ctx)
 		loadDone := make(chan error, 1)
 		go func() {
 			_, err := b.Generate(lctx, o.GenCPUs, "-rate", "300", "-duration", "1h", "-warmup", "0s", "-reads", "0", "-preload=false")
 			loadDone <- err
+			stopFaults()
 		}()
 		row := E1bRow{Election: v.t, SyncStorage: v.sync}
 		type fault struct {
@@ -237,26 +239,11 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		if o.Quick {
 			faults = faults[:1]
 		}
-		wait(ctx, 2*time.Second)
-		var loadErr error
-		loadStopped := func() bool {
-			select {
-			case err := <-loadDone:
-				loadErr = cmp.Or(ctx.Err(), err, errors.New("it exited"))
-			default:
-			}
-			return loadErr != nil
-		}
+		wait(fctx, 2*time.Second)
 		for _, f := range faults {
-			if loadStopped() {
-				break
-			}
 			out := FaultOutcome{Kind: f.kind, Duration: f.d, Target: f.target}
 			for range injections {
-				if loadStopped() {
-					break
-				}
-				leader, err := agreedLeader(ctx, adm)
+				leader, err := agreedLeader(fctx, adm)
 				if err != nil {
 					break
 				}
@@ -264,37 +251,39 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 				if f.target == "follower" {
 					n = 1 + (leader+rng.IntN(4))%5
 				}
-				before := maxElections(adm.statuses(ctx, time.Second))
-				cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				before := maxElections(adm.statuses(fctx, time.Second))
+				cctx, cancel := context.WithTimeout(fctx, 5*time.Second)
 				_, err = adm.admin(n).Chaos(cctx, &pb.ChaosRequest{Action: f.kind, DurationMs: uint64(f.d / time.Millisecond)})
 				cancel()
 				if err != nil {
 					o.Log("chaos on %d: %v", n, err)
 					continue
 				}
-				wait(ctx, f.d+4*v.t+time.Second)
-				after := maxElections(adm.statuses(ctx, time.Second))
+				wait(fctx, f.d+4*v.t+time.Second)
+				after := maxElections(adm.statuses(fctx, time.Second))
 				out.Injections++
 				if after > before {
 					out.WithElected++
 					out.Elections += after - before
 				}
 			}
+			if fctx.Err() != nil {
+				break
+			}
 			o.Log("  %s %s %v: %d of %d followed by an election", f.kind, f.target, f.d, out.WithElected, out.Injections)
 			row.Faults = append(row.Faults, out)
 		}
-		running := !loadStopped()
+		generatorDied := fctx.Err() != nil
 		stopLoad()
-		if running {
-			<-loadDone
-		}
+		loadErr := <-loadDone
+		stopFaults()
 		adm.close()
 		b.Down()
 		if err := ctx.Err(); err != nil {
 			return rows, err
 		}
-		if loadErr != nil {
-			return rows, fmt.Errorf("the load generator stopped before the faults were over, so the row would describe an idle cluster: %w", loadErr)
+		if generatorDied {
+			return rows, fmt.Errorf("the load generator stopped before the faults were over, so the row would describe an idle cluster: %w", cmp.Or(loadErr, errors.New("it exited")))
 		}
 		rows = append(rows, row)
 		if err := SaveJSON(o.Out, "e1b.json", rows); err != nil {

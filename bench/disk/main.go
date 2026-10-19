@@ -153,14 +153,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, "-bytes:", err)
 		os.Exit(2)
 	}
-	for mode := range strings.SplitSeq(*modes, ",") {
-		if !slices.Contains(knownModes, mode) {
-			fmt.Fprintf(os.Stderr, "-modes: unknown mode %q\n", mode)
-			os.Exit(2)
-		}
+	modeList, err := parseModes(*modes)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "-modes:", err)
+		os.Exit(2)
 	}
 	var out []result
-	for mode := range strings.SplitSeq(*modes, ",") {
+	for _, mode := range modeList {
 		for _, w := range writerCounts {
 			for _, b := range byteCounts {
 				r, err := run(filepath.Join(*dir, mode), mode, w, b, *segment, *d)
@@ -182,6 +181,18 @@ func main() {
 }
 
 var knownModes = []string{"append-fsync", "append-fdatasync", "prealloc-fsync", "prealloc-fdatasync"}
+
+func parseModes(list string) ([]string, error) {
+	var out []string
+	for s := range strings.SplitSeq(list, ",") {
+		mode := strings.TrimSpace(s)
+		if !slices.Contains(knownModes, mode) {
+			return nil, fmt.Errorf("unknown mode %q", mode)
+		}
+		out = append(out, mode)
+	}
+	return out, nil
+}
 
 func counts(list string) ([]int, error) {
 	var out []int

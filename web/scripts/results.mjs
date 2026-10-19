@@ -10,7 +10,11 @@ const read = (...parts) => {
 }
 const runs = (kind) => (existsSync(path.join(root, kind)) ? readdirSync(path.join(root, kind)).sort() : [])
 const files = (kind, run) => readdirSync(path.join(root, kind, run)).filter((f) => f.endsWith('.json'))
-const complete = (kind) => runs(kind).filter((run) => files(kind, run).every((name) => !read(kind, run, name).error))
+const newestComplete = (kind) =>
+  runs(kind).findLast((run) => {
+    const names = files(kind, run)
+    return names.length > 0 && names.every((name) => !read(kind, run, name).error)
+  })
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b)
   if (s.length === 0) return 0
@@ -20,7 +24,7 @@ const median = (xs) => {
 const millis = (e) => (e.endsWith('ms') ? parseFloat(e) : parseFloat(e) * 1000)
 
 function failover() {
-  const run = complete('e1').at(-1)
+  const run = newestComplete('e1')
   if (!run) return null
   const rows = files('e1', run)
     .map((name) => {
@@ -41,7 +45,7 @@ function failover() {
 }
 
 function registry() {
-  const run = complete('registry').at(-1)
+  const run = newestComplete('registry')
   const f = run && read('registry', run, 'registry.json')
   return f ? { run, ttl: f.options.ttl_ns, election: f.options.election, variants: f.variants } : null
 }
