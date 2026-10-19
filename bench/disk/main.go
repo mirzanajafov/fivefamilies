@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -136,19 +137,31 @@ func run(dir, mode string, writers, size int, segment int64, d time.Duration) (r
 
 func main() {
 	dir := flag.String("dir", "disktest", "directory for the test files")
-	modes := flag.String("modes", "append-fsync,append-fdatasync,prealloc-fsync,prealloc-fdatasync", "modes to run, comma separated")
+	modes := flag.String("modes", strings.Join(knownModes, ","), "modes to run, comma separated")
 	writers := flag.String("writers", "1,5", "concurrent writers, each with its own file, comma separated")
 	sizes := flag.String("bytes", "512,16384", "bytes written before each sync, comma separated")
 	segment := flag.Int64("segment", 64<<20, "preallocated file size")
 	d := flag.Duration("duration", 10*time.Second, "time per configuration")
 	flag.Parse()
+	writerCounts, err := parseList(*writers, parseCount)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "-writers:", err)
+		os.Exit(2)
+	}
+	byteCounts, err := parseList(*sizes, parseCount)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "-bytes:", err)
+		os.Exit(2)
+	}
+	modeList, err := parseList(*modes, parseMode)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "-modes:", err)
+		os.Exit(2)
+	}
 	var out []result
-	for mode := range strings.SplitSeq(*modes, ",") {
-		for ws := range strings.SplitSeq(*writers, ",") {
-			for bs := range strings.SplitSeq(*sizes, ",") {
-				var w, b int
-				fmt.Sscan(ws, &w)
-				fmt.Sscan(bs, &b)
+	for _, mode := range modeList {
+		for _, w := range writerCounts {
+			for _, b := range byteCounts {
 				r, err := run(filepath.Join(*dir, mode), mode, w, b, *segment, *d)
 				if err != nil {
 					fmt.Fprintln(os.Stderr, mode, err)
@@ -161,5 +174,37 @@ func main() {
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(out)
+	if err := enc.Encode(out); err != nil {
+		fmt.Fprintln(os.Stderr, "writing the results:", err)
+		os.Exit(1)
+	}
+}
+
+var knownModes = []string{"append-fsync", "append-fdatasync", "prealloc-fsync", "prealloc-fdatasync"}
+
+func parseList[T any](list string, parse func(string) (T, error)) ([]T, error) {
+	var out []T
+	for s := range strings.SplitSeq(list, ",") {
+		v, err := parse(strings.TrimSpace(s))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+func parseMode(s string) (string, error) {
+	if !slices.Contains(knownModes, s) {
+		return "", fmt.Errorf("unknown mode %q", s)
+	}
+	return s, nil
+}
+
+func parseCount(s string) (int, error) {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("%q is not a positive number", s)
+	}
+	return n, nil
 }

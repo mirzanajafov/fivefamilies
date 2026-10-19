@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -88,7 +89,6 @@ func main() {
 	rate := flag.Int("rate", 200, "writes per second")
 	duration := flag.Duration("duration", 10*time.Second, "how long to write")
 	timeout := flag.Duration("timeout", 300*time.Millisecond, "per-request timeout")
-	out := flag.String("out", "", "file for the samples (JSON lines)")
 	coldKV := flag.Bool("cold", false, "watch leadership over separate connections, so the write connections to followers stay cold until the leader dies")
 	flag.Parse()
 
@@ -147,18 +147,18 @@ func main() {
 	wg.Wait()
 	stopWatch()
 	ww.Wait()
-	w := os.Stdout
-	if *out != "" {
-		f, err := os.Create(*out)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		defer f.Close()
-		w = f
+	if err := encodeAll(os.Stdout, samples); err != nil {
+		fmt.Fprintln(os.Stderr, "writing the samples:", err)
+		os.Exit(1)
 	}
+}
+
+func encodeAll(w io.Writer, samples []sample) error {
 	enc := json.NewEncoder(w)
 	for _, s := range samples {
-		enc.Encode(s)
+		if err := enc.Encode(s); err != nil {
+			return err
+		}
 	}
+	return nil
 }

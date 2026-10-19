@@ -2,12 +2,12 @@ package lab
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -57,6 +57,7 @@ type FailoverResult struct {
 	Median  time.Duration   `json:"median_ns"`
 	Min     time.Duration   `json:"min_ns"`
 	Max     time.Duration   `json:"max_ns"`
+	Err     string          `json:"error,omitempty"`
 }
 
 func gaps(samples []sample, from, to int64) time.Duration {
@@ -99,6 +100,19 @@ func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]sample, 
 }
 
 func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverResult, error) {
+	res, err := runFailover(ctx, opts)
+	if err = cmp.Or(ctx.Err(), err); err != nil {
+		res.Err = err.Error()
+	}
+	if out != "" {
+		if serr := SaveJSON(out, fmt.Sprintf("election-%s.json", opts.Election), res); serr != nil {
+			return res, errors.Join(err, serr)
+		}
+	}
+	return res, err
+}
+
+func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, error) {
 	res := FailoverResult{Options: opts}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{"FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease, "FF_BUG="}
@@ -115,10 +129,12 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 		return res, err
 	}
 	defer adm.close()
+	var runErr error
 	for t := 0; t < opts.Trials && ctx.Err() == nil; t++ {
 		leader, err := steady(ctx, adm)
 		if err != nil {
-			return res, err
+			runErr = err
+			break
 		}
 		trial := Trial{Killed: leader}
 		type genResult struct {
@@ -178,17 +194,7 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 		slices.Sort(us)
 		res.Median, res.Min, res.Max = us[len(us)/2], us[0], us[len(us)-1]
 	}
-	if out != "" {
-		if err := os.MkdirAll(out, 0o755); err != nil {
-			return res, err
-		}
-		b, _ := json.MarshalIndent(res, "", "  ")
-		name := fmt.Sprintf("election-%s.json", opts.Election)
-		if err := os.WriteFile(filepath.Join(out, name), append(b, '\n'), 0o644); err != nil {
-			return res, err
-		}
-	}
-	return res, nil
+	return res, runErr
 }
 
 func steady(ctx context.Context, adm *cluster) (int, error) {

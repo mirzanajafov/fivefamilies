@@ -8,7 +8,19 @@ const read = (...parts) => {
   const file = path.join(root, ...parts)
   return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : undefined
 }
-const runs = (kind) => (existsSync(path.join(root, kind)) ? readdirSync(path.join(root, kind)).sort() : [])
+const runs = (kind) =>
+  existsSync(path.join(root, kind))
+    ? readdirSync(path.join(root, kind), { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name)
+        .sort()
+    : []
+const files = (kind, run) => readdirSync(path.join(root, kind, run)).filter((f) => f.endsWith('.json'))
+const newestComplete = (kind, usable) =>
+  runs(kind).findLast((run) => {
+    const names = files(kind, run)
+    return names.length > 0 && names.every((name) => usable(read(kind, run, name)))
+  })
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b)
   if (s.length === 0) return 0
@@ -18,10 +30,9 @@ const median = (xs) => {
 const millis = (e) => (e.endsWith('ms') ? parseFloat(e) : parseFloat(e) * 1000)
 
 function failover() {
-  const run = runs('e1').at(-1)
+  const run = newestComplete('e1', (f) => !f.error && f.trials?.some((t) => !t.error))
   if (!run) return null
-  const rows = readdirSync(path.join(root, 'e1', run))
-    .filter((f) => f.endsWith('.json'))
+  const rows = files('e1', run)
     .map((name) => {
       const f = read('e1', run, name)
       const ok = f.trials.filter((t) => !t.error)
@@ -40,7 +51,7 @@ function failover() {
 }
 
 function registry() {
-  const run = runs('registry').at(-1)
+  const run = newestComplete('registry', (f) => !f.error && Object.keys(f.variants ?? {}).length > 0)
   const f = run && read('registry', run, 'registry.json')
   return f ? { run, ttl: f.options.ttl_ns, election: f.options.election, variants: f.variants } : null
 }

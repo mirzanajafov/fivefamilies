@@ -186,5 +186,8 @@ func main() {
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(r)
+	if err := enc.Encode(r); err != nil {
+		fmt.Fprintln(os.Stderr, "writing the report:", err)
+		os.Exit(1)
+	}
 }

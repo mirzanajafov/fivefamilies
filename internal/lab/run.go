@@ -258,28 +258,24 @@ func compareStates(ctx context.Context, adm *cluster, rep *Report) error {
 }
 
 func save(dir string, rep Report, w *workload) error {
+	if err := SaveJSON(dir, "report.json", rep); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Join(dir, "raw"), 0o755); err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(rep, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(dir, "report.json"), append(b, '\n'), 0o644); err != nil {
 		return err
 	}
 	f, err := os.Create(filepath.Join(dir, "raw", "history.jsonl"))
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	enc := json.NewEncoder(f)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for _, op := range w.ops {
 		if err := enc.Encode(op); err != nil {
+			f.Close()
 			return err
 		}
 	}
-	return nil
+	return f.Close()
 }

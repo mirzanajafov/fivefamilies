@@ -1,12 +1,11 @@
 package lab
 
 import (
+	"cmp"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -45,6 +44,7 @@ type RegistryResult struct {
 	Options  RegistryOptions            `json:"options"`
 	Trials   []RegistryTrial            `json:"trials"`
 	Variants map[string]RegistryVariant `json:"variants"`
+	Err      string                     `json:"error,omitempty"`
 }
 
 type sighting struct {
@@ -102,6 +102,19 @@ func (s *sighting) await(ctx context.Context, name string, gone bool, limit time
 }
 
 func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryResult, error) {
+	res, err := runRegistry(ctx, opts)
+	if err = cmp.Or(ctx.Err(), err); err != nil {
+		res.Err = err.Error()
+	}
+	if out != "" {
+		if serr := SaveJSON(out, "registry.json", res); serr != nil {
+			return res, errors.Join(err, serr)
+		}
+	}
+	return res, err
+}
+
+func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, error) {
 	res := RegistryResult{Options: opts, Variants: map[string]RegistryVariant{}}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{"FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=0s", "FF_BUG="}
@@ -137,6 +150,7 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 	go sg.follow(seen)
 	rng := rand.New(rand.NewPCG(opts.Seed, 11))
 	network := d.Project + "_lab"
+	var runErr error
 	for t := 0; t < 2*opts.Trials && ctx.Err() == nil; t++ {
 		variant := "instance"
 		if t%2 == 1 {
@@ -144,37 +158,41 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 		}
 		leader, err := steady(ctx, adm)
 		if err != nil {
-			return res, err
+			runErr = err
+			break
 		}
 		tr := RegistryTrial{Variant: variant, Instance: fmt.Sprintf("i%d", t)}
 		name := fmt.Sprintf("%s-reg-%d", d.Project, t)
-		if _, err := d.cmd(ctx, nil, "run", "-d", "--name", name, "--network", network, "--entrypoint", "ffctl", "fivefamilies-lab-node",
-			"-endpoints", strings.Join(inside, ","), "register", "bench", tr.Instance, "10.9.9.9:80", opts.TTL.String()); err != nil {
-			return res, err
-		}
-		appeared, err := sg.await(ctx, tr.Instance, false, 20*time.Second)
-		if err != nil {
-			tr.Err = err.Error()
-		} else {
-			tr.Held = time.Duration(rng.Int64N(int64(opts.TTL))) + opts.TTL
-			wait(ctx, time.Until(appeared.Add(tr.Held)))
-			killed := time.Now()
-			var wg sync.WaitGroup
-			wg.Go(func() { d.cmd(context.Background(), nil, "kill", name) })
-			if variant == "instance+leader" {
-				tr.Leader = leader
-				wg.Go(func() { d.Kill(context.Background(), leader) })
-			}
-			wg.Wait()
-			if gone, err := sg.await(ctx, tr.Instance, true, 10*opts.TTL+30*time.Second); err != nil {
+		_, runErr = d.cmd(ctx, nil, "run", "-d", "--name", name, "--network", network, "--entrypoint", "ffctl", "fivefamilies-lab-node",
+			"-endpoints", strings.Join(inside, ","), "register", "bench", tr.Instance, "10.9.9.9:80", opts.TTL.String())
+		if runErr == nil {
+			appeared, err := sg.await(ctx, tr.Instance, false, 20*time.Second)
+			if err != nil {
 				tr.Err = err.Error()
 			} else {
-				tr.Gone = gone.Sub(killed)
+				tr.Held = time.Duration(rng.Int64N(int64(opts.TTL))) + opts.TTL
+				wait(ctx, time.Until(appeared.Add(tr.Held)))
+				killed := time.Now()
+				var wg sync.WaitGroup
+				wg.Go(func() { d.cmd(context.Background(), nil, "kill", name) })
+				if variant == "instance+leader" {
+					tr.Leader = leader
+					wg.Go(func() { d.Kill(context.Background(), leader) })
+				}
+				wg.Wait()
+				if gone, err := sg.await(ctx, tr.Instance, true, 10*opts.TTL+30*time.Second); err != nil {
+					tr.Err = err.Error()
+				} else {
+					tr.Gone = gone.Sub(killed)
+				}
 			}
 		}
 		d.cmd(context.Background(), nil, "rm", "-f", name)
 		if tr.Leader > 0 {
 			d.Start(context.Background(), tr.Leader)
+		}
+		if runErr != nil {
+			break
 		}
 		res.Trials = append(res.Trials, tr)
 	}
@@ -188,14 +206,5 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 		slices.Sort(gs)
 		res.Variants[v] = RegistryVariant{Median: gs[len(gs)/2], Min: gs[0], Max: gs[len(gs)-1], N: len(gs)}
 	}
-	if out != "" {
-		if err := os.MkdirAll(out, 0o755); err != nil {
-			return res, err
-		}
-		b, _ := json.MarshalIndent(res, "", "  ")
-		if err := os.WriteFile(filepath.Join(out, "registry.json"), append(b, '\n'), 0o644); err != nil {
-			return res, err
-		}
-	}
-	return res, nil
+	return res, runErr
 }

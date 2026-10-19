@@ -49,17 +49,21 @@ func failover(args []string) {
 	build := fs.Bool("build", false, "build the lab image first")
 	cold := fs.Bool("cold", false, "keep the generator's write connections to followers cold until the leader dies")
 	fs.Parse(args)
+	var timeouts []time.Duration
+	for e := range strings.SplitSeq(*elections, ",") {
+		el, err := time.ParseDuration(e)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "-election: %v\n", err)
+			os.Exit(2)
+		}
+		timeouts = append(timeouts, el)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if *build {
 		buildImage(ctx)
 	}
-	for e := range strings.SplitSeq(*elections, ",") {
-		el, err := time.ParseDuration(e)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(2)
-		}
+	for _, el := range timeouts {
 		res, err := lab.Failover(ctx, lab.FailoverOptions{
 			Election: el.String(), Heartbeat: (el / 3).String(), Lease: "0s", Trials: *trials, Rate: *rate,
 			Timeout: *timeout, Before: *before, After: *after, Cold: *cold, Project: "fflab", File: filepath.Join("lab", "compose.yml"),

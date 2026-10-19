@@ -1,0 +1,28 @@
+package main
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestOnlyKnownModesParse(t *testing.T) {
+	if got, err := parseList("append-fsync, prealloc-fdatasync", parseMode); err != nil || !slices.Equal(got, []string{"append-fsync", "prealloc-fdatasync"}) {
+		t.Fatalf("parsed %v: %v", got, err)
+	}
+	for _, list := range []string{"", "apend-fsync", "prealloc-fdatasyn", "append-fsync,"} {
+		if got, err := parseList(list, parseMode); err == nil {
+			t.Errorf("%q parsed as %v", list, got)
+		}
+	}
+}
+
+func TestOnlyPositiveCountsParse(t *testing.T) {
+	if got, err := parseList("1, 5,16384", parseCount); err != nil || !slices.Equal(got, []int{1, 5, 16384}) {
+		t.Fatalf("parsed %v: %v", got, err)
+	}
+	for _, list := range []string{"", "1,x", "0", "-5", "1,,2"} {
+		if got, err := parseList(list, parseCount); err == nil {
+			t.Errorf("%q parsed as %v", list, got)
+		}
+	}
+}
