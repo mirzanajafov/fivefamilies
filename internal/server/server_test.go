@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
+	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
@@ -258,6 +261,49 @@ func TestAClientStartsANewSessionAfterTheClusterForgetsItsOldOne(t *testing.T) {
 	}
 	if kv, _, err := forgotten.Get(ctx, "k", client.ReadIndex); err != nil || string(kv.Value) != "other again" {
 		t.Fatalf("read %q %v", kv.Value, err)
+	}
+}
+
+func TestNoAppliedResultTellsTheClientToRetry(t *testing.T) {
+	for c := kv.OK + 1; c <= kv.ErrTooManyLeases; c++ {
+		switch code := status.Code(outcome(kv.Result{Code: c})); code {
+		case codes.Unavailable, codes.DeadlineExceeded, codes.Canceled, codes.ResourceExhausted:
+			t.Errorf("%s reaches the client as %s, which it retries with the same sequence number", c, code)
+		}
+	}
+}
+
+func TestAWriteGivesUpWhileWaitingBehindAnotherWrite(t *testing.T) {
+	c := newTestCluster(t, 3, nil)
+	leader := c.leader(5 * time.Second)
+	for id := range raft.NodeID(3) {
+		if id+1 != leader {
+			c.stop(id + 1)
+		}
+	}
+	cl, err := client.New(c.addrs(), client.Options{AttemptTimeout: 100 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	stuck, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go cl.Put(stuck, "k", []byte("waits for a quorum"))
+	time.Sleep(100 * time.Millisecond)
+	ctx, cancelShort := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancelShort()
+	gaveUp := make(chan error, 1)
+	go func() {
+		_, err := cl.Put(ctx, "k", []byte("gives up"))
+		gaveUp <- err
+	}()
+	select {
+	case err := <-gaveUp:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("the second write returned %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the second write waited past its deadline for the first")
 	}
 }
 

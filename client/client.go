@@ -185,6 +185,9 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 
 func write[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (T, error)) (T, error) {
 	var zero T
+	if err := ctx.Err(); err != nil {
+		return zero, err
+	}
 	select {
 	case c.writing <- struct{}{}:
 	case <-ctx.Done():
