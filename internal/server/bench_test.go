@@ -280,8 +280,8 @@ func TestChaosIsBoundedAndOffByDefault(t *testing.T) {
 	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "pause", DurationMs: uint64(2 * time.Minute / time.Millisecond)}); err == nil {
 		t.Fatal("a two-minute pause was accepted")
 	}
-	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "crash", DurationMs: 1}); err == nil {
-		t.Fatal("an unknown action was accepted")
+	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "crash", DurationMs: 1}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("an unknown action got %v", err)
 	}
 	old := c2.leader(time.Second)
 	chaos(t, c2, old, "isolate", 2*time.Second)
@@ -301,7 +301,7 @@ func TestHealClearsAnIsolationEarly(t *testing.T) {
 	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
 	old := c.leader(5 * time.Second)
 	chaos(t, c, old, "isolate", time.Minute)
-	if c.running[old].srv.Filter.Allow(old, old%3+1) {
+	if c.running[old].srv.isolated.Allow(old, old%3+1) {
 		t.Fatal("isolate did not block")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -309,25 +309,72 @@ func TestHealClearsAnIsolationEarly(t *testing.T) {
 	if _, err := c.admin(old).Chaos(ctx, &pb.ChaosRequest{Action: "heal"}); err != nil {
 		t.Fatal(err)
 	}
-	if !c.running[old].srv.Filter.Allow(old, old%3+1) {
+	if !c.running[old].srv.isolated.Allow(old, old%3+1) {
 		t.Fatal("heal left the isolation in place")
 	}
 }
 
-func TestAnEarlierIsolationsTimerDoesNotEndALaterOne(t *testing.T) {
+func TestEachIsolationOrHealReplacesTheOneBefore(t *testing.T) {
 	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
 	c.leader(5 * time.Second)
-	chaos(t, c, 1, "isolate", 200*time.Millisecond)
+	isolated := func() bool { return !c.running[1].srv.isolated.Allow(1, 2) }
+	chaos(t, c, 1, "isolate", 500*time.Millisecond)
 	chaos(t, c, 1, "isolate", time.Minute)
-	time.Sleep(400 * time.Millisecond)
-	if c.running[1].srv.Filter.Allow(1, 2) {
-		t.Fatal("the first isolation's timer ended the second")
+	time.Sleep(800 * time.Millisecond)
+	if !isolated() {
+		t.Fatal("the first isolation ended the second")
+	}
+	chaos(t, c, 1, "heal", 0)
+	chaos(t, c, 1, "isolate", 500*time.Millisecond)
+	chaos(t, c, 1, "heal", 0)
+	chaos(t, c, 1, "isolate", time.Minute)
+	time.Sleep(800 * time.Millisecond)
+	if !isolated() {
+		t.Fatal("an isolation from before a heal ended the one after it")
 	}
 	chaos(t, c, 1, "heal", 0)
 	chaos(t, c, 1, "isolate", 200*time.Millisecond)
 	time.Sleep(400 * time.Millisecond)
-	if !c.running[1].srv.Filter.Allow(1, 2) {
+	if isolated() {
 		t.Fatal("an isolation outlived its duration")
+	}
+}
+
+func TestAHealEndsAStallAndAPauseThatHaveAlreadyBegun(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
+	leader := c.leader(5 * time.Second)
+	follower := leader%3 + 1
+	cl, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	chaos(t, c, follower, "pause", time.Minute)
+	chaos(t, c, leader, "stall-disk", time.Minute)
+	written := make(chan error, 1)
+	go func() {
+		_, err := cl.Put(ctx, "k", []byte("v"))
+		written <- err
+	}()
+	time.Sleep(200 * time.Millisecond)
+	chaos(t, c, leader, "heal", 0)
+	chaos(t, c, follower, "heal", 0)
+	select {
+	case err := <-written:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the write still waited for the stalled disk after the heal")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for c.running[follower].srv.Status().GetCommit() < c.running[leader].srv.Status().GetCommit() {
+		if time.Now().After(deadline) {
+			t.Fatal("the paused node did not resume after the heal")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

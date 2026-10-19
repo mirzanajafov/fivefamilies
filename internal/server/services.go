@@ -243,15 +243,16 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 	}
 	switch req.GetAction() {
 	case "stall-disk":
-		a.s.stall.Store(time.Now().Add(d).UnixNano())
+		a.s.stall.set(d)
 	case "pause":
+		a.s.paused.set(d)
 		select {
-		case a.s.calls <- func() { time.Sleep(d) }:
+		case a.s.calls <- a.s.paused.wait:
 		case <-ctx.Done():
 			return nil, status.FromContextError(ctx.Err()).Err()
 		}
 	case "isolate":
-		a.s.isolate(d)
+		a.s.isolated.set(d)
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "unknown chaos action %q", req.GetAction())
 	}

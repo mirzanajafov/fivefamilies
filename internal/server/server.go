@@ -128,7 +128,6 @@ type Server struct {
 	node      *node.Node
 	sm        *watch.Machine
 	tr        *transport.Transport
-	Filter    *Filter
 	inbound   chan raft.Message
 	calls     chan func()
 	jobs      chan diskJob
@@ -138,9 +137,9 @@ type Server struct {
 	lastWatch time.Time
 	status    atomic.Pointer[pb.StatusResponse]
 	counts    counters
-	stall     atomic.Int64
-	chaosMu   sync.Mutex
-	isolation *time.Timer
+	isolated  isolation
+	stall     deadline
+	paused    deadline
 	lastTerm  uint64
 	log       *slog.Logger
 	fatalled  atomic.Bool
@@ -164,7 +163,6 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg:     cfg,
 		fs:      vfs.OS{Dir: cfg.DataDir},
-		Filter:  NewFilter(),
 		inbound: make(chan raft.Message, 4096),
 		calls:   make(chan func(), 1024),
 		jobs:    make(chan diskJob, 4096),
@@ -210,7 +208,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s.raft = r
 	s.node = node.New(r, s, s.sm, node.Config{SnapshotEvery: cfg.SnapshotEvery, Retain: cfg.Retain, Tick: cfg.Tick, WriteBeforeSend: cfg.WriteBeforeSend})
-	tr, err := transport.New(cfg.ID, cfg.Nodes, s.deliver, s.Filter, s.log)
+	tr, err := transport.New(cfg.ID, cfg.Nodes, s.deliver, &s.isolated, s.log)
 	if err != nil {
 		return nil, err
 	}
@@ -322,42 +320,6 @@ func (s *Server) waitForDisk(ctx context.Context) {
 			return
 		}
 	}
-}
-
-func (s *Server) isolate(d time.Duration) {
-	s.chaosMu.Lock()
-	defer s.chaosMu.Unlock()
-	s.endIsolationLocked()
-	for id := range s.cfg.Nodes {
-		if id != s.cfg.ID {
-			s.Filter.Block(s.cfg.ID, id)
-			s.Filter.Block(id, s.cfg.ID)
-		}
-	}
-	var t *time.Timer
-	t = time.AfterFunc(d, func() {
-		s.chaosMu.Lock()
-		defer s.chaosMu.Unlock()
-		if s.isolation == t {
-			s.endIsolationLocked()
-		}
-	})
-	s.isolation = t
-}
-
-func (s *Server) heal() {
-	s.chaosMu.Lock()
-	defer s.chaosMu.Unlock()
-	s.endIsolationLocked()
-	s.stall.Store(0)
-}
-
-func (s *Server) endIsolationLocked() {
-	if s.isolation != nil {
-		s.isolation.Stop()
-		s.isolation = nil
-	}
-	s.Filter.Clear()
 }
 
 func (s *Server) leaderless() bool {
@@ -488,9 +450,7 @@ func (s *Server) writer(ctx context.Context) {
 }
 
 func (s *Server) sync() bool {
-	if d := time.Until(time.Unix(0, s.stall.Load())); d > 0 {
-		time.Sleep(d)
-	}
+	s.stall.wait()
 	if s.cfg.FsyncMode == FsyncOff {
 		return true
 	}
