@@ -5,7 +5,8 @@ import { LoadChart } from '@/components/LoadChart'
 
 export const metadata: Metadata = { title: 'Results · FiveFamilies' }
 
-const ms = (ns: number) => `${Math.round(ns / 1e6).toLocaleString('en-US')} ms`
+const millis = (ns: number) => Math.round(ns / 1e6).toLocaleString('en-US')
+const ms = (ns: number) => `${millis(ns)} ms`
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -38,7 +39,7 @@ export default function Results() {
           </p>
           <Table
             head={['election timeout', 'clients waited, median', 'range', 'new Don chosen after']}
-            rows={e1.rows.map((r) => [r.election, ms(r.median), `${ms(r.min)} – ${ms(r.max)}`, ms(r.electionMedian)])}
+            rows={e1.rows.map((r) => [r.election, ms(r.median), `${millis(r.min)}–${ms(r.max)}`, ms(r.electionMedian)])}
           />
         </Section>
       )}
@@ -56,8 +57,8 @@ export default function Results() {
         <Section title="Throughput and latency">
           <p className="mb-3 text-sm leading-relaxed">
             Open-loop writes on a quiet cluster, doubling the rate until a step falls behind (under 90% of the offered rate, p99
-            over a second, or more than 1% failed), then two steps of bisection. The knee is the highest rate that kept up; where
-            a row ran three interleaved rounds, it is the median with the range. Latency comes from a run at 80% of the knee, or
+            over a second, or more than 1% failed), then two steps of bisection. The knee is the highest rate that kept up. Where
+            a row ran three interleaved rounds, the knee is the median with the range. Latency comes from a run at 80% of the knee, or
             the nearest lower step that kept up.
           </p>
           <WriteCurves curves={e2.curves} />
@@ -65,7 +66,7 @@ export default function Results() {
             <LoadChart curves={e2.curves.filter((c) => ['3 nodes', '5 nodes', '7 nodes', '5 nodes, no pipelining'].includes(c.name))} label="p99 latency against offered writes for three, five and seven nodes and five nodes without pipelining" />
           </div>
           <p className="mt-3 text-sm leading-relaxed">
-            Three nodes stay ahead (7,000 to 8,000); five and seven overlap, and the same five-node setup ranged from 4,000 to
+            Three nodes stay ahead (7,000 to 8,000). Five and seven overlap, and the same five-node setup ranged from 4,000 to
             7,000 over six rounds that evening. Taking the whole queue into one Ready halved the messages per write but didn&apos;t
             move the knee: one event per Ready reached 7,000 too. Without pipelining the appends wait for each other and carry
             dozens of entries, which reached 8,000 in its one round. Past the knee the cluster still collapses rather than slowing
@@ -118,7 +119,7 @@ export default function Results() {
             etcd still wins on everything that goes through consensus: 2.7 times the writes on five nodes and 4 times on three,
             2.7 times the linearizable reads. FiveFamilies&apos; unsafe local reads beat etcd&apos;s serializable ones (40,000 against
             32,000), and at low load FiveFamilies writes faster (11 to 13 ms against 23 to 37 ms). Past their knees etcd slows down
-            and keeps answering; FiveFamilies falls over. etcd&apos;s five-node write median is a lower bound: in one round the step
+            and keeps answering, but FiveFamilies falls over. etcd&apos;s five-node write median is a lower bound: in one round the step
             above it was ruled invalid because the load generator itself fell behind.
           </p>
         </Section>
@@ -127,7 +128,7 @@ export default function Results() {
         <Section title="Taking the whole queue into one Ready">
           <p className="mb-3 text-sm leading-relaxed">
             After the runs above, the server loop takes everything queued, up to 256 events, before it asks Raft for a Ready. One
-            event per Ready is the old behaviour, kept as a switch for this comparison; both ran back to back on the same evening.
+            event per Ready is the old behaviour, kept as a switch for this comparison, and both ran back to back on the same evening.
           </p>
           <WriteCurves curves={batched.curves} unit="op" />
           <p className="mt-3 text-sm leading-relaxed">
@@ -141,15 +142,14 @@ export default function Results() {
         <Section title="Where the time goes">
           <p className="text-sm leading-relaxed">
             Go profiles of the Don under steady writes on five nodes. At 4,000 writes a second it used 54% of its CPU, and half of
-            that went to write syscalls flushing gRPC streams, mostly to the followers; the loop with Raft, the store and the
+            that went to write syscalls flushing gRPC streams, mostly to the followers. The loop with Raft, the store and the
             bookkeeping was 6%. At 6,000 a second it used 39%, with bigger batches and fewer flushes, and its request handlers spent
-            their time waiting for commits, not for locks. So CPU doesn&apos;t set the knee; the fsync cadence and a snapshot written
-            inside the loop are the next suspects.
+            their time waiting for commits, not for locks. So CPU time doesn&apos;t set the knee.
           </p>
           <p className="mt-3 text-sm leading-relaxed">
             Overloaded at 10,000 writes a second for 15 s, the cluster served 218 a second. With the Don refusing writes past
             4,096 uncommitted entries it served 267, with 5,099 refusals and 85,629 timeouts: the cap bounds the queue inside Raft,
-            but most writes wait in front of the event loop, where nothing bounds them yet. After both overloads it went back to
+            but most writes waited in front of the event loop (refusing once that queue is full came later). After both overloads it went back to
             4,000 a second cleanly.
           </p>
         </Section>
@@ -182,7 +182,7 @@ export default function Results() {
         <Section title="Bugs planted on purpose">
           <p className="mb-3 text-sm leading-relaxed">
             The same checks against builds with a known bug switched on, to show what the net catches on a real cluster and what it
-            doesn&apos;t. The simulator catches every one of them; these runs were 90 seconds each.
+            doesn&apos;t. The simulator catches every one of them. These runs were 90 seconds each.
           </p>
           <Table
             head={['bug', 'operations', 'linearizable', 'states equal', 'caught']}

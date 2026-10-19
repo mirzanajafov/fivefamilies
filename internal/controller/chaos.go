@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"slices"
 	"time"
@@ -58,9 +59,9 @@ func (c *Controller) chaos(ctx context.Context, req chaosRequest, admin bool, ad
 		return nil, http.StatusConflict, fmt.Errorf("one fault at a time: %s on node %d is still running", c.fault.Action, c.fault.Node)
 	}
 	if !admin {
-		if c.last != nil && now.Before(c.last.Ends.Add(c.cfg.Cooldown)) {
+		if wait := c.cooldownLeftLocked(now); wait > 0 {
 			c.mu.Unlock()
-			return nil, http.StatusTooManyRequests, fmt.Errorf("the Commission is still settling; try again in %ds", int(time.Until(c.last.Ends.Add(c.cfg.Cooldown)).Seconds())+1)
+			return nil, http.StatusTooManyRequests, fmt.Errorf("the Commission is still settling, so try again in %d s", int(math.Ceil(wait.Seconds())))
 		}
 		recent := slices.DeleteFunc(c.byAddr[addr], func(t time.Time) bool { return now.Sub(t) > c.cfg.PerWindow })
 		if len(recent) >= c.cfg.PerAddress {
@@ -95,6 +96,13 @@ func (c *Controller) chaos(ctx context.Context, req chaosRequest, admin bool, ad
 	out := *f
 	c.mu.Unlock()
 	return &out, http.StatusOK, nil
+}
+
+func (c *Controller) cooldownLeftLocked(now time.Time) time.Duration {
+	if c.last == nil {
+		return 0
+	}
+	return c.last.Ends.Add(c.cfg.Cooldown).Sub(now)
 }
 
 func (c *Controller) supervisor(ctx context.Context, node int, path string) error {
