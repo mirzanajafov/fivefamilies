@@ -281,7 +281,7 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 			return rows, err
 		}
 		if generatorDied {
-			return rows, fmt.Errorf("the load generator stopped before the faults were over, so the row would describe an idle cluster: %w", cmp.Or(loadErr, errors.New("it exited")))
+			return rows, fmt.Errorf("the load generator stopped before the faults were over: %w", cmp.Or(loadErr, errors.New("it exited without an error")))
 		}
 		rows = append(rows, row)
 		if err := SaveJSON(o.Out, "e1b.json", rows); err != nil {

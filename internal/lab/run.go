@@ -3,7 +3,6 @@ package lab
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -269,12 +268,13 @@ func save(dir string, rep Report, w *workload) error {
 	if err != nil {
 		return err
 	}
+	enc := json.NewEncoder(f)
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	enc := json.NewEncoder(f)
 	for _, op := range w.ops {
 		if err := enc.Encode(op); err != nil {
-			return errors.Join(err, f.Close())
+			f.Close()
+			return err
 		}
 	}
 	return f.Close()

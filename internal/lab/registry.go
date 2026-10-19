@@ -103,7 +103,7 @@ func (s *sighting) await(ctx context.Context, name string, gone bool, limit time
 
 func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryResult, error) {
 	res, err := runRegistry(ctx, opts)
-	if err != nil {
+	if err = cmp.Or(ctx.Err(), err); err != nil {
 		res.Err = err.Error()
 	}
 	if out != "" {
@@ -206,5 +206,5 @@ func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, err
 		slices.Sort(gs)
 		res.Variants[v] = RegistryVariant{Median: gs[len(gs)/2], Min: gs[0], Max: gs[len(gs)-1], N: len(gs)}
 	}
-	return res, cmp.Or(ctx.Err(), runErr)
+	return res, runErr
 }

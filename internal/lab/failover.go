@@ -101,7 +101,7 @@ func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]sample, 
 
 func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverResult, error) {
 	res, err := runFailover(ctx, opts)
-	if err != nil {
+	if err = cmp.Or(ctx.Err(), err); err != nil {
 		res.Err = err.Error()
 	}
 	if out != "" {
@@ -194,7 +194,7 @@ func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, err
 		slices.Sort(us)
 		res.Median, res.Min, res.Max = us[len(us)/2], us[0], us[len(us)-1]
 	}
-	return res, cmp.Or(ctx.Err(), runErr)
+	return res, runErr
 }
 
 func steady(ctx context.Context, adm *cluster) (int, error) {
