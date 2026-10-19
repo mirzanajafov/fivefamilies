@@ -275,16 +275,13 @@ func TestChaosIsBoundedAndOffByDefault(t *testing.T) {
 	if _, err := c.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "pause", DurationMs: 100}); err == nil {
 		t.Fatal("chaos ran on a node started without it")
 	}
-	var crashed atomic.Bool
-	c2 := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos, cfg.Crash = true, func() { crashed.Store(true) } })
+	c2 := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
 	c2.leader(5 * time.Second)
 	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "pause", DurationMs: uint64(2 * time.Minute / time.Millisecond)}); err == nil {
 		t.Fatal("a two-minute pause was accepted")
 	}
-	chaos(t, c2, 1, "crash", time.Millisecond)
-	time.Sleep(50 * time.Millisecond)
-	if !crashed.Load() {
-		t.Fatal("crash did not call the crash hook")
+	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "crash", DurationMs: 1}); err == nil {
+		t.Fatal("an unknown action was accepted")
 	}
 	old := c2.leader(time.Second)
 	chaos(t, c2, old, "isolate", 2*time.Second)
@@ -314,6 +311,23 @@ func TestHealClearsAnIsolationEarly(t *testing.T) {
 	}
 	if !c.running[old].srv.Filter.Allow(old, old%3+1) {
 		t.Fatal("heal left the isolation in place")
+	}
+}
+
+func TestAnEarlierIsolationsTimerDoesNotEndALaterOne(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
+	c.leader(5 * time.Second)
+	chaos(t, c, 1, "isolate", 200*time.Millisecond)
+	chaos(t, c, 1, "isolate", time.Minute)
+	time.Sleep(400 * time.Millisecond)
+	if c.running[1].srv.Filter.Allow(1, 2) {
+		t.Fatal("the first isolation's timer ended the second")
+	}
+	chaos(t, c, 1, "heal", 0)
+	chaos(t, c, 1, "isolate", 200*time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
+	if !c.running[1].srv.Filter.Allow(1, 2) {
+		t.Fatal("an isolation outlived its duration")
 	}
 }
 

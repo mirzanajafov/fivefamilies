@@ -234,8 +234,7 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 		return nil, status.Error(codes.PermissionDenied, "chaos is off on this node")
 	}
 	if req.GetAction() == "heal" {
-		a.s.Filter.Clear()
-		a.s.stall.Store(0)
+		a.s.heal()
 		return &pb.ChaosResponse{}, nil
 	}
 	d := time.Duration(req.GetDurationMs()) * time.Millisecond
@@ -253,8 +252,6 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 		}
 	case "isolate":
 		a.s.isolate(d)
-	case "crash":
-		go a.s.cfg.Crash()
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "unknown chaos action %q", req.GetAction())
 	}

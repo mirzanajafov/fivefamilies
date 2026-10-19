@@ -53,7 +53,6 @@ type Config struct {
 	MaxPending      uint64
 	Batch           int
 	Chaos           bool
-	Crash           func()
 }
 
 const (
@@ -96,9 +95,6 @@ func (c *Config) defaults() error {
 	case FsyncGroup, FsyncReady, FsyncEntry, FsyncOff:
 	default:
 		return fmt.Errorf("server: unknown fsync mode %q", c.FsyncMode)
-	}
-	if c.Crash == nil {
-		c.Crash = func() { os.Exit(137) }
 	}
 	if c.WatchProgress <= 0 {
 		c.WatchProgress = time.Second
@@ -143,6 +139,8 @@ type Server struct {
 	status    atomic.Pointer[pb.StatusResponse]
 	counts    counters
 	stall     atomic.Int64
+	chaosMu   sync.Mutex
+	isolation *time.Timer
 	lastTerm  uint64
 	log       *slog.Logger
 	fatalled  atomic.Bool
@@ -327,13 +325,39 @@ func (s *Server) waitForDisk(ctx context.Context) {
 }
 
 func (s *Server) isolate(d time.Duration) {
+	s.chaosMu.Lock()
+	defer s.chaosMu.Unlock()
+	s.endIsolationLocked()
 	for id := range s.cfg.Nodes {
 		if id != s.cfg.ID {
 			s.Filter.Block(s.cfg.ID, id)
 			s.Filter.Block(id, s.cfg.ID)
 		}
 	}
-	time.AfterFunc(d, s.Filter.Clear)
+	var t *time.Timer
+	t = time.AfterFunc(d, func() {
+		s.chaosMu.Lock()
+		defer s.chaosMu.Unlock()
+		if s.isolation == t {
+			s.endIsolationLocked()
+		}
+	})
+	s.isolation = t
+}
+
+func (s *Server) heal() {
+	s.chaosMu.Lock()
+	defer s.chaosMu.Unlock()
+	s.endIsolationLocked()
+	s.stall.Store(0)
+}
+
+func (s *Server) endIsolationLocked() {
+	if s.isolation != nil {
+		s.isolation.Stop()
+		s.isolation = nil
+	}
+	s.Filter.Clear()
 }
 
 func (s *Server) leaderless() bool {
