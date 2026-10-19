@@ -3,6 +3,7 @@ package lab
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -78,14 +79,23 @@ func (e *EtcdCluster) Up(ctx context.Context) error {
 	if err := e.d.compose(ctx, nil, "up", "-d"); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := e.Leader(ctx); err == nil {
-			return nil
+	var last error
+	err = poll(ctx, 500*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
+		pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, probeErr := e.Leader(pctx)
+		cancel()
+		if probeErr != nil && ctx.Err() == nil {
+			last = probeErr
 		}
-		wait(ctx, 500*time.Millisecond)
+		return probeErr == nil, nil
+	})
+	if errors.Is(err, errGaveUp) && last != nil {
+		err = fmt.Errorf("%w, the last probe said: %w", err, last)
 	}
-	return fmt.Errorf("etcd did not elect a leader within 60 s")
+	if err != nil {
+		return fmt.Errorf("etcd did not elect a leader: %w", err)
+	}
+	return nil
 }
 
 type etcdStatus struct {
