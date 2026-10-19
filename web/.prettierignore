@@ -1,0 +1,11 @@
+pnpm-lock.yaml
+tsconfig.json
+scripts/results.mjs
+src/app/globals.css
+src/app/results/page.tsx
+src/components/AdminBox.tsx
+src/components/ChaosPanel.tsx
+src/components/Commission.tsx
+src/components/Dashboard.tsx
+src/components/Families.tsx
+src/lib/lib.test.ts

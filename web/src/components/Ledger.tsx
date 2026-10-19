@@ -6,7 +6,7 @@ export function Windows({ windows }: { windows: Window[] }) {
   if (windows.length === 0) {
     return <p className="muted text-sm">The first window is checked ten seconds after someone starts watching.</p>
   }
-  const broken = windows.filter((w) => w.result === 'Illegal')
+  const broken = windows.find((w) => w.result === 'Illegal')
   const checked = windows.filter((w) => w.result === 'Ok').length
   return (
     <div className="grid gap-3">
@@ -20,8 +20,8 @@ export function Windows({ windows }: { windows: Window[] }) {
         ))}
       </div>
       <p className="text-sm">
-        {broken.length > 0 ? (
-          <span className="text-[var(--blood)]">Window {broken[0].index} is not linearizable: a word was broken.</span>
+        {broken ? (
+          <span className="text-[var(--blood)]">Window {broken.index} is not linearizable: a word was broken.</span>
         ) : (
           <span>
             {checked} of the last {windows.length} windows checked, every one linearizable.
