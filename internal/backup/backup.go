@@ -88,10 +88,11 @@ func Check(f File) (Summary, error) {
 }
 
 func Save(path string, f File) error {
-	dir, name := filepath.Split(path)
-	if name == "" {
-		return fmt.Errorf("backup: %q names a directory, not a file", path)
+	path = filepath.Clean(path)
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return fmt.Errorf("backup: %q is a directory", path)
 	}
+	dir, name := filepath.Split(path)
 	var buf bytes.Buffer
 	if err := Encode(&buf, f); err != nil {
 		return err

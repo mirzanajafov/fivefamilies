@@ -80,125 +80,114 @@ func TestMemFilesNeedADirectorySyncToSurviveACrash(t *testing.T) {
 	}
 }
 
-var errPowerCut = errors.New("the power went out")
+var errInjected = errors.New("injected failure")
 
-type powerCut struct {
+type faulty struct {
 	FS
-	left int
+	step   int
+	failAt int
+	cut    bool
 }
 
-func (p *powerCut) step() error {
-	if p.left == 0 {
-		return errPowerCut
+func (f *faulty) next() error {
+	f.step++
+	if f.step == f.failAt || (f.cut && f.step > f.failAt) {
+		return errInjected
 	}
-	p.left--
 	return nil
 }
 
-func (p *powerCut) Create(name string) (File, error) {
-	if err := p.step(); err != nil {
+func (f *faulty) Create(name string) (File, error) {
+	if err := f.next(); err != nil {
 		return nil, err
 	}
-	f, err := p.FS.Create(name)
-	return &cutFile{File: f, p: p}, err
+	file, err := f.FS.Create(name)
+	if err != nil {
+		return nil, err
+	}
+	return &faultyFile{File: file, fs: f}, nil
 }
 
-func (p *powerCut) Remove(name string) error {
-	if err := p.step(); err != nil {
+func (f *faulty) Remove(name string) error {
+	if err := f.next(); err != nil {
 		return err
 	}
-	return p.FS.Remove(name)
+	return f.FS.Remove(name)
 }
 
-func (p *powerCut) Rename(from, to string) error {
-	if err := p.step(); err != nil {
+func (f *faulty) Rename(from, to string) error {
+	if err := f.next(); err != nil {
 		return err
 	}
-	return p.FS.Rename(from, to)
+	return f.FS.Rename(from, to)
 }
 
-func (p *powerCut) SyncDir() error {
-	if err := p.step(); err != nil {
+func (f *faulty) SyncDir() error {
+	if err := f.next(); err != nil {
 		return err
 	}
-	return p.FS.SyncDir()
+	return f.FS.SyncDir()
 }
 
-type cutFile struct {
+type faultyFile struct {
 	File
-	p *powerCut
+	fs *faulty
 }
 
-func (f *cutFile) Write(b []byte) (int, error) {
-	if err := f.p.step(); err != nil {
+func (f *faultyFile) Write(b []byte) (int, error) {
+	if err := f.fs.next(); err != nil {
 		return 0, err
 	}
 	return f.File.Write(b)
 }
 
-func (f *cutFile) Sync() error {
-	if err := f.p.step(); err != nil {
+func (f *faultyFile) Sync() error {
+	if err := f.fs.next(); err != nil {
 		return err
 	}
 	return f.File.Sync()
 }
 
-func TestACrashAtAnyStepOfAnAtomicWriteLeavesTheOldOrTheNewFile(t *testing.T) {
-	for steps := range 8 {
+func TestAFailedStepOfAnAtomicWriteIsReportedAndLeavesOneWholeFile(t *testing.T) {
+	for failAt := 1; ; failAt++ {
 		m := NewMem()
 		if err := WriteAtomic(m, "f", []byte("old contents")); err != nil {
 			t.Fatal(err)
 		}
-		err := WriteAtomic(&powerCut{FS: m, left: steps}, "f", []byte("new contents"))
-		m.Crash(rand.New(rand.NewPCG(uint64(steps), 1)))
+		w := &faulty{FS: m, failAt: failAt}
+		err := WriteAtomic(w, "f", []byte("new contents"))
+		got, readErr := m.ReadFile("f")
+		names, _ := m.List()
+		if readErr != nil || (string(got) != "old contents" && string(got) != "new contents") || !slices.Equal(names, []string{"f"}) {
+			t.Fatalf("a failure at step %d (%v) left %v with %q %v", failAt, err, names, got, readErr)
+		}
+		if err == nil {
+			if failAt <= w.step || string(got) != "new contents" {
+				t.Fatalf("a failure at step %d of %d was not reported, the file holds %q", failAt, w.step, got)
+			}
+			return
+		}
+	}
+}
+
+func TestACrashAtAnyStepOfAnAtomicWriteLeavesTheOldOrTheNewFile(t *testing.T) {
+	for cutAt := 1; ; cutAt++ {
+		m := NewMem()
+		if err := WriteAtomic(m, "f", []byte("old contents")); err != nil {
+			t.Fatal(err)
+		}
+		err := WriteAtomic(&faulty{FS: m, failAt: cutAt, cut: true}, "f", []byte("new contents"))
+		m.Crash(rand.New(rand.NewPCG(uint64(cutAt), 1)))
 		got, readErr := m.ReadFile("f")
 		if readErr != nil || (string(got) != "old contents" && string(got) != "new contents") {
-			t.Fatalf("cut after %d steps (%v): %q %v", steps, err, got, readErr)
+			t.Fatalf("a crash after a power cut at step %d (%v) left %q %v", cutAt, err, got, readErr)
 		}
-		if err == nil && string(got) != "new contents" {
-			t.Fatalf("a write that reported success left %q", got)
+		if err == nil {
+			if string(got) != "new contents" {
+				t.Fatalf("a write that reported success left %q after a crash", got)
+			}
+			return
 		}
-	}
-}
-
-type unsyncableDir struct {
-	FS
-}
-
-func (unsyncableDir) SyncDir() error {
-	return errors.New("the directory could not be synced")
-}
-
-func TestAnAtomicWriteReportsAFailedDirectorySync(t *testing.T) {
-	if err := WriteAtomic(unsyncableDir{NewMem()}, "f", []byte("x")); err == nil {
-		t.Fatal("a directory sync that failed was not reported")
-	}
-}
-
-type unsyncableFiles struct {
-	FS
-}
-
-func (u unsyncableFiles) Create(name string) (File, error) {
-	f, err := u.FS.Create(name)
-	return failingSync{f}, err
-}
-
-type failingSync struct {
-	File
-}
-
-func (failingSync) Sync() error {
-	return errors.New("the disk is full")
-}
-
-func TestAFailedAtomicWriteLeavesNoTempFile(t *testing.T) {
-	m := NewMem()
-	if err := WriteAtomic(unsyncableFiles{m}, "f", []byte("x")); err == nil {
-		t.Fatal("a sync that failed was not reported")
-	}
-	if names, _ := m.List(); !slices.Equal(names, []string(nil)) {
-		t.Fatalf("left %v", names)
 	}
 }
 
