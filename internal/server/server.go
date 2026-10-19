@@ -455,11 +455,11 @@ func (s *Server) writer(ctx context.Context) {
 		}
 		for _, c := range compacts {
 			if _, err := s.wal.Compact(c.Index); err != nil {
-				s.die(fmt.Errorf("compacting the log: %w", err))
+				s.die(fmt.Errorf("compacting the log to %d: %w", c.Index, err))
 				return
 			}
 			if err := snap.RemoveBelow(s.fs, c.Index); err != nil {
-				s.die(fmt.Errorf("removing old snapshots: %w", err))
+				s.die(fmt.Errorf("removing snapshots below %d: %w", c.Index, err))
 				return
 			}
 		}

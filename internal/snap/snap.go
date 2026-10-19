@@ -137,12 +137,13 @@ func parseIndex(name string) (uint64, bool) {
 	if !ok {
 		return 0, false
 	}
-	_, hex, ok := strings.Cut(base, "-")
-	if !ok {
+	term, index, ok := strings.Cut(base, "-")
+	if !ok || len(term) != 16 || len(index) != 16 {
 		return 0, false
 	}
-	i, err := strconv.ParseUint(hex, 16, 64)
-	return i, err == nil
+	_, termErr := strconv.ParseUint(term, 16, 64)
+	i, indexErr := strconv.ParseUint(index, 16, 64)
+	return i, termErr == nil && indexErr == nil
 }
 
 func removeIf(fs vfs.FS, match func(string) bool) error {

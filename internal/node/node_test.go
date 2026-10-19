@@ -293,17 +293,16 @@ func TestCompactionReportsTheDurableSnapshotNotOneStillBeingInstalled(t *testing
 	}
 	n.Receive(raft.Message{Type: raft.MsgApp, From: 1, To: 2, Term: 1, Entries: ents, Commit: 5})
 	n.Process()
-	var marker Write
-	for marker.Snapshot == nil {
-		if len(env.writes) == 0 {
-			t.Fatal("the follower took no snapshot")
-		}
-		marker, env.writes = env.writes[0], env.writes[1:]
-		if marker.Snapshot == nil {
-			n.WriteDone(marker.Seq)
-			n.Process()
-		}
+	for len(env.writes) > 0 && env.writes[0].Snapshot == nil {
+		w := env.writes[0]
+		env.writes = env.writes[1:]
+		n.WriteDone(w.Seq)
+		n.Process()
 	}
+	if len(env.writes) == 0 {
+		t.Fatal("the follower took no snapshot")
+	}
+	marker := env.writes[0]
 	n.Receive(raft.Message{Type: raft.MsgSnap, From: 1, To: 2, Term: 2, Snapshot: &raft.Snapshot{Index: 30, Term: 2, Data: []byte("state")}})
 	n.WriteDone(marker.Seq)
 	if len(env.compacted) != 1 || env.compacted[0].Index != marker.Snapshot.Index {
