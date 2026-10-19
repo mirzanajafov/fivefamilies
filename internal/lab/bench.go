@@ -216,21 +216,18 @@ func sweep(ctx context.Context, gen generator, quiet quieter, c Curve, opts Swee
 }
 
 func settle(ctx context.Context, probe func(context.Context) (uint64, bool)) error {
-	deadline := time.Now().Add(2 * time.Minute)
 	var last uint64
 	was := false
-	for time.Now().Before(deadline) && ctx.Err() == nil {
+	err := poll(ctx, 500*time.Millisecond, 2*time.Minute, func(ctx context.Context) (bool, error) {
 		at, idle := probe(ctx)
-		if idle && was && at == last {
-			return nil
-		}
+		quiet := idle && was && at == last
 		last, was = at, idle
-		wait(ctx, 500*time.Millisecond)
+		return quiet, nil
+	})
+	if err != nil {
+		return fmt.Errorf("the cluster was still working through its backlog: %w", err)
 	}
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	return fmt.Errorf("the cluster was still working through its backlog after 2 minutes")
+	return nil
 }
 
 func (b *BenchCluster) Quiet(ctx context.Context) error {

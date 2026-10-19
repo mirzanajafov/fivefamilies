@@ -2,6 +2,7 @@ package lab
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -26,35 +27,35 @@ func (c *cluster) leader(ctx context.Context) (int, *pb.StatusResponse) {
 }
 
 func (c *cluster) settleMember(ctx context.Context, node int, want pb.MemberChange, done func(*pb.StatusResponse) bool, limit time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, limit)
-	defer cancel()
 	var last error
-	for {
-		if l, st := c.leader(ctx); l > 0 {
-			if done(st) {
-				return nil
-			}
-			change := want
-			if want == pb.MemberChange_MEMBER_CHANGE_PROMOTE && !slices.Contains(st.GetLearners(), uint64(node)) {
-				change = pb.MemberChange_MEMBER_CHANGE_ADD_LEARNER
-			}
-			cctx, ccancel := context.WithTimeout(ctx, 3*time.Second)
-			_, err := c.admin(l).ChangeMembers(cctx, &pb.ChangeMembersRequest{Change: change, Node: uint64(node)})
-			ccancel()
-			if err != nil {
-				last = err
-				if code := status.Code(err); code != codes.Unavailable && code != codes.FailedPrecondition && code != codes.DeadlineExceeded {
-					return err
-				}
-			}
+	err := poll(ctx, 100*time.Millisecond, limit, func(ctx context.Context) (bool, error) {
+		l, st := c.leader(ctx)
+		if l == 0 {
+			return false, nil
 		}
-		if !wait(ctx, 100*time.Millisecond) {
-			if last == nil {
-				last = ctx.Err()
-			}
-			return fmt.Errorf("membership of node %d did not settle within %v: %w", node, limit, last)
+		if done(st) {
+			return true, nil
 		}
+		change := want
+		if want == pb.MemberChange_MEMBER_CHANGE_PROMOTE && !slices.Contains(st.GetLearners(), uint64(node)) {
+			change = pb.MemberChange_MEMBER_CHANGE_ADD_LEARNER
+		}
+		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		_, err := c.admin(l).ChangeMembers(cctx, &pb.ChangeMembersRequest{Change: change, Node: uint64(node)})
+		cancel()
+		switch status.Code(err) {
+		case codes.OK:
+		case codes.Unavailable, codes.FailedPrecondition, codes.DeadlineExceeded:
+			last = err
+		default:
+			return false, err
+		}
+		return false, nil
+	})
+	if err != nil {
+		return fmt.Errorf("membership of node %d did not settle: %w", node, errors.Join(err, last))
 	}
+	return nil
 }
 
 func (c *cluster) removeVoter(ctx context.Context, node int) error {

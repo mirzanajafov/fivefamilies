@@ -78,14 +78,14 @@ func (e *EtcdCluster) Up(ctx context.Context) error {
 	if err := e.d.compose(ctx, nil, "up", "-d"); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := e.Leader(ctx); err == nil {
-			return nil
-		}
-		wait(ctx, 500*time.Millisecond)
+	err = poll(ctx, 500*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
+		_, err := e.Leader(ctx)
+		return err == nil, nil
+	})
+	if err != nil {
+		return fmt.Errorf("etcd did not elect a leader: %w", err)
 	}
-	return fmt.Errorf("etcd did not elect a leader within 60 s")
+	return nil
 }
 
 type etcdStatus struct {

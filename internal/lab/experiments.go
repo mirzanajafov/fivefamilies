@@ -168,22 +168,25 @@ func maxElections(sts []*pb.StatusResponse) uint64 {
 }
 
 func agreedLeader(ctx context.Context, adm *cluster) (int, error) {
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) && ctx.Err() == nil {
+	var leader int
+	err := poll(ctx, 100*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
 		sts := adm.statuses(ctx, time.Second)
 		l, _ := leaderOf(sts)
-		ok := l > 0
+		if l == 0 {
+			return false, nil
+		}
 		for _, st := range sts {
 			if st == nil || st.GetLeader() != uint64(l) {
-				ok = false
+				return false, nil
 			}
 		}
-		if ok {
-			return l, nil
-		}
-		wait(ctx, 100*time.Millisecond)
+		leader = l
+		return true, nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("the nodes did not agree on a leader: %w", err)
 	}
-	return 0, fmt.Errorf("the nodes did not agree on a leader within 60 s")
+	return leader, nil
 }
 
 func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {

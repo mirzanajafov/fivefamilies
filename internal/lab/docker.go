@@ -24,7 +24,7 @@ func (d *Docker) cmd(ctx context.Context, env []string, args ...string) (string,
 	var out, errb bytes.Buffer
 	c.Stdout, c.Stderr = &out, &errb
 	if err := c.Run(); err != nil {
-		return out.String(), fmt.Errorf("docker %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
+		return out.String(), fmt.Errorf("docker %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
 	}
 	return strings.TrimSpace(out.String()), nil
 }
@@ -128,6 +128,22 @@ func wait(ctx context.Context, d time.Duration) bool {
 		return false
 	case <-time.After(d):
 		return true
+	}
+}
+
+func poll(ctx context.Context, every, limit time.Duration, done func(context.Context) (bool, error)) error {
+	lctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	for {
+		if ok, err := done(lctx); ok || err != nil {
+			return err
+		}
+		if !wait(lctx, every) {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return fmt.Errorf("gave up after %v", limit)
+		}
 	}
 }
 

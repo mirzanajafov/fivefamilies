@@ -144,15 +144,12 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		return rep, err
 	}
 	defer adm.close()
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		if l, _ := leaderOf(adm.statuses(ctx, time.Second)); l > 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			return rep, fmt.Errorf("no leader within 30 s of starting")
-		}
-		wait(ctx, 200*time.Millisecond)
+	err = poll(ctx, 200*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
+		l, _ := leaderOf(adm.statuses(ctx, time.Second))
+		return l > 0, nil
+	})
+	if err != nil {
+		return rep, fmt.Errorf("no leader after starting: %w", err)
 	}
 	start := time.Now()
 	mode := map[string]client.ReadMode{"index": client.ReadIndex, "lease": client.ReadLease, "log": client.ReadLog}[opts.Read]
@@ -206,8 +203,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	rep.Ops, rep.Unknown, rep.FailedReads = len(hist), unknown, failedReads
 	v := check.Linearizable(hist, opts.CheckTimeout)
 	rep.Linearizable, rep.CheckTook = string(v.Result), v.Took
-	deadline = time.Now().Add(30 * time.Second)
-	for {
+	err = poll(ctx, 500*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
 		sts := adm.statuses(ctx, 2*time.Second)
 		rep.Hashes = rep.Hashes[:0]
 		equal := true
@@ -224,13 +220,11 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		}
 		if equal {
 			rep.StatesEqual, rep.StateIndex = true, sts[0].GetHashIndex()
-			break
 		}
-		if time.Now().After(deadline) {
-			rep.Problems = append(rep.Problems, "nodes did not converge to one state within 30 s of the heal")
-			break
-		}
-		wait(ctx, 500*time.Millisecond)
+		return equal, nil
+	})
+	if err != nil {
+		rep.Problems = append(rep.Problems, fmt.Sprintf("nodes did not converge to one state after the heal: %v", err))
 	}
 	if opts.Out != "" {
 		if err := save(opts.Out, rep, w); err != nil {
