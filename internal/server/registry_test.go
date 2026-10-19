@@ -124,6 +124,10 @@ func TestARegistrationComesBackAfterTheClusterForgetsItsSession(t *testing.T) {
 	}
 	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 0 })
 	back, _ := waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 1 })
+	deadline := time.Now().Add(time.Second)
+	for reg.Renewals() != 1 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
 	if back[0].Addr != "10.0.0.1:80" || reg.Renewals() != 1 || reg.Lease() == lost {
 		t.Fatalf("came back as %v after %d renewals on lease %d", back, reg.Renewals(), reg.Lease())
 	}
