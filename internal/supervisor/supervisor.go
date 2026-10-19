@@ -29,16 +29,17 @@ type Supervisor struct {
 	cmd    *exec.Cmd
 	state  State
 	timer  *time.Timer
-	exited chan error
+	end    func() error
+	failed chan error
 	ours   bool
 }
 
 func New(args []string) *Supervisor {
-	return &Supervisor{args: args, exited: make(chan error, 1)}
+	return &Supervisor{args: args, failed: make(chan error, 1)}
 }
 
-func (s *Supervisor) Exited() <-chan error {
-	return s.exited
+func (s *Supervisor) Failed() <-chan error {
+	return s.failed
 }
 
 func (s *Supervisor) Start() error {
@@ -51,7 +52,7 @@ func (s *Supervisor) startLocked() error {
 	cmd := exec.Command(s.args[0], s.args[1:]...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {
-		return err
+		return fmt.Errorf("supervisor: starting the node: %w", err)
 	}
 	s.cmd, s.ours = cmd, false
 	s.state.Running, s.state.Paused, s.state.Killed = true, false, false
@@ -66,28 +67,49 @@ func (s *Supervisor) startLocked() error {
 		s.state.Running = false
 		if !s.ours {
 			if err == nil {
-				err = errors.New("the node exited")
+				err = errors.New(cmd.ProcessState.String())
 			}
-			select {
-			case s.exited <- err:
-			default:
-			}
+			s.failLocked(fmt.Errorf("supervisor: the node exited on its own: %w", err))
 		}
 	}()
 	return nil
 }
 
-func (s *Supervisor) after(d time.Duration, f func()) {
+func (s *Supervisor) failLocked(err error) {
+	select {
+	case s.failed <- err:
+	default:
+	}
+}
+
+func (s *Supervisor) endAfterLocked(d time.Duration, end func() error) {
+	s.dropFaultLocked()
+	s.end, s.state.Until = end, time.Now().Add(d)
+	var t *time.Timer
+	t = time.AfterFunc(d, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.timer == t {
+			_ = s.endFaultLocked()
+		}
+	})
+	s.timer = t
+}
+
+func (s *Supervisor) endFaultLocked() error {
+	end := s.end
+	s.dropFaultLocked()
+	if end == nil {
+		return nil
+	}
+	return end()
+}
+
+func (s *Supervisor) dropFaultLocked() {
 	if s.timer != nil {
 		s.timer.Stop()
 	}
-	s.state.Until = time.Now().Add(d)
-	s.timer = time.AfterFunc(d, func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		s.state.Until = time.Time{}
-		f()
-	})
+	s.timer, s.end, s.state.Until = nil, nil, time.Time{}
 }
 
 func (s *Supervisor) Kill(d time.Duration) error {
@@ -96,15 +118,21 @@ func (s *Supervisor) Kill(d time.Duration) error {
 	if !s.state.Running || s.state.Killed {
 		return errors.New("supervisor: the node is not running")
 	}
-	s.ours = true
 	if s.state.Paused {
 		cont(s.cmd.Process)
 	}
 	if err := s.cmd.Process.Kill(); err != nil {
-		return err
+		return fmt.Errorf("supervisor: killing the node: %w", err)
 	}
+	s.ours = true
 	s.state.Killed, s.state.Paused = true, false
-	s.after(d, func() { s.startLocked() })
+	s.endAfterLocked(d, func() error {
+		err := s.startLocked()
+		if err != nil {
+			s.failLocked(err)
+		}
+		return err
+	})
 	return nil
 }
 
@@ -115,12 +143,12 @@ func (s *Supervisor) Pause(d time.Duration) error {
 		return errors.New("supervisor: the node is not running or is already paused")
 	}
 	if err := stop(s.cmd.Process); err != nil {
-		return err
+		return fmt.Errorf("supervisor: stopping the node: %w", err)
 	}
 	s.state.Paused = true
-	s.after(d, func() {
-		cont(s.cmd.Process)
+	s.endAfterLocked(d, func() error {
 		s.state.Paused = false
+		return cont(s.cmd.Process)
 	})
 	return nil
 }
@@ -128,27 +156,14 @@ func (s *Supervisor) Pause(d time.Duration) error {
 func (s *Supervisor) Heal() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.timer != nil {
-		s.timer.Stop()
-	}
-	s.state.Until = time.Time{}
-	switch {
-	case s.state.Killed:
-		return s.startLocked()
-	case s.state.Paused:
-		s.state.Paused = false
-		return cont(s.cmd.Process)
-	}
-	return nil
+	return s.endFaultLocked()
 }
 
 func (s *Supervisor) Stop(sig os.Signal) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ours = true
-	if s.timer != nil {
-		s.timer.Stop()
-	}
+	s.dropFaultLocked()
 	if s.cmd != nil && s.state.Running {
 		if s.state.Paused {
 			cont(s.cmd.Process)

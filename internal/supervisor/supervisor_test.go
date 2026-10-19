@@ -57,9 +57,63 @@ func TestAKilledNodeComesBackAfterTheFault(t *testing.T) {
 	eventually(t, "the node is not running while killed", func() bool { return !s.State().Running })
 	eventually(t, "the node restarts", func() bool { st := s.State(); return st.Running && st.Starts == 2 && !st.Killed })
 	select {
-	case err := <-s.Exited():
+	case err := <-s.Failed():
 		t.Fatalf("a kill we made was reported as the node exiting: %v", err)
 	default:
+	}
+}
+
+func TestARestartThatFailsIsReportedAsAFailure(t *testing.T) {
+	s := child(t, "sleep")
+	s.mu.Lock()
+	s.args = []string{"ff-no-such-node-binary"}
+	s.mu.Unlock()
+	if err := s.Kill(100 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-s.Failed():
+		if !strings.Contains(err.Error(), "starting the node") {
+			t.Fatalf("reported %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the failed restart was not reported")
+	}
+	if st := s.State(); st.Running {
+		t.Fatalf("state after the failed restart: %+v", st)
+	}
+}
+
+func TestALateTimerDoesNotEndTheFaultThatReplacedIt(t *testing.T) {
+	s := child(t, "sleep")
+	for {
+		if err := s.Kill(50 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		s.mu.Lock()
+		if s.timer != nil {
+			break
+		}
+		s.mu.Unlock()
+		eventually(t, "the node restarts", func() bool { return s.State().Running })
+	}
+	starts := s.state.Starts
+	ended := false
+	time.Sleep(200 * time.Millisecond)
+	err := s.endFaultLocked()
+	s.endAfterLocked(time.Minute, func() error {
+		ended = true
+		return nil
+	})
+	s.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ended || s.state.Starts != starts+1 {
+		t.Fatalf("the kill's late timer ended the next fault (%v) or started the node again (%d starts after %d)", ended, s.state.Starts, starts)
 	}
 }
 
@@ -103,7 +157,7 @@ func TestAPausedNodeIsReallyStopped(t *testing.T) {
 func TestANodeThatExitsOnItsOwnIsReported(t *testing.T) {
 	s := child(t, "exit")
 	select {
-	case err := <-s.Exited():
+	case err := <-s.Failed():
 		if err == nil {
 			t.Fatal("no error for an exit status of 3")
 		}
