@@ -93,6 +93,38 @@ func TestTheRegistryForgetsADeadInstance(t *testing.T) {
 	}
 }
 
+func TestARegistrationComesBackAfterTheClusterForgetsItsSession(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.MaxSessions = 1 })
+	c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cl, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	reg, err := cl.Register(ctx, "api", "one", "10.0.0.1:80", 300*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Deregister(context.Background(), reg)
+	other, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	seen, err := other.Discover(ctx, "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 1 })
+	if err := other.Revoke(ctx, reg.Lease()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 0 })
+	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 1 })
+}
+
 func TestARegistrationOutlivesALeaderAndComesBackAfterItsLeaseIsLost(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
 	c.leader(5 * time.Second)

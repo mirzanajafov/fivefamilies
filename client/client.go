@@ -62,12 +62,12 @@ type Options struct {
 
 type Client struct {
 	opts    Options
-	mu      sync.Mutex
-	writeMu sync.Mutex
 	addrs   []string
+	mu      sync.Mutex
 	conns   map[string]*grpc.ClientConn
 	leader  string
 	next    int
+	writeMu sync.Mutex
 	session uint64
 	seq     uint64
 }
@@ -169,9 +169,6 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 			return zero, ctx.Err()
 		}
 		if !retryable(err) {
-			if status.Code(err) == codes.FailedPrecondition && status.Convert(err).Message() == "session expired" {
-				return zero, ErrSessionExpired
-			}
 			return zero, err
 		}
 		if status.Code(err) != codes.ResourceExhausted {
@@ -186,28 +183,29 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 	}
 }
 
-func (c *Client) nextSeq(ctx context.Context) (uint64, uint64, func(), error) {
+func write[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (T, error)) (T, error) {
+	var zero T
 	c.writeMu.Lock()
-	c.mu.Lock()
-	session := c.session
-	c.mu.Unlock()
-	if session == 0 {
+	defer c.writeMu.Unlock()
+	if c.session == 0 {
 		res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.RegisterResponse, error) {
 			return pb.NewKVClient(cc).Register(ctx, &pb.RegisterRequest{}, opts...)
 		})
 		if err != nil {
-			c.writeMu.Unlock()
-			return 0, 0, nil, err
+			return zero, err
 		}
-		c.mu.Lock()
 		c.session = res.GetClient()
-		session = c.session
-		c.mu.Unlock()
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.seq++
-	return session, c.seq, c.writeMu.Unlock, nil
+	session, seq := c.session, c.seq
+	out, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (T, error) {
+		return call(ctx, cc, session, seq, opts...)
+	})
+	if status.Code(err) == codes.FailedPrecondition && status.Convert(err).Message() == "session expired" {
+		c.session = 0
+		return zero, ErrSessionExpired
+	}
+	return out, err
 }
 
 func fromPB(kv *pb.KeyValue) KeyValue {
@@ -216,24 +214,14 @@ func fromPB(kv *pb.KeyValue) KeyValue {
 
 func (c *Client) Put(ctx context.Context, key string, value []byte, opts ...WriteOption) (uint64, error) {
 	o := writeOpts(opts)
-	session, seq, done, err := c.nextSeq(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer done()
-	res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.PutResponse, error) {
+	res, err := write(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (*pb.PutResponse, error) {
 		return pb.NewKVClient(cc).Put(ctx, &pb.PutRequest{Client: session, Seq: seq, Key: key, Value: value, Lease: o.lease}, opts...)
 	})
 	return res.GetRev(), err
 }
 
 func (c *Client) Delete(ctx context.Context, key string) (bool, error) {
-	session, seq, done, err := c.nextSeq(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer done()
-	res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.DeleteResponse, error) {
+	res, err := write(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (*pb.DeleteResponse, error) {
 		return pb.NewKVClient(cc).Delete(ctx, &pb.DeleteRequest{Client: session, Seq: seq, Key: key}, opts...)
 	})
 	return res.GetDeleted(), err
@@ -247,12 +235,7 @@ type Expect struct {
 
 func (c *Client) CompareAndSwap(ctx context.Context, key string, expect Expect, value []byte, opts ...WriteOption) (bool, KeyValue, error) {
 	o := writeOpts(opts)
-	session, seq, done, err := c.nextSeq(ctx)
-	if err != nil {
-		return false, KeyValue{}, err
-	}
-	defer done()
-	req := &pb.CompareAndSwapRequest{Client: session, Seq: seq, Key: key, Value: value, Lease: o.lease}
+	req := &pb.CompareAndSwapRequest{Key: key, Value: value, Lease: o.lease}
 	switch {
 	case expect.Missing:
 		req.Expect = &pb.CompareAndSwapRequest_Missing{Missing: true}
@@ -261,7 +244,8 @@ func (c *Client) CompareAndSwap(ctx context.Context, key string, expect Expect, 
 	default:
 		req.Expect = &pb.CompareAndSwapRequest_ValueIs{ValueIs: expect.Value}
 	}
-	res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.CompareAndSwapResponse, error) {
+	res, err := write(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (*pb.CompareAndSwapResponse, error) {
+		req.Client, req.Seq = session, seq
 		return pb.NewKVClient(cc).CompareAndSwap(ctx, req, opts...)
 	})
 	if err != nil {

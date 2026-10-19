@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -219,6 +220,38 @@ func TestAClusterWritesReadsAndSurvivesItsLeader(t *testing.T) {
 			t.Fatalf("nodes did not converge: revisions %v", revs)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestAClientStartsANewSessionAfterTheClusterForgetsItsOldOne(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.MaxSessions = 1 })
+	c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	forgotten, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer forgotten.Close()
+	other, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if _, err := forgotten.Put(ctx, "k", []byte("first")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.Put(ctx, "k", []byte("other")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgotten.Put(ctx, "k", []byte("lost")); !errors.Is(err, client.ErrSessionExpired) {
+		t.Fatalf("a write on a forgotten session: %v", err)
+	}
+	if _, err := forgotten.Put(ctx, "k", []byte("again")); err != nil {
+		t.Fatalf("the write after the session expired: %v", err)
+	}
+	if kv, _, err := other.Get(ctx, "k", client.ReadIndex); err != nil || string(kv.Value) != "again" {
+		t.Fatalf("read %q %v", kv.Value, err)
 	}
 }
 
