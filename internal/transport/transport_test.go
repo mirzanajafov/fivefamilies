@@ -3,6 +3,7 @@ package transport
 import (
 	"io"
 	"log/slog"
+	"math"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -61,18 +62,22 @@ func TestAPeerStreamDropsWhatAPeerMayNotSendAndKeepsTheRest(t *testing.T) {
 		return m
 	}
 	bad := map[string]*pb.RaftMessage{
-		"a snapshot":                 message(raft.MsgSnap, 2, 1),
-		"the node's own vote":        message(raft.MsgVoteResp, 1, 1),
-		"an unknown sender":          message(raft.MsgApp, 7, 1),
-		"a message for another node": message(raft.MsgApp, 2, 3),
-		"a storage ack":              withType(uint32(raft.MsgStorageAck)),
-		"no type":                    withType(0),
-		"a type after the last":      withType(uint32(raft.MsgTimeoutNow) + 1),
-		"an append plus 256":         withType(uint32(raft.MsgApp) + 256),
-		"an unknown entry type":      appendOf(4, &pb.Entry{Term: 3, Index: 5, Type: uint32(raft.EntryConfig) + 1}),
-		"an entry type plus 256":     appendOf(4, &pb.Entry{Term: 3, Index: 5, Type: uint32(raft.EntryNormal) + 256}),
-		"an entry after a gap":       appendOf(4, &pb.Entry{Term: 3, Index: 5}, &pb.Entry{Term: 3, Index: 7}),
-		"an entry before the append": appendOf(4, &pb.Entry{Term: 3, Index: 2}),
+		"a snapshot":                   message(raft.MsgSnap, 2, 1),
+		"the node's own vote":          message(raft.MsgVoteResp, 1, 1),
+		"an unknown sender":            message(raft.MsgApp, 7, 1),
+		"a message for another node":   message(raft.MsgApp, 2, 3),
+		"a storage ack":                withType(uint32(raft.MsgStorageAck)),
+		"no type":                      withType(0),
+		"a type after the last":        withType(uint32(raft.MsgTimeoutNow) + 1),
+		"an append plus 256":           withType(uint32(raft.MsgApp) + 256),
+		"an unknown entry type":        appendOf(4, &pb.Entry{Term: 3, Index: 5, Type: uint32(raft.EntryConfig) + 1}),
+		"an entry type plus 256":       appendOf(4, &pb.Entry{Term: 3, Index: 5, Type: uint32(raft.EntryNormal) + 256}),
+		"an entry after a gap":         appendOf(4, &pb.Entry{Term: 3, Index: 5}, &pb.Entry{Term: 3, Index: 7}),
+		"an entry before the append":   appendOf(4, &pb.Entry{Term: 3, Index: 2}),
+		"an entry past the last index": appendOf(math.MaxUint64, &pb.Entry{Term: 3, Index: 0}),
+		"an entry from a later term":   appendOf(4, &pb.Entry{Term: 4, Index: 5}),
+		"terms going backwards":        appendOf(4, &pb.Entry{Term: 3, Index: 5}, &pb.Entry{Term: 2, Index: 6}),
+		"an entry of term zero":        appendOf(0, &pb.Entry{Term: 0, Index: 1}),
 	}
 	good := appendOf(4, &pb.Entry{Term: 3, Index: 5}, &pb.Entry{Term: 3, Index: 6, Type: uint32(raft.EntryConfig)})
 	for name, m := range bad {
@@ -92,8 +97,10 @@ func TestTheSnapshotStreamCarriesOnlyASnapshotFromAPeerToThisNode(t *testing.T) 
 	chunk := func(m *pb.RaftMessage, data string) *pb.SnapshotChunk {
 		return &pb.SnapshotChunk{Message: m, Data: []byte(data)}
 	}
+	appendWithSnapshot := message(raft.MsgApp, 2, 1)
+	appendWithSnapshot.Snapshot = &pb.SnapshotMeta{Index: 9, Term: 3}
 	bad := map[string]*pb.SnapshotChunk{
-		"an append":                   chunk(message(raft.MsgApp, 2, 1), "state"),
+		"an append":                   chunk(appendWithSnapshot, "state"),
 		"a snapshot from nobody":      chunk(message(raft.MsgSnap, 7, 1), "state"),
 		"a snapshot for another node": chunk(message(raft.MsgSnap, 2, 3), "state"),
 		"a snapshot without data":     chunk(message(raft.MsgSnap, 2, 1), ""),

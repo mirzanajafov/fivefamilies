@@ -232,7 +232,8 @@ func (t *Transport) Server() pb.PeerServer {
 }
 
 func (s server) Send(stream grpc.ClientStreamingServer[pb.Batch, pb.Ack]) error {
-	refused := false
+	refused := 0
+	var logged time.Time
 	for {
 		b, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -244,9 +245,10 @@ func (s server) Send(stream grpc.ClientStreamingServer[pb.Batch, pb.Ack]) error 
 		for _, pm := range b.GetMessages() {
 			m, err := s.t.admit(pm, false)
 			if err != nil {
-				if !refused {
-					s.t.log.Warn("dropping messages a peer may not send, logging only the first on this stream", "err", err)
-					refused = true
+				refused++
+				if time.Since(logged) >= time.Minute {
+					s.t.log.Warn("dropped messages a peer may not send", "from", pm.GetFrom(), "dropped", refused, "err", err)
+					logged, refused = time.Now(), 0
 				}
 				continue
 			}
@@ -267,8 +269,8 @@ func (s server) InstallSnapshot(stream grpc.ClientStreamingServer[pb.SnapshotChu
 			return err
 		}
 		if msg == nil {
-			if c.GetMessage() == nil || c.GetMessage().GetSnapshot() == nil {
-				return errors.New("transport: snapshot stream without a snapshot message")
+			if c.GetMessage().GetSnapshot() == nil {
+				return errors.New("transport: a snapshot stream that starts without a snapshot message")
 			}
 			m, err := s.t.admit(c.GetMessage(), true)
 			if err != nil {
@@ -278,8 +280,11 @@ func (s server) InstallSnapshot(stream grpc.ClientStreamingServer[pb.SnapshotChu
 		}
 		data = append(data, c.GetData()...)
 	}
-	if msg == nil || len(data) == 0 {
-		return errors.New("transport: a snapshot stream without a snapshot")
+	switch {
+	case msg == nil:
+		return errors.New("transport: an empty snapshot stream")
+	case len(data) == 0:
+		return fmt.Errorf("transport: snapshot %d from node %d has no data", msg.Snapshot.Index, msg.From)
 	}
 	msg.Snapshot.Data = data
 	s.t.receive(*msg)

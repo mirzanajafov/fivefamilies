@@ -51,14 +51,19 @@ func fromProto(m *pb.RaftMessage) (raft.Message, error) {
 	}
 	if n := len(m.GetEntries()); n > 0 {
 		out.Entries = make([]raft.Entry, n)
+		prevIndex, prevTerm := m.GetIndex(), max(m.GetLogTerm(), 1)
 		for i, e := range m.GetEntries() {
 			et := raft.EntryType(e.GetType())
 			if uint32(et) != e.GetType() || !et.Valid() {
 				return raft.Message{}, fmt.Errorf("transport: unknown entry type %d", e.GetType())
 			}
-			if want := m.GetIndex() + 1 + uint64(i); e.GetIndex() != want {
+			if e.GetIndex() != prevIndex+1 || e.GetIndex() == 0 {
 				return raft.Message{}, fmt.Errorf("transport: entry %d of an append after %d has index %d", i, m.GetIndex(), e.GetIndex())
 			}
+			if e.GetTerm() < prevTerm || e.GetTerm() > m.GetTerm() {
+				return raft.Message{}, fmt.Errorf("transport: entry %d has term %d, after term %d in an append of term %d", e.GetIndex(), e.GetTerm(), prevTerm, m.GetTerm())
+			}
+			prevIndex, prevTerm = e.GetIndex(), e.GetTerm()
 			out.Entries[i] = raft.Entry{Term: e.GetTerm(), Index: e.GetIndex(), Type: et, Data: e.GetData()}
 		}
 	}
