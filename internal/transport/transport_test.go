@@ -40,34 +40,71 @@ func newReceiver(t *testing.T) (*Transport, *[]raft.Message) {
 	return tr, &got
 }
 
+func message(typ raft.MessageType, from, to raft.NodeID) *pb.RaftMessage {
+	m := raft.Message{Type: typ, From: from, To: to, Term: 3}
+	if typ == raft.MsgSnap {
+		m.Snapshot = &raft.Snapshot{Index: 9, Term: 3}
+	}
+	return toProto(m)
+}
+
 func TestAPeerStreamDropsWhatAPeerMayNotSendAndKeepsTheRest(t *testing.T) {
 	tr, got := newReceiver(t)
-	heartbeat := toProto(raft.Message{Type: raft.MsgHeartbeat, From: 2, To: 1, Term: 3})
-	batch := &pb.Batch{Messages: []*pb.RaftMessage{
-		heartbeat,
-		toProto(raft.Message{Type: raft.MsgSnap, From: 2, To: 1, Term: 3, Snapshot: &raft.Snapshot{Index: 9, Term: 3}}),
-		toProto(raft.Message{Type: raft.MsgVoteResp, From: 1, To: 1, Term: 3}),
-		toProto(raft.Message{Type: raft.MsgApp, From: 7, To: 1, Term: 3}),
-		toProto(raft.Message{Type: raft.MsgApp, From: 2, To: 3, Term: 3}),
-		{Type: uint32(raft.MsgStorageAck), From: 2, To: 1, Index: 9},
-		heartbeat,
-	}}
-	if err := tr.Server().Send(&fakeStream[pb.Batch]{in: []*pb.Batch{batch}}); err != nil {
-		t.Fatal(err)
+	appendOf := func(index uint64, ents ...*pb.Entry) *pb.RaftMessage {
+		m := message(raft.MsgApp, 2, 1)
+		m.Index, m.Entries = index, ents
+		return m
 	}
-	if len(*got) != 2 || (*got)[0].Type != raft.MsgHeartbeat || (*got)[1].Type != raft.MsgHeartbeat {
-		t.Fatalf("delivered %v", *got)
+	withType := func(typ uint32) *pb.RaftMessage {
+		m := message(raft.MsgHeartbeat, 2, 1)
+		m.Type = typ
+		return m
+	}
+	bad := map[string]*pb.RaftMessage{
+		"a snapshot":                 message(raft.MsgSnap, 2, 1),
+		"the node's own vote":        message(raft.MsgVoteResp, 1, 1),
+		"an unknown sender":          message(raft.MsgApp, 7, 1),
+		"a message for another node": message(raft.MsgApp, 2, 3),
+		"a storage ack":              withType(uint32(raft.MsgStorageAck)),
+		"no type":                    withType(0),
+		"a type after the last":      withType(uint32(raft.MsgTimeoutNow) + 1),
+		"an append plus 256":         withType(uint32(raft.MsgApp) + 256),
+		"an unknown entry type":      appendOf(4, &pb.Entry{Term: 3, Index: 5, Type: uint32(raft.EntryConfig) + 1}),
+		"an entry type plus 256":     appendOf(4, &pb.Entry{Term: 3, Index: 5, Type: uint32(raft.EntryNormal) + 256}),
+		"an entry after a gap":       appendOf(4, &pb.Entry{Term: 3, Index: 5}, &pb.Entry{Term: 3, Index: 7}),
+		"an entry before the append": appendOf(4, &pb.Entry{Term: 3, Index: 2}),
+	}
+	good := appendOf(4, &pb.Entry{Term: 3, Index: 5}, &pb.Entry{Term: 3, Index: 6, Type: uint32(raft.EntryConfig)})
+	for name, m := range bad {
+		batch := &pb.Batch{Messages: []*pb.RaftMessage{good, m, good}}
+		*got = nil
+		if err := tr.Server().Send(&fakeStream[pb.Batch]{in: []*pb.Batch{batch}}); err != nil {
+			t.Fatal(err)
+		}
+		if len(*got) != 2 || (*got)[0].Type != raft.MsgApp || (*got)[1].Type != raft.MsgApp {
+			t.Errorf("a batch with %s delivered %v", name, *got)
+		}
 	}
 }
 
-func TestTheSnapshotStreamCarriesOnlySnapshots(t *testing.T) {
+func TestTheSnapshotStreamCarriesOnlyASnapshotFromAPeerToThisNode(t *testing.T) {
 	tr, got := newReceiver(t)
-	notSnap := &pb.SnapshotChunk{Message: toProto(raft.Message{Type: raft.MsgApp, From: 2, To: 1, Term: 3, Snapshot: &raft.Snapshot{Index: 9, Term: 3}})}
-	if err := tr.Server().InstallSnapshot(&fakeStream[pb.SnapshotChunk]{in: []*pb.SnapshotChunk{notSnap}}); err == nil {
-		t.Fatal("an append on the snapshot stream was accepted")
+	chunk := func(m *pb.RaftMessage, data string) *pb.SnapshotChunk {
+		return &pb.SnapshotChunk{Message: m, Data: []byte(data)}
 	}
-	snap := &pb.SnapshotChunk{Message: toProto(raft.Message{Type: raft.MsgSnap, From: 2, To: 1, Term: 3, Snapshot: &raft.Snapshot{Index: 9, Term: 3}}), Data: []byte("state")}
-	if err := tr.Server().InstallSnapshot(&fakeStream[pb.SnapshotChunk]{in: []*pb.SnapshotChunk{snap}}); err != nil {
+	bad := map[string]*pb.SnapshotChunk{
+		"an append":                   chunk(message(raft.MsgApp, 2, 1), "state"),
+		"a snapshot from nobody":      chunk(message(raft.MsgSnap, 7, 1), "state"),
+		"a snapshot for another node": chunk(message(raft.MsgSnap, 2, 3), "state"),
+		"a snapshot without data":     chunk(message(raft.MsgSnap, 2, 1), ""),
+	}
+	for name, c := range bad {
+		if err := tr.Server().InstallSnapshot(&fakeStream[pb.SnapshotChunk]{in: []*pb.SnapshotChunk{c}}); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	good := chunk(message(raft.MsgSnap, 2, 1), "state")
+	if err := tr.Server().InstallSnapshot(&fakeStream[pb.SnapshotChunk]{in: []*pb.SnapshotChunk{good}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(*got) != 1 || string((*got)[0].Snapshot.Data) != "state" {

@@ -59,36 +59,34 @@ const (
 	MsgTimeoutNow
 )
 
-var messageTypeNames = [...]string{
-	MsgApp:           "App",
-	MsgAppResp:       "AppResp",
-	MsgHeartbeat:     "Heartbeat",
-	MsgHeartbeatResp: "HeartbeatResp",
-	MsgPreVote:       "PreVote",
-	MsgPreVoteResp:   "PreVoteResp",
-	MsgVote:          "Vote",
-	MsgVoteResp:      "VoteResp",
-	MsgStorageAck:    "StorageAck",
-	MsgSnap:          "Snap",
-	MsgReadIndex:     "ReadIndex",
-	MsgReadIndexResp: "ReadIndexResp",
-	MsgTimeoutNow:    "TimeoutNow",
+var messageTypes = [...]struct {
+	name   string
+	remote bool
+}{
+	MsgApp:           {"App", true},
+	MsgAppResp:       {"AppResp", true},
+	MsgHeartbeat:     {"Heartbeat", true},
+	MsgHeartbeatResp: {"HeartbeatResp", true},
+	MsgPreVote:       {"PreVote", true},
+	MsgPreVoteResp:   {"PreVoteResp", true},
+	MsgVote:          {"Vote", true},
+	MsgVoteResp:      {"VoteResp", true},
+	MsgStorageAck:    {"StorageAck", false},
+	MsgSnap:          {"Snap", true},
+	MsgReadIndex:     {"ReadIndex", true},
+	MsgReadIndexResp: {"ReadIndexResp", true},
+	MsgTimeoutNow:    {"TimeoutNow", true},
 }
 
 func (t MessageType) String() string {
-	if int(t) < len(messageTypeNames) && messageTypeNames[t] != "" {
-		return messageTypeNames[t]
+	if int(t) < len(messageTypes) && messageTypes[t].name != "" {
+		return messageTypes[t].name
 	}
 	return fmt.Sprintf("MessageType(%d)", uint8(t))
 }
 
 func (t MessageType) Remote() bool {
-	switch t {
-	case MsgApp, MsgAppResp, MsgHeartbeat, MsgHeartbeatResp, MsgPreVote, MsgPreVoteResp, MsgVote, MsgVoteResp,
-		MsgSnap, MsgReadIndex, MsgReadIndexResp, MsgTimeoutNow:
-		return true
-	}
-	return false
+	return int(t) < len(messageTypes) && messageTypes[t].remote
 }
 
 type Message struct {

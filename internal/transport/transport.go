@@ -201,13 +201,15 @@ func (t *Transport) sleep(ctx context.Context, backoff *time.Duration) {
 	*backoff = min(2**backoff, time.Second)
 }
 
-func (t *Transport) admit(pm *pb.RaftMessage) (raft.Message, error) {
+func (t *Transport) admit(pm *pb.RaftMessage, snapshotStream bool) (raft.Message, error) {
 	m, err := fromProto(pm)
-	if err != nil {
-		return m, err
-	}
-	if _, ok := t.peers[m.From]; !ok || m.To != t.id {
-		return m, fmt.Errorf("transport: node %d got a message from %d to %d", t.id, m.From, m.To)
+	switch {
+	case err != nil:
+		return raft.Message{}, err
+	case t.peers[m.From] == nil || m.To != t.id:
+		return raft.Message{}, fmt.Errorf("transport: node %d got a message from %d to %d", t.id, m.From, m.To)
+	case (m.Type == raft.MsgSnap) != snapshotStream:
+		return raft.Message{}, fmt.Errorf("transport: a %s on the wrong stream", m.Type)
 	}
 	return m, nil
 }
@@ -230,6 +232,7 @@ func (t *Transport) Server() pb.PeerServer {
 }
 
 func (s server) Send(stream grpc.ClientStreamingServer[pb.Batch, pb.Ack]) error {
+	refused := false
 	for {
 		b, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -239,12 +242,12 @@ func (s server) Send(stream grpc.ClientStreamingServer[pb.Batch, pb.Ack]) error 
 			return err
 		}
 		for _, pm := range b.GetMessages() {
-			m, err := s.t.admit(pm)
-			if err == nil && m.Type == raft.MsgSnap {
-				err = errors.New("transport: a snapshot outside the snapshot stream")
-			}
+			m, err := s.t.admit(pm, false)
 			if err != nil {
-				s.t.log.Warn("dropped a message from a peer", "err", err)
+				if !refused {
+					s.t.log.Warn("dropping messages a peer may not send, logging only the first on this stream", "err", err)
+					refused = true
+				}
 				continue
 			}
 			s.t.receive(m)
@@ -267,19 +270,16 @@ func (s server) InstallSnapshot(stream grpc.ClientStreamingServer[pb.SnapshotChu
 			if c.GetMessage() == nil || c.GetMessage().GetSnapshot() == nil {
 				return errors.New("transport: snapshot stream without a snapshot message")
 			}
-			m, err := s.t.admit(c.GetMessage())
+			m, err := s.t.admit(c.GetMessage(), true)
 			if err != nil {
 				return err
-			}
-			if m.Type != raft.MsgSnap {
-				return fmt.Errorf("transport: the snapshot stream carried a %s", m.Type)
 			}
 			msg = &m
 		}
 		data = append(data, c.GetData()...)
 	}
-	if msg == nil {
-		return errors.New("transport: empty snapshot stream")
+	if msg == nil || len(data) == 0 {
+		return errors.New("transport: a snapshot stream without a snapshot")
 	}
 	msg.Snapshot.Data = data
 	s.t.receive(*msg)

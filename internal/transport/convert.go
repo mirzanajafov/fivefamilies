@@ -56,6 +56,9 @@ func fromProto(m *pb.RaftMessage) (raft.Message, error) {
 			if uint32(et) != e.GetType() || !et.Valid() {
 				return raft.Message{}, fmt.Errorf("transport: unknown entry type %d", e.GetType())
 			}
+			if want := m.GetIndex() + 1 + uint64(i); e.GetIndex() != want {
+				return raft.Message{}, fmt.Errorf("transport: entry %d of an append after %d has index %d", i, m.GetIndex(), e.GetIndex())
+			}
 			out.Entries[i] = raft.Entry{Term: e.GetTerm(), Index: e.GetIndex(), Type: et, Data: e.GetData()}
 		}
 	}
