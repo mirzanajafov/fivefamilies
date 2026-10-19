@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:38:19 +04
+Duration: 10.04s, Total samples = 2.38s (23.71%)
+Showing nodes accounting for 1.77s, 74.37% of 2.38s total
+Dropped 184 nodes (cum <= 0.01s)
+Showing top 40 nodes out of 211
+      flat  flat%   sum%        cum   cum%
+     1.08s 45.38% 45.38%      1.08s 45.38%  internal/runtime/syscall/linux.Syscall6
+     0.04s  1.68% 47.06%      0.04s  1.68%  runtime.nextFreeFast (inline)
+     0.03s  1.26% 48.32%      0.04s  1.68%  golang.org/x/net/http2/hpack.(*Decoder).parseFieldIndexed
+     0.03s  1.26% 49.58%      0.03s  1.26%  runtime.memclrNoHeapPointers
+     0.03s  1.26% 50.84%      0.03s  1.26%  runtime.memmove
+     0.03s  1.26% 52.10%      0.03s  1.26%  runtime.nanotime (inline)
+     0.03s  1.26% 53.36%      0.15s  6.30%  runtime.selectgo
+     0.03s  1.26% 54.62%      0.07s  2.94%  runtime.sellock
+     0.03s  1.26% 55.88%      0.04s  1.68%  runtime.step
+     0.02s  0.84% 56.72%      0.02s  0.84%  context.parentCancelCtx
+     0.02s  0.84% 57.56%      0.02s  0.84%  github.com/mirzanajafov/fivefamilies/internal/transport.fromProto
+     0.02s  0.84% 58.40%      0.11s  4.62%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+     0.02s  0.84% 59.24%      0.03s  1.26%  google.golang.org/grpc/internal/mem.(*SimpleBufferPool).Get
+     0.02s  0.84% 60.08%      0.08s  3.36%  google.golang.org/grpc/internal/transport.(*http2Server).operateHeaders
+     0.02s  0.84% 60.92%      0.27s 11.34%  internal/poll.(*FD).RawRead
+     0.02s  0.84% 61.76%      0.02s  0.84%  internal/runtime/atomic.(*Uint32).CompareAndSwap (inline)
+     0.02s  0.84% 62.61%      0.02s  0.84%  internal/sync.(*Mutex).Lock (inline)
+     0.02s  0.84% 63.45%      0.04s  1.68%  runtime.(*waitq).dequeue (inline)
+     0.02s  0.84% 64.29%      0.02s  0.84%  runtime.findfunc
+     0.02s  0.84% 65.13%      0.02s  0.84%  runtime.futex
+     0.02s  0.84% 65.97%      0.02s  0.84%  runtime.stkbucket
+     0.02s  0.84% 66.81%      0.03s  1.26%  runtime.tryDeferToSpanScan
+     0.01s  0.42% 67.23%      0.03s  1.26%  context.(*timerCtx).cancel
+     0.01s  0.42% 67.65%      0.02s  0.84%  github.com/mirzanajafov/fivefamilies/internal/raft.(*raftLog).append
+     0.01s  0.42% 68.07%      0.03s  1.26%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).call.func1
+     0.01s  0.42% 68.49%      0.15s  6.30%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+     0.01s  0.42% 68.91%      0.32s 13.45%  google.golang.org/grpc.(*Server).processRPC
+     0.01s  0.42% 69.33%      0.05s  2.10%  google.golang.org/grpc.(*clientStreamWrapper).SendMsg
+     0.01s  0.42% 69.75%      0.02s  0.84%  google.golang.org/grpc/internal/transport.(*http2Server).updateWindow
+     0.01s  0.42% 70.17%      0.06s  2.52%  google.golang.org/grpc/internal/transport.(*loopyWriter).handle
+     0.01s  0.42% 70.59%      0.03s  1.26%  google.golang.org/grpc/internal/transport.(*loopyWriter).processData
+     0.01s  0.42% 71.01%      0.24s 10.08%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+     0.01s  0.42% 71.43%      0.02s  0.84%  internal/poll.(*pollDesc).wait
+     0.01s  0.42% 71.85%      0.06s  2.52%  runtime.(*stkframe).getStackMap
+     0.01s  0.42% 72.27%      0.02s  0.84%  runtime.adjustframe
+     0.01s  0.42% 72.69%      0.04s  1.68%  runtime.exitsyscall
+     0.01s  0.42% 73.11%      0.02s  0.84%  runtime.funcMaxSPDelta
+     0.01s  0.42% 73.53%      0.12s  5.04%  runtime.mallocgcSmallScanNoHeader
+     0.01s  0.42% 73.95%      0.03s  1.26%  runtime.mallocgcTiny
+     0.01s  0.42% 74.37%      0.08s  3.36%  runtime.netpoll

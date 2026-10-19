@@ -1,0 +1,41 @@
+Type: delay
+Showing nodes accounting for 4935.84ms, 100% of 4936.14ms total
+Dropped 102 nodes (cum <= 24.68ms)
+      flat  flat%   sum%        cum   cum%
+ 4100.50ms 83.07% 83.07%  4100.50ms 83.07%  syscall.Fsync
+  644.85ms 13.06% 96.13%   644.85ms 13.06%  syscall.write
+  190.49ms  3.86%   100%   190.49ms  3.86%  syscall.read
+         0     0%   100%  4124.47ms 83.56%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+         0     0%   100%  4100.50ms 83.07%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).sync
+         0     0%   100%  4124.47ms 83.56%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0%   100%  4100.50ms 83.07%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).Sync
+         0     0%   100%   190.41ms  3.86%  golang.org/x/net/http2.(*Framer).ReadFrameHeader
+         0     0%   100%   190.41ms  3.86%  golang.org/x/net/http2.readFrameHeader
+         0     0%   100%   169.71ms  3.44%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0%   100%   169.71ms  3.44%  google.golang.org/grpc.(*Server).serveStreams
+         0     0%   100%   617.68ms 12.51%  google.golang.org/grpc/internal/transport.(*bufWriter).Flush
+         0     0%   100%   617.68ms 12.51%  google.golang.org/grpc/internal/transport.(*bufWriter).flushKeepBuffer
+         0     0%   100%   190.41ms  3.86%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+         0     0%   100%   169.71ms  3.44%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+         0     0%   100%   617.68ms 12.51%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+         0     0%   100%   381.52ms  7.73%  google.golang.org/grpc/internal/transport.NewHTTP2Client.func6
+         0     0%   100%   236.17ms  4.78%  google.golang.org/grpc/internal/transport.NewServerTransport.func3
+         0     0%   100%   190.41ms  3.86%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read
+         0     0%   100%   190.41ms  3.86%  google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady
+         0     0%   100%   190.41ms  3.86%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+         0     0%   100%   190.41ms  3.86%  google.golang.org/grpc/internal/transport/readyreader.sysRead
+         0     0%   100%  4100.50ms 83.07%  internal/poll.(*FD).Fsync
+         0     0%   100%  4100.50ms 83.07%  internal/poll.(*FD).Fsync.func1
+         0     0%   100%   190.41ms  3.86%  internal/poll.(*FD).RawRead
+         0     0%   100%   644.85ms 13.06%  internal/poll.(*FD).Write
+         0     0%   100%  4100.50ms 83.07%  internal/poll.ignoringEINTR
+         0     0%   100%   644.94ms 13.07%  internal/poll.ignoringEINTRIO
+         0     0%   100%   190.41ms  3.86%  io.ReadAtLeast
+         0     0%   100%   190.41ms  3.86%  io.ReadFull
+         0     0%   100%   620.88ms 12.58%  net.(*conn).Write
+         0     0%   100%   620.88ms 12.58%  net.(*netFD).Write
+         0     0%   100%   190.41ms  3.86%  net.(*rawConn).Read
+         0     0%   100%  4100.50ms 83.07%  os.(*File).Sync
+         0     0%   100%  4124.47ms 83.56%  sync.(*WaitGroup).Go.func1
+         0     0%   100%   190.49ms  3.86%  syscall.Read
+         0     0%   100%   644.85ms 13.06%  syscall.Write

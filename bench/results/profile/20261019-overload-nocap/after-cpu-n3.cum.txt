@@ -1,0 +1,48 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:40:58 +04
+Duration: 10s, Total samples = 1000ms (10.00%)
+Showing nodes accounting for 550ms, 55.00% of 1000ms total
+Showing top 40 nodes out of 243
+      flat  flat%   sum%        cum   cum%
+     500ms 50.00% 50.00%      500ms 50.00%  internal/runtime/syscall/linux.Syscall6
+         0     0% 50.00%      490ms 49.00%  syscall.Syscall
+      10ms  1.00% 51.00%      450ms 45.00%  syscall.RawSyscall6
+         0     0% 51.00%      280ms 28.00%  internal/poll.(*FD).Write
+         0     0% 51.00%      280ms 28.00%  internal/poll.ignoringEINTRIO (inline)
+         0     0% 51.00%      280ms 28.00%  syscall.Write (inline)
+         0     0% 51.00%      280ms 28.00%  syscall.write
+         0     0% 51.00%      250ms 25.00%  sync.(*WaitGroup).Go.func1
+         0     0% 51.00%      230ms 23.00%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+         0     0% 51.00%      210ms 21.00%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+      10ms  1.00% 52.00%      210ms 21.00%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0% 52.00%      210ms 21.00%  google.golang.org/grpc/internal/transport.(*bufWriter).Flush
+         0     0% 52.00%      210ms 21.00%  google.golang.org/grpc/internal/transport.(*bufWriter).flushKeepBuffer
+         0     0% 52.00%      210ms 21.00%  net.(*conn).Write
+         0     0% 52.00%      210ms 21.00%  net.(*netFD).Write
+         0     0% 52.00%      170ms 17.00%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0% 52.00%      170ms 17.00%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0% 52.00%      170ms 17.00%  google.golang.org/grpc/internal/transport.NewHTTP2Client.func6
+         0     0% 52.00%      170ms 17.00%  main.main
+         0     0% 52.00%      170ms 17.00%  runtime.main
+      10ms  1.00% 53.00%      140ms 14.00%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).sync
+         0     0% 53.00%      130ms 13.00%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).Sync (inline)
+         0     0% 53.00%      130ms 13.00%  internal/poll.(*FD).Fsync
+         0     0% 53.00%      130ms 13.00%  internal/poll.(*FD).Fsync.func1 (inline)
+         0     0% 53.00%      130ms 13.00%  internal/poll.ignoringEINTR (inline)
+         0     0% 53.00%      130ms 13.00%  os.(*File).Sync
+         0     0% 53.00%      130ms 13.00%  syscall.Fsync
+         0     0% 53.00%      120ms 12.00%  runtime.mcall
+      10ms  1.00% 54.00%      120ms 12.00%  runtime.park_m
+         0     0% 54.00%      110ms 11.00%  runtime.schedule
+         0     0% 54.00%      100ms 10.00%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0% 54.00%      100ms 10.00%  google.golang.org/grpc.(*Server).serveStreams
+         0     0% 54.00%      100ms 10.00%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+         0     0% 54.00%       90ms  9.00%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+         0     0% 54.00%       90ms  9.00%  golang.org/x/net/http2.(*Framer).ReadFrameHeader
+         0     0% 54.00%       90ms  9.00%  golang.org/x/net/http2.readFrameHeader
+         0     0% 54.00%       90ms  9.00%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+         0     0% 54.00%       90ms  9.00%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read
+         0     0% 54.00%       90ms  9.00%  google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady
+      10ms  1.00% 55.00%       90ms  9.00%  internal/poll.(*FD).RawRead

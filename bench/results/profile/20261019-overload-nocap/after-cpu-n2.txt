@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:40:58 +04
+Duration: 10.01s, Total samples = 2.94s (29.38%)
+Showing nodes accounting for 2.12s, 72.11% of 2.94s total
+Dropped 192 nodes (cum <= 0.01s)
+Showing top 40 nodes out of 263
+      flat  flat%   sum%        cum   cum%
+     1.18s 40.14% 40.14%      1.18s 40.14%  internal/runtime/syscall/linux.Syscall6
+     0.07s  2.38% 42.52%      0.07s  2.38%  runtime.memmove
+     0.06s  2.04% 44.56%      0.06s  2.04%  runtime.lock2
+     0.06s  2.04% 46.60%      0.06s  2.04%  runtime.memclrNoHeapPointers
+     0.05s  1.70% 48.30%      0.05s  1.70%  runtime.nextFreeFast (inline)
+     0.04s  1.36% 49.66%      0.04s  1.36%  runtime.(*mspan).writeHeapBitsSmall
+     0.04s  1.36% 51.02%      0.04s  1.36%  runtime.madvise
+     0.04s  1.36% 52.38%      0.28s  9.52%  runtime.selectgo
+     0.03s  1.02% 53.40%      0.08s  2.72%  google.golang.org/grpc/internal/transport.(*http2Server).operateHeaders
+     0.03s  1.02% 54.42%      0.06s  2.04%  runtime.(*unwinder).resolveInternal
+     0.03s  1.02% 55.44%      0.03s  1.02%  runtime.tryDeferToSpanScan
+     0.02s  0.68% 56.12%      0.02s  0.68%  aeshashbody
+     0.02s  0.68% 56.80%      0.02s  0.68%  cmpbody
+     0.02s  0.68% 57.48%      0.04s  1.36%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find.func1 (inline)
+     0.02s  0.68% 58.16%      0.19s  6.46%  google.golang.org/grpc.recvAndDecompress
+     0.02s  0.68% 58.84%      0.02s  0.68%  google.golang.org/grpc/internal/transport.(*ServerStream).SendCompress
+     0.02s  0.68% 59.52%      0.02s  0.68%  google.golang.org/grpc/internal/transport.(*http2Server).finishStream
+     0.02s  0.68% 60.20%      0.02s  0.68%  google.golang.org/grpc/internal/transport.(*itemList).enqueue
+     0.02s  0.68% 60.88%      0.22s  7.48%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+     0.02s  0.68% 61.56%      0.26s  8.84%  internal/poll.(*FD).RawRead
+     0.02s  0.68% 62.24%      0.02s  0.68%  internal/runtime/atomic.(*Uint32).Add (inline)
+     0.02s  0.68% 62.93%      0.02s  0.68%  runtime.adjustpointers
+     0.02s  0.68% 63.61%      0.02s  0.68%  runtime.cputicks
+     0.02s  0.68% 64.29%      0.02s  0.68%  runtime.futex
+     0.02s  0.68% 64.97%      0.06s  2.04%  runtime.makeslice
+     0.02s  0.68% 65.65%      0.19s  6.46%  runtime.mallocgcSmallScanNoHeader
+     0.02s  0.68% 66.33%      0.04s  1.36%  runtime.pcvalue
+     0.02s  0.68% 67.01%      0.02s  0.68%  runtime.pidlegetSpinning
+     0.02s  0.68% 67.69%      0.02s  0.68%  runtime.readvarint (inline)
+     0.02s  0.68% 68.37%      0.02s  0.68%  runtime.unlock2
+     0.02s  0.68% 69.05%      0.02s  0.68%  strings.LastIndex
+     0.01s  0.34% 69.39%      0.05s  1.70%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).get
+     0.01s  0.34% 69.73%      0.16s  5.44%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+     0.01s  0.34% 70.07%      0.03s  1.02%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).drain
+     0.01s  0.34% 70.41%      0.07s  2.38%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).publish
+     0.01s  0.34% 70.75%      0.08s  2.72%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).WriteBatch
+     0.01s  0.34% 71.09%      0.34s 11.56%  google.golang.org/grpc.recv
+     0.01s  0.34% 71.43%      0.02s  0.68%  google.golang.org/grpc/encoding/proto.messageV2Of (inline)
+     0.01s  0.34% 71.77%      0.08s  2.72%  google.golang.org/grpc/internal/transport.(*controlBuffer).executeAndPut
+     0.01s  0.34% 72.11%      0.03s  1.02%  google.golang.org/grpc/internal/transport.(*http2Server).writeHeaderLocked

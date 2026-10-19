@@ -1,0 +1,47 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: inuse_space
+Time: 2026-10-19 10:41:08 +04
+Showing nodes accounting for 9557.73kB, 100% of 9557.73kB total
+Showing top 40 nodes out of 42
+      flat  flat%   sum%        cum   cum%
+ 3072.42kB 32.15% 32.15%  3072.42kB 32.15%  google.golang.org/protobuf/internal/impl.consumeBytesNoZero
+ 2304.77kB 24.11% 56.26%  2304.77kB 24.11%  github.com/mirzanajafov/fivefamilies/internal/transport.New
+ 1248.53kB 13.06% 69.32%  1248.53kB 13.06%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Hub).Publish
+ 1235.57kB 12.93% 82.25%  1235.57kB 12.93%  github.com/mirzanajafov/fivefamilies/internal/wal.encodeEntry (inline)
+ 1184.27kB 12.39% 94.64%  1184.27kB 12.39%  runtime/pprof.StartCPUProfile
+  512.17kB  5.36%   100%   512.17kB  5.36%  google.golang.org/grpc/internal/transport.(*http2Server).operateHeaders
+         0     0%   100%  3072.42kB 32.15%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._Peer_Send_Handler
+         0     0%   100%  1248.53kB 13.06%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+         0     0%   100%  1248.53kB 13.06%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0%   100%  1235.57kB 12.93%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+         0     0%   100%  1248.53kB 13.06%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0%   100%  1235.57kB 12.93%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0%   100%  2304.77kB 24.11%  github.com/mirzanajafov/fivefamilies/internal/server.New
+         0     0%   100%  3072.42kB 32.15%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+         0     0%   100%  1235.57kB 12.93%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).WriteBatch
+         0     0%   100%  1235.57kB 12.93%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).WriteBatch.func3
+         0     0%   100%  1235.57kB 12.93%  github.com/mirzanajafov/fivefamilies/internal/wal.appendRecord
+         0     0%   100%  1248.53kB 13.06%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Machine).Apply
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/grpc.(*GenericServerStream[go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; Messages []*github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.RaftMessage "protobuf:\"bytes,1,rep,name=messages,proto3\" json:\"messages,omitempty\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 },go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 }]).Recv
+         0     0%   100%   512.17kB  5.36%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/grpc.(*Server).handleStream
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/grpc.(*Server).processRPC
+         0     0%   100%   512.17kB  5.36%  google.golang.org/grpc.(*Server).serveStreams
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/grpc.(*serverStream).RecvMsg
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/grpc.recv
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/grpc/encoding/proto.(*codecV2).Unmarshal
+         0     0%   100%   512.17kB  5.36%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshal
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshalPointer
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshalPointerEager
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/protobuf/internal/impl.consumeMessageSliceInfo
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/protobuf/proto.Unmarshal
+         0     0%   100%  3072.42kB 32.15%  google.golang.org/protobuf/proto.UnmarshalOptions.unmarshal
+         0     0%   100%  3553.30kB 37.18%  main.main
+         0     0%   100%  1184.27kB 12.39%  net/http.(*ServeMux).ServeHTTP
+         0     0%   100%  1184.27kB 12.39%  net/http.(*conn).serve
+         0     0%   100%  1184.27kB 12.39%  net/http.HandlerFunc.ServeHTTP
+         0     0%   100%  1184.27kB 12.39%  net/http.serverHandler.ServeHTTP
+         0     0%   100%  1184.27kB 12.39%  net/http/pprof.Profile

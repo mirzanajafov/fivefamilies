@@ -121,9 +121,9 @@ func TestTheGeneratedComposeFilesPinEveryNode(t *testing.T) {
 			t.Fatalf("missing %s in\n%s", want, y)
 		}
 	}
-	e := &EtcdCluster{Nodes: 3, NodeCPUs: []string{"4", "5", "6"}}
+	e := &EtcdCluster{Nodes: 3, NodeCPUs: []string{"4", "5", "6"}, Procs: 2}
 	y = e.compose()
-	for _, want := range []string{EtcdImage, `"--heartbeat-interval", "100"`, `"--election-timeout", "1000"`, `"e1=http://e1:2380,e2=http://e2:2380,e3=http://e3:2380"`, `cpuset: "5"`} {
+	for _, want := range []string{EtcdImage, `"--heartbeat-interval", "100"`, `"--election-timeout", "1000"`, `"e1=http://e1:2380,e2=http://e2:2380,e3=http://e3:2380"`, `cpuset: "5"`, `GOMAXPROCS=2`} {
 		if !strings.Contains(y, want) {
 			t.Fatalf("missing %s in\n%s", want, y)
 		}

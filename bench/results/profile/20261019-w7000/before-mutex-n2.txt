@@ -1,0 +1,26 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: delay
+Time: 2026-10-19 10:36:15 +04
+Showing nodes accounting for 47.27us, 100% of 47.27us total
+      flat  flat%   sum%        cum   cum%
+   47.27us   100%   100%    47.27us   100%  runtime.unlock (inline)
+         0     0%   100%    17.99us 38.07%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+         0     0%   100%    17.99us 38.07%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).sync
+         0     0%   100%    17.99us 38.07%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0%   100%    17.99us 38.07%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).Sync (inline)
+         0     0%   100%    17.99us 38.07%  internal/poll.(*FD).Fsync
+         0     0%   100%    17.99us 38.07%  internal/poll.(*FD).Fsync.func1 (inline)
+         0     0%   100%    17.99us 38.07%  internal/poll.ignoringEINTR (inline)
+         0     0%   100%    17.99us 38.07%  os.(*File).Sync
+         0     0%   100%    17.99us 38.07%  runtime.exitsyscall
+         0     0%   100%    17.99us 38.07%  runtime.exitsyscall.func3
+         0     0%   100%    17.99us 38.07%  runtime.exitsyscallTryGetP
+         0     0%   100%    29.27us 61.93%  runtime.findRunnable
+         0     0%   100%    29.27us 61.93%  runtime.goexit0
+         0     0%   100%    29.27us 61.93%  runtime.mcall
+         0     0%   100%    29.27us 61.93%  runtime.schedule
+         0     0%   100%    17.99us 38.07%  runtime.systemstack
+         0     0%   100%    17.99us 38.07%  sync.(*WaitGroup).Go.func1
+         0     0%   100%    17.99us 38.07%  syscall.Fsync
+         0     0%   100%    17.99us 38.07%  syscall.Syscall

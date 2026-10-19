@@ -26,6 +26,13 @@ import (
 
 var plantable string
 
+func goProcs(asked, picked int) int {
+	if asked > 0 {
+		return asked
+	}
+	return max(2, picked)
+}
+
 func serveProfiles(addr string, logger *slog.Logger) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -97,6 +104,7 @@ func main() {
 	chaos := flag.Bool("chaos", false, "accept chaos requests (stall-disk, pause, isolate, crash) on the admin API")
 	level := flag.String("log-level", "info", "debug, info, warn or error")
 	profile := flag.String("pprof", "", "serve Go profiles on this address (off by default; for the lab, never published in production)")
+	procs := flag.Int("gomaxprocs", 0, "Go processors (default: what the runtime picks, but at least 2)")
 	flag.Parse()
 
 	var lvl slog.Level
@@ -198,6 +206,7 @@ func main() {
 			logger.Error("serving", "err", err)
 		}
 	}()
+	runtime.GOMAXPROCS(goProcs(*procs, runtime.GOMAXPROCS(0)))
 	if *profile != "" {
 		runtime.SetMutexProfileFraction(10)
 		runtime.SetBlockProfileRate(int(100 * time.Microsecond))

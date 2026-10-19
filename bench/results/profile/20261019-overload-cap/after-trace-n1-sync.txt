@@ -1,0 +1,45 @@
+Type: delay
+Showing nodes accounting for 103.47s, 100% of 103.47s total
+Dropped 1 node (cum <= 0.52s)
+Showing top 40 nodes out of 45
+      flat  flat%   sum%        cum   cum%
+    94.54s 91.37% 91.37%     94.54s 91.37%  runtime.selectgo
+     8.92s  8.62%   100%      8.92s  8.62%  runtime.chanrecv1
+         0     0%   100%      4.40s  4.25%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._KV_Put_Handler
+         0     0%   100%     19.82s 19.15%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._Peer_Send_Handler
+         0     0%   100%      4.88s  4.71%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0%   100%      0.81s  0.78%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+         0     0%   100%      4.40s  4.25%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Submit
+         0     0%   100%      4.40s  4.25%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).admit
+         0     0%   100%      4.40s  4.25%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).call
+         0     0%   100%      4.88s  4.71%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0%   100%      0.81s  0.78%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0%   100%      4.40s  4.25%  github.com/mirzanajafov/fivefamilies/internal/server.(*kvService).Put
+         0     0%   100%      4.40s  4.25%  github.com/mirzanajafov/fivefamilies/internal/server.(*kvService).submit
+         0     0%   100%     18.74s 18.11%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Start.func1
+         0     0%   100%     18.74s 18.11%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+         0     0%   100%     18.74s 18.11%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).runPeer
+         0     0%   100%     19.82s 19.15%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+         0     0%   100%     19.82s 19.15%  google.golang.org/grpc.(*GenericServerStream[...]).Recv
+         0     0%   100%     24.22s 23.41%  google.golang.org/grpc.(*Server).handleStream
+         0     0%   100%     24.22s 23.41%  google.golang.org/grpc.(*Server).processRPC
+         0     0%   100%      4.40s  4.25%  google.golang.org/grpc.(*Server).register.(*Server).wrapUnaryHandler.func1
+         0     0%   100%     24.22s 23.41%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+         0     0%   100%     19.82s 19.15%  google.golang.org/grpc.(*parser).recvMsg
+         0     0%   100%     19.82s 19.15%  google.golang.org/grpc.(*serverStream).RecvMsg
+         0     0%   100%     19.82s 19.15%  google.golang.org/grpc.recv
+         0     0%   100%     19.82s 19.15%  google.golang.org/grpc.recvAndDecompress
+         0     0%   100%     19.82s 19.15%  google.golang.org/grpc/internal/transport.(*Stream).ReadMessageHeader
+         0     0%   100%     40.90s 39.53%  google.golang.org/grpc/internal/transport.(*controlBuffer).get
+         0     0%   100%     40.90s 39.53%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+         0     0%   100%     19.82s 19.15%  google.golang.org/grpc/internal/transport.(*recvBufferReader).ReadMessageHeader
+         0     0%   100%     19.82s 19.15%  google.golang.org/grpc/internal/transport.(*recvBufferReader).readMessageHeader
+         0     0%   100%     19.82s 19.15%  google.golang.org/grpc/internal/transport.(*transportReader).ReadMessageHeader
+         0     0%   100%     17.72s 17.13%  google.golang.org/grpc/internal/transport.NewHTTP2Client.func6
+         0     0%   100%     23.18s 22.40%  google.golang.org/grpc/internal/transport.NewServerTransport.func3
+         0     0%   100%      4.88s  4.71%  main.main
+         0     0%   100%         5s  4.83%  net/http.(*ServeMux).ServeHTTP
+         0     0%   100%         5s  4.83%  net/http.(*conn).serve
+         0     0%   100%         5s  4.83%  net/http.HandlerFunc.ServeHTTP
+         0     0%   100%         5s  4.83%  net/http.serverHandler.ServeHTTP
+         0     0%   100%         5s  4.83%  net/http/pprof.Trace

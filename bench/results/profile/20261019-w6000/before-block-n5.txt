@@ -1,0 +1,48 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: delay
+Time: 2026-10-19 10:35:21 +04
+Showing nodes accounting for 2294.22s, 99.47% of 2306.48s total
+Dropped 70 nodes (cum <= 11.53s)
+Showing top 40 nodes out of 44
+      flat  flat%   sum%        cum   cum%
+  2294.22s 99.47% 99.47%   2294.22s 99.47%  runtime.selectgo
+         0     0% 99.47%   1816.13s 78.74%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._KV_Put_Handler
+         0     0% 99.47%    102.96s  4.46%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._Peer_Send_Handler
+         0     0% 99.47%     24.34s  1.06%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0% 99.47%   1815.75s 78.72%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Submit
+         0     0% 99.47%   1815.75s 78.72%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).admit (inline)
+         0     0% 99.47%   1815.75s 78.72%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).call
+         0     0% 99.47%     24.34s  1.06%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0% 99.47%   1815.75s 78.72%  github.com/mirzanajafov/fivefamilies/internal/server.(*kvService).Put
+         0     0% 99.47%   1815.75s 78.72%  github.com/mirzanajafov/fivefamilies/internal/server.(*kvService).submit
+         0     0% 99.47%     69.93s  3.03%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Start.func1
+         0     0% 99.47%     66.35s  2.88%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+         0     0% 99.47%     69.93s  3.03%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).runPeer
+         0     0% 99.47%    102.96s  4.46%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+         0     0% 99.47%    102.96s  4.46%  google.golang.org/grpc.(*GenericServerStream[github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.Batch,github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.Ack]).Recv
+         0     0% 99.47%    102.96s  4.46%  google.golang.org/grpc.(*GenericServerStream[go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; Messages []*github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.RaftMessage "protobuf:\"bytes,1,rep,name=messages,proto3\" json:\"messages,omitempty\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 },go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 }]).Recv
+         0     0% 99.47%   1919.09s 83.20%  google.golang.org/grpc.(*Server).handleStream
+         0     0% 99.47%   1919.09s 83.20%  google.golang.org/grpc.(*Server).processRPC
+         0     0% 99.47%   1816.13s 78.74%  google.golang.org/grpc.(*Server).register.(*Server).wrapUnaryHandler.func1
+         0     0% 99.47%   1919.09s 83.20%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+         0     0% 99.47%    103.34s  4.48%  google.golang.org/grpc.(*parser).recvMsg
+         0     0% 99.47%    103.34s  4.48%  google.golang.org/grpc.(*serverStream).RecvMsg
+         0     0% 99.47%    103.34s  4.48%  google.golang.org/grpc.recv
+         0     0% 99.47%    103.34s  4.48%  google.golang.org/grpc.recvAndDecompress
+         0     0% 99.47%    103.34s  4.48%  google.golang.org/grpc/internal/transport.(*Stream).ReadMessageHeader
+         0     0% 99.47%    166.13s  7.20%  google.golang.org/grpc/internal/transport.(*controlBuffer).get
+         0     0% 99.47%        80s  3.47%  google.golang.org/grpc/internal/transport.(*http2Client).keepalive
+         0     0% 99.47%    166.13s  7.20%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+         0     0% 99.47%    103.34s  4.48%  google.golang.org/grpc/internal/transport.(*recvBufferReader).ReadMessageHeader
+         0     0% 99.47%    103.34s  4.48%  google.golang.org/grpc/internal/transport.(*recvBufferReader).readMessageHeader
+         0     0% 99.47%    103.34s  4.48%  google.golang.org/grpc/internal/transport.(*transportReader).ReadMessageHeader
+         0     0% 99.47%     69.56s  3.02%  google.golang.org/grpc/internal/transport.NewHTTP2Client.func6
+         0     0% 99.47%        80s  3.47%  google.golang.org/grpc/internal/transport.NewHTTP2Client.gowrap3
+         0     0% 99.47%     96.58s  4.19%  google.golang.org/grpc/internal/transport.NewServerTransport.func3
+         0     0% 99.47%     24.34s  1.06%  main.main
+         0     0% 99.47%     25.01s  1.08%  net/http.(*ServeMux).ServeHTTP
+         0     0% 99.47%     25.01s  1.08%  net/http.(*Server).Serve.gowrap3
+         0     0% 99.47%     25.01s  1.08%  net/http.(*conn).serve
+         0     0% 99.47%     25.01s  1.08%  net/http.HandlerFunc.ServeHTTP
+         0     0% 99.47%     25.01s  1.08%  net/http.serverHandler.ServeHTTP

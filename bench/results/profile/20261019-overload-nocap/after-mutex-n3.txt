@@ -1,0 +1,6 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: delay
+Time: 2026-10-19 10:41:08 +04
+Showing nodes accounting for 0, 0% of 0 total
+      flat  flat%   sum%        cum   cum%

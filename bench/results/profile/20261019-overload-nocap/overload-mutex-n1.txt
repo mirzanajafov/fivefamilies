@@ -1,0 +1,29 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: delay
+Time: 2026-10-19 10:40:33 +04
+Showing nodes accounting for 308.23us, 100% of 308.23us total
+      flat  flat%   sum%        cum   cum%
+  308.23us   100%   100%   308.23us   100%  runtime.unlock (inline)
+         0     0%   100%   308.23us   100%  golang.org/x/net/http2.(*Framer).ReadFrameHeader
+         0     0%   100%   308.23us   100%  golang.org/x/net/http2.readFrameHeader
+         0     0%   100%    18.59us  6.03%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0%   100%    18.59us  6.03%  google.golang.org/grpc.(*Server).serveStreams
+         0     0%   100%   308.23us   100%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+         0     0%   100%   289.64us 93.97%  google.golang.org/grpc/internal/transport.(*http2Client).reader
+         0     0%   100%    18.59us  6.03%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+         0     0%   100%   308.23us   100%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read
+         0     0%   100%   308.23us   100%  google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady
+         0     0%   100%   308.23us   100%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+         0     0%   100%   308.23us   100%  google.golang.org/grpc/internal/transport/readyreader.sysRead (inline)
+         0     0%   100%   308.23us   100%  internal/poll.(*FD).RawRead
+         0     0%   100%   308.23us   100%  io.ReadAtLeast
+         0     0%   100%   308.23us   100%  io.ReadFull (inline)
+         0     0%   100%   308.23us   100%  net.(*rawConn).Read
+         0     0%   100%   308.23us   100%  runtime.entersyscall
+         0     0%   100%   308.23us   100%  runtime.entersyscallWakeSysmon
+         0     0%   100%   308.23us   100%  runtime.reentersyscall
+         0     0%   100%   308.23us   100%  runtime.systemstack
+         0     0%   100%   308.23us   100%  syscall.Read (inline)
+         0     0%   100%   308.23us   100%  syscall.Syscall
+         0     0%   100%   308.23us   100%  syscall.read

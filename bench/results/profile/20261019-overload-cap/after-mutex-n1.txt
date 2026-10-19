@@ -1,0 +1,47 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: delay
+Time: 2026-10-19 10:39:04 +04
+Showing nodes accounting for 900.30us, 100% of 900.30us total
+Showing top 40 nodes out of 53
+      flat  flat%   sum%        cum   cum%
+  900.30us   100%   100%   900.30us   100%  runtime.unlock (inline)
+         0     0%   100%   810.90us 90.07%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Start.func1
+         0     0%   100%   810.90us 90.07%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+         0     0%   100%   810.90us 90.07%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).runPeer
+         0     0%   100%    29.64us  3.29%  golang.org/x/net/http2.(*Framer).ReadFrameHeader
+         0     0%   100%    29.64us  3.29%  golang.org/x/net/http2.readFrameHeader
+         0     0%   100%   810.90us 90.07%  google.golang.org/grpc.(*GenericClientStream[go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; Messages []*github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.RaftMessage "protobuf:\"bytes,1,rep,name=messages,proto3\" json:\"messages,omitempty\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 },go.shape.struct { github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.state google.golang.org/protobuf/internal/impl.MessageState "protogen:\"open.v1\""; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.unknownFields []uint8; github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.sizeCache int32 }]).Send
+         0     0%   100%    29.64us  3.29%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0%   100%    29.64us  3.29%  google.golang.org/grpc.(*Server).serveStreams
+         0     0%   100%   810.90us 90.07%  google.golang.org/grpc.(*clientStream).SendMsg
+         0     0%   100%   810.90us 90.07%  google.golang.org/grpc.(*clientStream).SendMsg.func3
+         0     0%   100%   810.90us 90.07%  google.golang.org/grpc.(*clientStream).withRetry
+         0     0%   100%   810.90us 90.07%  google.golang.org/grpc.(*clientStreamWrapper).SendMsg
+         0     0%   100%   810.90us 90.07%  google.golang.org/grpc.(*csAttempt).sendMsg
+         0     0%   100%   810.90us 90.07%  google.golang.org/grpc/internal/transport.(*ClientStream).Write (inline)
+         0     0%   100%   810.90us 90.07%  google.golang.org/grpc/internal/transport.(*controlBuffer).executeAndPut
+         0     0%   100%   810.90us 90.07%  google.golang.org/grpc/internal/transport.(*controlBuffer).put (inline)
+         0     0%   100%    29.64us  3.29%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+         0     0%   100%   810.90us 90.07%  google.golang.org/grpc/internal/transport.(*http2Client).write
+         0     0%   100%    29.64us  3.29%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+         0     0%   100%    29.64us  3.29%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read
+         0     0%   100%    29.64us  3.29%  google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady
+         0     0%   100%    29.64us  3.29%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+         0     0%   100%    29.64us  3.29%  google.golang.org/grpc/internal/transport/readyreader.sysRead (inline)
+         0     0%   100%    29.64us  3.29%  internal/poll.(*FD).RawRead
+         0     0%   100%    29.64us  3.29%  io.ReadAtLeast
+         0     0%   100%    29.64us  3.29%  io.ReadFull (inline)
+         0     0%   100%    29.64us  3.29%  net.(*rawConn).Read
+         0     0%   100%    15.24us  1.69%  runtime.(*scavengerState).wake
+         0     0%   100%   810.90us 90.07%  runtime.chansend
+         0     0%   100%    29.64us  3.29%  runtime.entersyscall
+         0     0%   100%    29.64us  3.29%  runtime.entersyscallWakeSysmon
+         0     0%   100%   810.90us 90.07%  runtime.goready (inline)
+         0     0%   100%    44.52us  4.94%  runtime.goschedImpl
+         0     0%   100%    44.52us  4.94%  runtime.gosched_m
+         0     0%   100%    15.24us  1.69%  runtime.injectglist
+         0     0%   100%    15.24us  1.69%  runtime.injectglist.func1
+         0     0%   100%    44.52us  4.94%  runtime.mcall
+         0     0%   100%    15.24us  1.69%  runtime.mstart
+         0     0%   100%    15.24us  1.69%  runtime.mstart0

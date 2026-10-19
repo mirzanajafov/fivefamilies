@@ -1,0 +1,48 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:35:55 +04
+Duration: 20s, Total samples = 1.32s ( 6.60%)
+Showing nodes accounting for 0.53s, 40.15% of 1.32s total
+Showing top 40 nodes out of 298
+      flat  flat%   sum%        cum   cum%
+     0.49s 37.12% 37.12%      0.49s 37.12%  internal/runtime/syscall/linux.Syscall6
+         0     0% 37.12%      0.45s 34.09%  syscall.Syscall
+         0     0% 37.12%      0.44s 33.33%  syscall.RawSyscall6
+         0     0% 37.12%      0.36s 27.27%  sync.(*WaitGroup).Go.func1
+         0     0% 37.12%      0.26s 19.70%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+     0.01s  0.76% 37.88%      0.26s 19.70%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0% 37.88%      0.23s 17.42%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0% 37.88%      0.23s 17.42%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0% 37.88%      0.23s 17.42%  main.main
+         0     0% 37.88%      0.23s 17.42%  runtime.main
+         0     0% 37.88%      0.20s 15.15%  internal/poll.(*FD).Write
+         0     0% 37.88%      0.20s 15.15%  internal/poll.ignoringEINTRIO (inline)
+         0     0% 37.88%      0.20s 15.15%  syscall.Write (inline)
+     0.01s  0.76% 38.64%      0.20s 15.15%  syscall.write
+         0     0% 38.64%      0.18s 13.64%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+         0     0% 38.64%      0.18s 13.64%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+         0     0% 38.64%      0.16s 12.12%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).sync
+         0     0% 38.64%      0.16s 12.12%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).Sync (inline)
+         0     0% 38.64%      0.16s 12.12%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0% 38.64%      0.16s 12.12%  google.golang.org/grpc.(*Server).serveStreams
+         0     0% 38.64%      0.16s 12.12%  google.golang.org/grpc/internal/transport.(*bufWriter).Flush
+         0     0% 38.64%      0.16s 12.12%  google.golang.org/grpc/internal/transport.(*bufWriter).flushKeepBuffer
+         0     0% 38.64%      0.16s 12.12%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+         0     0% 38.64%      0.16s 12.12%  internal/poll.(*FD).Fsync
+         0     0% 38.64%      0.16s 12.12%  internal/poll.(*FD).Fsync.func1 (inline)
+         0     0% 38.64%      0.16s 12.12%  internal/poll.ignoringEINTR (inline)
+         0     0% 38.64%      0.16s 12.12%  net.(*conn).Write
+     0.01s  0.76% 39.39%      0.16s 12.12%  net.(*netFD).Write
+         0     0% 39.39%      0.16s 12.12%  os.(*File).Sync
+         0     0% 39.39%      0.16s 12.12%  syscall.Fsync
+         0     0% 39.39%      0.15s 11.36%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._Peer_Send_Handler
+         0     0% 39.39%      0.15s 11.36%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+         0     0% 39.39%      0.15s 11.36%  google.golang.org/grpc.(*Server).handleStream
+         0     0% 39.39%      0.15s 11.36%  google.golang.org/grpc.(*Server).processRPC
+         0     0% 39.39%      0.15s 11.36%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+         0     0% 39.39%      0.14s 10.61%  runtime.mcall
+     0.01s  0.76% 40.15%      0.13s  9.85%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Apply
+         0     0% 40.15%      0.13s  9.85%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Machine).Apply
+         0     0% 40.15%      0.13s  9.85%  golang.org/x/net/http2.(*Framer).ReadFrameHeader
+         0     0% 40.15%      0.13s  9.85%  golang.org/x/net/http2.readFrameHeader

@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:36:48 +04
+Duration: 20s, Total samples = 5.48s (27.40%)
+Showing nodes accounting for 1.68s, 30.66% of 5.48s total
+Dropped 243 nodes (cum <= 0.03s)
+Showing top 40 nodes out of 316
+      flat  flat%   sum%        cum   cum%
+     0.01s  0.18%  0.18%      1.52s 27.74%  syscall.Syscall
+     0.02s  0.36%  0.55%      1.45s 26.46%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+     1.45s 26.46% 27.01%      1.45s 26.46%  internal/runtime/syscall/linux.Syscall6
+     0.01s  0.18% 27.19%      1.44s 26.28%  syscall.RawSyscall6
+         0     0% 27.19%      1.43s 26.09%  google.golang.org/grpc.(*Server).handleStream
+         0     0% 27.19%      1.37s 25.00%  google.golang.org/grpc.(*Server).processRPC
+         0     0% 27.19%      1.09s 19.89%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+         0     0% 27.19%      1.02s 18.61%  google.golang.org/grpc.(*Server).register.(*Server).wrapUnaryHandler.func1
+         0     0% 27.19%      1.01s 18.43%  internal/poll.(*FD).Write
+         0     0% 27.19%         1s 18.25%  internal/poll.ignoringEINTRIO (inline)
+         0     0% 27.19%         1s 18.25%  syscall.Write (inline)
+         0     0% 27.19%         1s 18.25%  syscall.write
+         0     0% 27.19%      0.91s 16.61%  net.(*conn).Write
+         0     0% 27.19%      0.91s 16.61%  net.(*netFD).Write
+         0     0% 27.19%      0.90s 16.42%  google.golang.org/grpc/internal/transport.(*bufWriter).Flush
+         0     0% 27.19%      0.89s 16.24%  google.golang.org/grpc/internal/transport.(*bufWriter).flushKeepBuffer
+     0.11s  2.01% 29.20%      0.89s 16.24%  runtime.selectgo
+         0     0% 29.20%      0.88s 16.06%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0% 29.20%      0.88s 16.06%  google.golang.org/grpc.(*Server).serveStreams
+     0.01s  0.18% 29.38%      0.88s 16.06%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+     0.01s  0.18% 29.56%      0.86s 15.69%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._KV_Put_Handler
+         0     0% 29.56%      0.86s 15.69%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0% 29.56%      0.86s 15.69%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0% 29.56%      0.86s 15.69%  main.main
+         0     0% 29.56%      0.86s 15.69%  runtime.main
+         0     0% 29.56%      0.74s 13.50%  google.golang.org/grpc.(*serverStream).RecvMsg
+     0.02s  0.36% 29.93%      0.74s 13.50%  google.golang.org/grpc.recv
+     0.01s  0.18% 30.11%      0.71s 12.96%  runtime.mallocgc
+         0     0% 30.11%      0.68s 12.41%  sync.(*WaitGroup).Go.func1
+         0     0% 30.11%      0.64s 11.68%  google.golang.org/grpc.(*Server).register.(*Server).wrapUnaryHandler.func1.1
+         0     0% 30.11%      0.62s 11.31%  google.golang.org/grpc/internal/transport.NewHTTP2Client.func6
+     0.01s  0.18% 30.29%      0.60s 10.95%  google.golang.org/grpc.recvAndDecompress
+         0     0% 30.29%      0.59s 10.77%  google.golang.org/grpc.(*parser).recvMsg
+         0     0% 30.29%      0.56s 10.22%  google.golang.org/grpc/internal/transport.(*Stream).ReadMessageHeader
+         0     0% 30.29%      0.53s  9.67%  google.golang.org/grpc/internal/transport.(*transportReader).ReadMessageHeader
+         0     0% 30.29%      0.52s  9.49%  google.golang.org/grpc/internal/transport.(*recvBufferReader).ReadMessageHeader
+     0.01s  0.18% 30.47%      0.52s  9.49%  google.golang.org/grpc/internal/transport.(*recvBufferReader).readMessageHeader
+     0.01s  0.18% 30.66%      0.52s  9.49%  runtime.sellock
+         0     0% 30.66%      0.47s  8.58%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+         0     0% 30.66%      0.47s  8.58%  google.golang.org/grpc/internal/transport.NewServerTransport.func3
