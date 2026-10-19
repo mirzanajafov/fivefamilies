@@ -79,41 +79,37 @@ func TestARestartThatFailsIsReportedAsAFailure(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the failed restart was not reported")
 	}
-	if st := s.State(); st.Running {
-		t.Fatalf("state after the failed restart: %+v", st)
-	}
+	eventually(t, "the node stays down", func() bool { st := s.State(); return !st.Running && st.Killed })
 }
 
 func TestALateTimerDoesNotEndTheFaultThatReplacedIt(t *testing.T) {
 	s := child(t, "sleep")
-	for {
+	held := false
+	for range 20 {
 		if err := s.Kill(50 * time.Millisecond); err != nil {
 			t.Fatal(err)
 		}
 		s.mu.Lock()
-		if s.timer != nil {
+		if held = s.timer != nil; held {
 			break
 		}
 		s.mu.Unlock()
 		eventually(t, "the node restarts", func() bool { return s.State().Running })
 	}
-	starts := s.state.Starts
-	ended := false
-	time.Sleep(200 * time.Millisecond)
+	if !held {
+		t.Fatal("never took the lock before the kill's timer")
+	}
+	time.Sleep(500 * time.Millisecond)
 	err := s.endFaultLocked()
-	s.endAfterLocked(time.Minute, func() error {
-		ended = true
-		return nil
-	})
+	s.endAfterLocked(time.Minute)
+	starts := s.state.Starts
 	s.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(200 * time.Millisecond)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if ended || s.state.Starts != starts+1 {
-		t.Fatalf("the kill's late timer ended the next fault (%v) or started the node again (%d starts after %d)", ended, s.state.Starts, starts)
+	if st := s.State(); st.Until.IsZero() || st.Starts != starts {
+		t.Fatalf("the kill's late timer ended the fault that replaced it: %+v", st)
 	}
 }
 
