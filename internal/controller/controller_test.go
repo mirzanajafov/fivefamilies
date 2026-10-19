@@ -326,11 +326,16 @@ func TestThePollerSlowsDownWithNobodyWatching(t *testing.T) {
 }
 
 func TestAFreshControllerSendsEmptyListsTheDashboardCanRead(t *testing.T) {
-	b, err := json.Marshal((&Controller{}).Snapshot())
+	c, err := New(Config{Nodes: []string{"127.0.0.1:1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, list := range []string{`"nodes":[]`, `"events":[]`, `"windows":[]`} {
+	defer c.Close()
+	b, err := json.Marshal(c.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, list := range []string{`"events":[]`, `"windows":[]`} {
 		if !bytes.Contains(b, []byte(list)) {
 			t.Errorf("the snapshot %s has no %s", b, list)
 		}

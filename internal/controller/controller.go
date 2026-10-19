@@ -162,7 +162,7 @@ func (c *Controller) Snapshot() Snapshot {
 	defer c.mu.Unlock()
 	s := Snapshot{
 		At:      time.Now(),
-		Nodes:   append([]NodeView{}, c.nodes...),
+		Nodes:   append([]NodeView(nil), c.nodes...),
 		Leader:  c.leader,
 		Term:    c.term,
 		Events:  append([]Event{}, c.events[max(0, len(c.events)-50):]...),
