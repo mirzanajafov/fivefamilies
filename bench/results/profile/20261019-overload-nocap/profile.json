@@ -1,0 +1,431 @@
+{
+  "nodes": 5,
+  "node_flags": [
+    "-election",
+    "1s",
+    "-heartbeat",
+    "100ms",
+    "-max-pending",
+    "0"
+  ],
+  "generator_flags": [
+    "-reads",
+    "0",
+    "-value-bytes",
+    "128"
+  ],
+  "phases": [
+    {
+      "name": "before",
+      "rate": 4000,
+      "leader": 1,
+      "follower": 2,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 4000,
+            "Duration": 14000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 4000,
+          "achieved_per_s": 4000,
+          "window_ns": 14000000000,
+          "reads": {
+            "n": 0,
+            "p50_ns": 0,
+            "p90_ns": 0,
+            "p99_ns": 0,
+            "p999_ns": 0,
+            "max_ns": 0,
+            "mean_ns": 0,
+            "errors": 0
+          },
+          "writes": {
+            "n": 56000,
+            "p50_ns": 39329912,
+            "p90_ns": 64831601,
+            "p99_ns": 80666615,
+            "p999_ns": 98744933,
+            "max_ns": 107424341,
+            "mean_ns": 37438216,
+            "errors": 0
+          },
+          "all": {
+            "n": 56000,
+            "p50_ns": 39329912,
+            "p90_ns": 64831601,
+            "p99_ns": 80666615,
+            "p999_ns": 98744933,
+            "max_ns": 107424341,
+            "mean_ns": 37438216,
+            "errors": 0
+          },
+          "dropped": 0,
+          "lag": {
+            "n": 56000,
+            "p50_ns": 146804,
+            "p90_ns": 293006,
+            "p99_ns": 761305,
+            "p999_ns": 2918517,
+            "max_ns": 5785765,
+            "mean_ns": 186397,
+            "errors": 0
+          },
+          "errors": {},
+          "valid": true,
+          "timed_out": 0,
+          "scheduled": 56000
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 1524,
+            "Batches": 57380,
+            "Entries": 56017,
+            "Sent": 230480,
+            "Writes": 55997,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1292,
+            "Batches": 15790,
+            "Entries": 56017,
+            "Sent": 57632,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1301,
+            "Batches": 15825,
+            "Entries": 56017,
+            "Sent": 57776,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1324,
+            "Batches": 16063,
+            "Entries": 56017,
+            "Sent": 57636,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1332,
+            "Batches": 16249,
+            "Entries": 55952,
+            "Sent": 57519,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.12094642857142857,
+        "msgs_per_op": 8.232910714285714,
+        "entries_per_fsync": 41.34357005758157,
+        "elections": 0
+      },
+      "files": [
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-block-n1.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-block-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-cpu-n1.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-cpu-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-goroutine-n1.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-heap-n1.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-heap-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-mutex-n1.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-mutex-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-trace-n1.trace",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\before-trace-n2.trace"
+      ]
+    },
+    {
+      "name": "overload",
+      "rate": 10000,
+      "leader": 1,
+      "follower": 2,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 10000,
+            "Duration": 19000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 10000,
+          "achieved_per_s": 1192.842105263158,
+          "window_ns": 19000000000,
+          "reads": {
+            "n": 0,
+            "p50_ns": 0,
+            "p90_ns": 0,
+            "p99_ns": 0,
+            "p999_ns": 0,
+            "max_ns": 0,
+            "mean_ns": 0,
+            "errors": 0
+          },
+          "writes": {
+            "n": 22664,
+            "p50_ns": 672896749,
+            "p90_ns": 1940141190,
+            "p99_ns": 1995457529,
+            "p999_ns": 2000119701,
+            "max_ns": 2006878592,
+            "mean_ns": 861208925,
+            "errors": 90337
+          },
+          "all": {
+            "n": 22664,
+            "p50_ns": 672896749,
+            "p90_ns": 1940141190,
+            "p99_ns": 1995457529,
+            "p999_ns": 2000119701,
+            "max_ns": 2006878592,
+            "mean_ns": 861208925,
+            "errors": 90337
+          },
+          "dropped": 76999,
+          "lag": {
+            "n": 113001,
+            "p50_ns": 122646,
+            "p90_ns": 215120,
+            "p99_ns": 2158173,
+            "p999_ns": 9424848,
+            "max_ns": 16979432,
+            "mean_ns": 199161,
+            "errors": 0
+          },
+          "errors": {
+            "DeadlineExceeded": 56370,
+            "Unavailable": 33967
+          },
+          "valid": false,
+          "invalid": "76999 requests dropped at the in-flight limit",
+          "timed_out": 0,
+          "scheduled": 190000
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 1012,
+            "Batches": 13604,
+            "Entries": 58381,
+            "Sent": 32231,
+            "Writes": 39287,
+            "Reads": 0,
+            "Elections": 3
+          },
+          {
+            "Fsyncs": 2149,
+            "Batches": 20631,
+            "Entries": 60760,
+            "Sent": 51426,
+            "Writes": 38755,
+            "Reads": 0,
+            "Elections": 3
+          },
+          {
+            "Fsyncs": 267,
+            "Batches": 824,
+            "Entries": 60760,
+            "Sent": 20487,
+            "Writes": 225,
+            "Reads": 0,
+            "Elections": 3
+          },
+          {
+            "Fsyncs": 236,
+            "Batches": 831,
+            "Entries": 59896,
+            "Sent": 18880,
+            "Writes": 20,
+            "Reads": 0,
+            "Elections": 3
+          },
+          {
+            "Fsyncs": 666,
+            "Batches": 6065,
+            "Entries": 60944,
+            "Sent": 29343,
+            "Writes": 18214,
+            "Reads": 0,
+            "Elections": 3
+          }
+        ],
+        "fsyncs_per_op": 0.1910518884574656,
+        "msgs_per_op": 6.722864454641723,
+        "entries_per_fsync": 69.45519630484988,
+        "elections": 3
+      },
+      "files": [
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-block-n1.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-block-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-cpu-n1.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-cpu-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-goroutine-n1.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-heap-n1.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-heap-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-mutex-n1.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-mutex-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-trace-n1.trace",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\overload-trace-n2.trace"
+      ]
+    },
+    {
+      "name": "after",
+      "rate": 4000,
+      "leader": 2,
+      "follower": 3,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 4000,
+            "Duration": 14000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 4000,
+          "achieved_per_s": 4000,
+          "window_ns": 14000000000,
+          "reads": {
+            "n": 0,
+            "p50_ns": 0,
+            "p90_ns": 0,
+            "p99_ns": 0,
+            "p999_ns": 0,
+            "max_ns": 0,
+            "mean_ns": 0,
+            "errors": 0
+          },
+          "writes": {
+            "n": 56000,
+            "p50_ns": 41486074,
+            "p90_ns": 64733991,
+            "p99_ns": 79472720,
+            "p999_ns": 87823509,
+            "max_ns": 91284032,
+            "mean_ns": 38126545,
+            "errors": 0
+          },
+          "all": {
+            "n": 56000,
+            "p50_ns": 41486074,
+            "p90_ns": 64733991,
+            "p99_ns": 79472720,
+            "p999_ns": 87823509,
+            "max_ns": 91284032,
+            "mean_ns": 38126545,
+            "errors": 0
+          },
+          "dropped": 0,
+          "lag": {
+            "n": 56000,
+            "p50_ns": 150466,
+            "p90_ns": 291593,
+            "p99_ns": 986495,
+            "p999_ns": 4420467,
+            "max_ns": 9922163,
+            "mean_ns": 197674,
+            "errors": 0
+          },
+          "errors": {},
+          "valid": true,
+          "timed_out": 0,
+          "scheduled": 56000
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 1279,
+            "Batches": 13308,
+            "Entries": 56096,
+            "Sent": 57482,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1519,
+            "Batches": 56962,
+            "Entries": 55982,
+            "Sent": 229285,
+            "Writes": 55972,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1274,
+            "Batches": 15483,
+            "Entries": 55983,
+            "Sent": 57340,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1303,
+            "Batches": 15808,
+            "Entries": 55983,
+            "Sent": 57330,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 1336,
+            "Batches": 16135,
+            "Entries": 55983,
+            "Sent": 57301,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.11983928571428572,
+        "msgs_per_op": 8.19175,
+        "entries_per_fsync": 41.72656832066756,
+        "elections": 0
+      },
+      "files": [
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-block-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-block-n3.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-cpu-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-cpu-n3.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-goroutine-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-heap-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-heap-n3.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-mutex-n2.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-mutex-n3.pprof",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-trace-n2.trace",
+        "bench\\results\\profile\\20261019-overload-nocap\\raw\\after-trace-n3.trace"
+      ]
+    }
+  ]
+}

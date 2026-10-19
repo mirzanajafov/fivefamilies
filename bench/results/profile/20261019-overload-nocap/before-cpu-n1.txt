@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:39:55 +04
+Duration: 10s, Total samples = 3.28s (32.80%)
+Showing nodes accounting for 2.45s, 74.70% of 3.28s total
+Dropped 205 nodes (cum <= 0.02s)
+Showing top 40 nodes out of 254
+      flat  flat%   sum%        cum   cum%
+     1.56s 47.56% 47.56%      1.56s 47.56%  internal/runtime/syscall/linux.Syscall6
+     0.06s  1.83% 49.39%      0.06s  1.83%  runtime.memmove
+     0.06s  1.83% 51.22%      0.06s  1.83%  runtime.nextFreeFast (inline)
+     0.05s  1.52% 52.74%      0.05s  1.52%  runtime.memclrNoHeapPointers
+     0.04s  1.22% 53.96%      0.04s  1.22%  runtime.findfunc
+     0.04s  1.22% 55.18%      0.04s  1.22%  runtime.unlock2
+     0.03s  0.91% 56.10%      0.06s  1.83%  google.golang.org/grpc/internal/transport.(*controlBuffer).getOnceLocked
+     0.03s  0.91% 57.01%      0.03s  0.91%  runtime.(*mspan).moveInlineMarks
+     0.03s  0.91% 57.93%      0.03s  0.91%  runtime.casgstatus
+     0.03s  0.91% 58.84%      0.03s  0.91%  runtime.nanotime
+     0.03s  0.91% 59.76%      0.25s  7.62%  runtime.selectgo
+     0.03s  0.91% 60.67%      0.03s  0.91%  runtime.step
+     0.02s  0.61% 61.28%      0.44s 13.41%  google.golang.org/grpc.(*Server).processRPC
+     0.02s  0.61% 61.89%      0.02s  0.61%  google.golang.org/grpc/internal/transport.(*itemList).enqueue
+     0.02s  0.61% 62.50%      0.02s  0.61%  internal/runtime/atomic.(*Uint32).CompareAndSwap (inline)
+     0.02s  0.61% 63.11%      0.02s  0.61%  internal/runtime/maps.ctrlGroup.matchFull
+     0.02s  0.61% 63.72%      0.02s  0.61%  runtime.(*moduledata).textAddr
+     0.02s  0.61% 64.33%      0.03s  0.91%  runtime.(*mspan).writeHeapBitsSmall
+     0.02s  0.61% 64.94%      0.04s  1.22%  runtime.(*stkframe).getStackMap
+     0.02s  0.61% 65.55%      0.02s  0.61%  runtime.adjustpointers
+     0.02s  0.61% 66.16%      0.02s  0.61%  runtime.cputicks
+     0.02s  0.61% 66.77%      0.03s  0.91%  runtime.fpTracebackPartialExpand
+     0.02s  0.61% 67.38%      0.02s  0.61%  runtime.futex
+     0.02s  0.61% 67.99%      0.02s  0.61%  runtime.gcmarknewobject
+     0.02s  0.61% 68.60%      0.02s  0.61%  runtime.gopark
+     0.02s  0.61% 69.21%      0.06s  1.83%  runtime.makeslice
+     0.02s  0.61% 69.82%      0.33s 10.06%  runtime.mallocgc
+     0.02s  0.61% 70.43%      0.02s  0.61%  runtime.runqget
+     0.02s  0.61% 71.04%      0.03s  0.91%  runtime.scanObjectsSmall
+     0.02s  0.61% 71.65%      0.02s  0.61%  runtime.spanClass.sizeclass (inline)
+     0.01s   0.3% 71.95%      0.02s  0.61%  context.WithTimeout
+     0.01s   0.3% 72.26%      0.03s  0.91%  context.WithValue
+     0.01s   0.3% 72.56%      0.02s  0.61%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).exec
+     0.01s   0.3% 72.87%      0.02s  0.61%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).call.func1.1
+     0.01s   0.3% 73.17%      0.15s  4.57%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+     0.01s   0.3% 73.48%      0.03s  0.91%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).receive
+     0.01s   0.3% 73.78%      0.03s  0.91%  github.com/mirzanajafov/fivefamilies/internal/transport.toProto
+     0.01s   0.3% 74.09%      0.09s  2.74%  google.golang.org/grpc.(*clientStreamWrapper).SendMsg
+     0.01s   0.3% 74.39%      0.02s  0.61%  google.golang.org/grpc.(*csAttempt).sendMsg
+     0.01s   0.3% 74.70%      0.20s  6.10%  google.golang.org/grpc.recvAndDecompress

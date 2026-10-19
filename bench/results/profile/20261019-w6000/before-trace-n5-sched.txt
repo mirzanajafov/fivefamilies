@@ -1,0 +1,31 @@
+Type: delay
+Showing nodes accounting for 4.43s, 87.50% of 5.07s total
+Dropped 54 nodes (cum <= 0.03s)
+      flat  flat%   sum%        cum   cum%
+     2.66s 52.49% 52.49%      2.66s 52.49%  runtime.Gosched
+     1.65s 32.54% 85.04%      1.65s 32.54%  runtime.selectnbsend
+     0.12s  2.47% 87.50%      0.12s  2.47%  runtime.selectgo
+         0     0% 87.50%      1.12s 22.18%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+         0     0% 87.50%      0.11s  2.13%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).write
+         0     0% 87.50%      1.12s 22.18%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0% 87.50%      1.01s 19.97%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Send
+         0     0% 87.50%      0.11s  2.13%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Write
+         0     0% 87.50%      1.12s 22.18%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0% 87.50%      1.01s 19.97%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Send
+         0     0% 87.50%      0.59s 11.63%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0% 87.50%      0.02s  0.44%  google.golang.org/grpc.(*Server).handleStream
+         0     0% 87.50%      0.02s  0.44%  google.golang.org/grpc.(*Server).processRPC
+         0     0% 87.50%      0.59s 11.63%  google.golang.org/grpc.(*Server).serveStreams
+         0     0% 87.50%      0.02s  0.44%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+         0     0% 87.50%      0.03s  0.59%  google.golang.org/grpc/internal/transport.(*Stream).write
+         0     0% 87.50%      0.61s 11.96%  google.golang.org/grpc/internal/transport.(*controlBuffer).executeAndPut
+         0     0% 87.50%      0.60s 11.78%  google.golang.org/grpc/internal/transport.(*controlBuffer).put
+         0     0% 87.50%      0.59s 11.63%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+         0     0% 87.50%      0.47s  9.24%  google.golang.org/grpc/internal/transport.(*http2Server).handleData
+         0     0% 87.50%      0.10s  1.88%  google.golang.org/grpc/internal/transport.(*http2Server).handleWindowUpdate
+         0     0% 87.50%      0.03s  0.51%  google.golang.org/grpc/internal/transport.(*http2Server).operateHeaders
+         0     0% 87.50%      2.66s 52.49%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+         0     0% 87.50%      0.03s  0.59%  google.golang.org/grpc/internal/transport.(*recvBuffer).put
+         0     0% 87.50%      1.70s 33.58%  google.golang.org/grpc/internal/transport.NewHTTP2Client.func6
+         0     0% 87.50%      0.96s 18.91%  google.golang.org/grpc/internal/transport.NewServerTransport.func3
+         0     0% 87.50%      1.12s 22.18%  main.main

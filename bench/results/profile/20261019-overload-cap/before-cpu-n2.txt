@@ -1,0 +1,48 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:37:51 +04
+Duration: 10s, Total samples = 940ms ( 9.40%)
+Showing nodes accounting for 910ms, 96.81% of 940ms total
+Showing top 40 nodes out of 192
+      flat  flat%   sum%        cum   cum%
+     440ms 46.81% 46.81%      440ms 46.81%  internal/runtime/syscall/linux.Syscall6
+      30ms  3.19% 50.00%       30ms  3.19%  runtime.nextFreeFast (inline)
+      30ms  3.19% 53.19%       30ms  3.19%  runtime.stkbucket
+      20ms  2.13% 55.32%       30ms  3.19%  google.golang.org/grpc/internal/transport.(*controlBuffer).get
+      20ms  2.13% 57.45%       20ms  2.13%  google.golang.org/protobuf/internal/impl.consumeUint64
+      20ms  2.13% 59.57%       20ms  2.13%  runtime.(*randomOrder).start
+      20ms  2.13% 61.70%       20ms  2.13%  runtime.futex
+      10ms  1.06% 62.77%       10ms  1.06%  cmpbody
+      10ms  1.06% 63.83%       30ms  3.19%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).get
+      10ms  1.06% 64.89%       20ms  2.13%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find.func1 (inline)
+      10ms  1.06% 65.96%       10ms  1.06%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.(*Batch).ProtoReflect
+      10ms  1.06% 67.02%       10ms  1.06%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).Step
+      10ms  1.06% 68.09%       20ms  2.13%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).publish
+      10ms  1.06% 69.15%       50ms  5.32%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+      10ms  1.06% 70.21%       10ms  1.06%  google.golang.org/grpc/internal/mem.(*SimpleBufferPool).Get
+      10ms  1.06% 71.28%      190ms 20.21%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+      10ms  1.06% 72.34%       40ms  4.26%  google.golang.org/grpc/internal/transport.(*http2Client).reader
+      10ms  1.06% 73.40%       40ms  4.26%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshal
+      10ms  1.06% 74.47%       30ms  3.19%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshalPointerEager
+      10ms  1.06% 75.53%      160ms 17.02%  internal/poll.(*FD).RawRead
+      10ms  1.06% 76.60%       10ms  1.06%  internal/poll.(*fdMutex).decref
+      10ms  1.06% 77.66%       10ms  1.06%  internal/poll.(*fdMutex).rwlock
+      10ms  1.06% 78.72%       10ms  1.06%  internal/runtime/atomic.(*Uint32).CompareAndSwap
+      10ms  1.06% 79.79%       10ms  1.06%  memeqbody
+      10ms  1.06% 80.85%       70ms  7.45%  os.(*File).Write
+      10ms  1.06% 81.91%       10ms  1.06%  runtime.(*mspan).base
+      10ms  1.06% 82.98%       10ms  1.06%  runtime.(*mspan).moveInlineMarks
+      10ms  1.06% 84.04%       10ms  1.06%  runtime.(*mspan).refillAllocCache
+      10ms  1.06% 85.11%       10ms  1.06%  runtime.(*traceBuf).varint
+      10ms  1.06% 86.17%       10ms  1.06%  runtime.(*waitq).dequeue
+      10ms  1.06% 87.23%       10ms  1.06%  runtime.(*waitq).enqueue (inline)
+      10ms  1.06% 88.30%       10ms  1.06%  runtime.acquireSudog
+      10ms  1.06% 89.36%       10ms  1.06%  runtime.add
+      10ms  1.06% 90.43%       10ms  1.06%  runtime.findfunc
+      10ms  1.06% 91.49%       10ms  1.06%  runtime.gopark
+      10ms  1.06% 92.55%       10ms  1.06%  runtime.ifaceeq
+      10ms  1.06% 93.62%       10ms  1.06%  runtime.makeslice
+      10ms  1.06% 94.68%       10ms  1.06%  runtime.nanotime1
+      10ms  1.06% 95.74%       10ms  1.06%  runtime.pMask.read
+      10ms  1.06% 96.81%       80ms  8.51%  runtime.selectgo

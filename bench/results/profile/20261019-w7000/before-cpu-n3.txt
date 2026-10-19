@@ -1,0 +1,48 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:35:55 +04
+Duration: 20s, Total samples = 1.32s ( 6.60%)
+Showing nodes accounting for 1.01s, 76.52% of 1.32s total
+Showing top 40 nodes out of 298
+      flat  flat%   sum%        cum   cum%
+     0.49s 37.12% 37.12%      0.49s 37.12%  internal/runtime/syscall/linux.Syscall6
+     0.04s  3.03% 40.15%      0.04s  3.03%  runtime.memmove
+     0.03s  2.27% 42.42%      0.03s  2.27%  cmpbody
+     0.02s  1.52% 43.94%      0.04s  3.03%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find.func1 (inline)
+     0.02s  1.52% 45.45%      0.05s  3.79%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshalPointerEager
+     0.02s  1.52% 46.97%      0.02s  1.52%  runtime.futex
+     0.02s  1.52% 48.48%      0.02s  1.52%  runtime.lock2
+     0.02s  1.52% 50.00%      0.02s  1.52%  runtime.memclrNoHeapPointers
+     0.02s  1.52% 51.52%      0.11s  8.33%  runtime.selectgo
+     0.02s  1.52% 53.03%      0.03s  2.27%  runtime.sweepone
+     0.02s  1.52% 54.55%      0.02s  1.52%  runtime.typePointers.next
+     0.01s  0.76% 55.30%      0.07s  5.30%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).get
+     0.01s  0.76% 56.06%      0.07s  5.30%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find
+     0.01s  0.76% 56.82%      0.01s  0.76%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.(*Batch).ProtoReflect
+     0.01s  0.76% 57.58%      0.13s  9.85%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Apply
+     0.01s  0.76% 58.33%      0.01s  0.76%  github.com/mirzanajafov/fivefamilies/internal/kv.(*decoder).bytes
+     0.01s  0.76% 59.09%      0.01s  0.76%  github.com/mirzanajafov/fivefamilies/internal/kv.Command.writes (inline)
+     0.01s  0.76% 59.85%      0.04s  3.03%  github.com/mirzanajafov/fivefamilies/internal/kv.lessKey
+     0.01s  0.76% 60.61%      0.03s  2.27%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).maybeSnapshot
+     0.01s  0.76% 61.36%      0.26s 19.70%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+     0.01s  0.76% 62.12%      0.02s  1.52%  github.com/mirzanajafov/fivefamilies/internal/wal.appendRecord
+     0.01s  0.76% 62.88%      0.01s  0.76%  google.golang.org/grpc/internal/transport.(*http2Client).incrMsgSent
+     0.01s  0.76% 63.64%      0.01s  0.76%  google.golang.org/grpc/internal/transport.(*inFlow).onData
+     0.01s  0.76% 64.39%      0.01s  0.76%  google.golang.org/grpc/internal/transport.(*loopyWriter).preprocessData
+     0.01s  0.76% 65.15%      0.12s  9.09%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+     0.01s  0.76% 65.91%      0.02s  1.52%  google.golang.org/grpc/mem.BufferSlice.MaterializeToBuffer
+     0.01s  0.76% 66.67%      0.01s  0.76%  google.golang.org/protobuf/internal/impl.(*MessageInfo).init
+     0.01s  0.76% 67.42%      0.01s  0.76%  google.golang.org/protobuf/internal/impl.(*MessageInfo).sizePointerSlow
+     0.01s  0.76% 68.18%      0.02s  1.52%  google.golang.org/protobuf/internal/impl.(*messageState).Interface
+     0.01s  0.76% 68.94%      0.01s  0.76%  google.golang.org/protobuf/internal/impl.(*messageState).protoUnwrap
+     0.01s  0.76% 69.70%      0.01s  0.76%  google.golang.org/protobuf/internal/impl.Export.protoMessageV2Of
+     0.01s  0.76% 70.45%      0.01s  0.76%  google.golang.org/protobuf/proto.checkInitialized
+     0.01s  0.76% 71.21%      0.01s  0.76%  gosave_systemstack_switch
+     0.01s  0.76% 71.97%      0.13s  9.85%  internal/poll.(*FD).RawRead
+     0.01s  0.76% 72.73%      0.01s  0.76%  internal/runtime/atomic.(*Uint32).CompareAndSwap
+     0.01s  0.76% 73.48%      0.01s  0.76%  internal/runtime/atomic.(*Uint64).CompareAndSwap
+     0.01s  0.76% 74.24%      0.01s  0.76%  internal/runtime/atomic.(*Uintptr).CompareAndSwap
+     0.01s  0.76% 75.00%      0.01s  0.76%  internal/sync.(*Mutex).Unlock
+     0.01s  0.76% 75.76%      0.16s 12.12%  net.(*netFD).Write
+     0.01s  0.76% 76.52%      0.01s  0.76%  runtime.(*m).snapshotAllp

@@ -1,0 +1,178 @@
+[
+  {
+    "mode": "append-fsync",
+    "writers": 1,
+    "bytes": 512,
+    "syncs": 1599,
+    "syncs_per_s": 159.9,
+    "p50_ns": 5444472,
+    "p99_ns": 20500305,
+    "max_ns": 42009690,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "append-fsync",
+    "writers": 1,
+    "bytes": 16384,
+    "syncs": 1889,
+    "syncs_per_s": 188.9,
+    "p50_ns": 4988718,
+    "p99_ns": 10221664,
+    "max_ns": 45763994,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "append-fsync",
+    "writers": 5,
+    "bytes": 512,
+    "syncs": 4984,
+    "syncs_per_s": 498.4,
+    "p50_ns": 9456630,
+    "p99_ns": 17172855,
+    "max_ns": 32988244,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "append-fsync",
+    "writers": 5,
+    "bytes": 16384,
+    "syncs": 4342,
+    "syncs_per_s": 434.2,
+    "p50_ns": 10931237,
+    "p99_ns": 20994063,
+    "max_ns": 47262956,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "append-fdatasync",
+    "writers": 1,
+    "bytes": 512,
+    "syncs": 1967,
+    "syncs_per_s": 196.7,
+    "p50_ns": 4659617,
+    "p99_ns": 11850081,
+    "max_ns": 42421008,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "append-fdatasync",
+    "writers": 1,
+    "bytes": 16384,
+    "syncs": 2208,
+    "syncs_per_s": 220.8,
+    "p50_ns": 4067999,
+    "p99_ns": 8639640,
+    "max_ns": 30762339,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "append-fdatasync",
+    "writers": 5,
+    "bytes": 512,
+    "syncs": 5673,
+    "syncs_per_s": 567.3,
+    "p50_ns": 8182470,
+    "p99_ns": 18576558,
+    "max_ns": 65825532,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "append-fdatasync",
+    "writers": 5,
+    "bytes": 16384,
+    "syncs": 4390,
+    "syncs_per_s": 439,
+    "p50_ns": 9645734,
+    "p99_ns": 45189959,
+    "max_ns": 107824357,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "prealloc-fsync",
+    "writers": 1,
+    "bytes": 512,
+    "syncs": 2382,
+    "syncs_per_s": 238.2,
+    "p50_ns": 3905087,
+    "p99_ns": 8083141,
+    "max_ns": 75794701,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "prealloc-fsync",
+    "writers": 1,
+    "bytes": 16384,
+    "syncs": 2113,
+    "syncs_per_s": 211.3,
+    "p50_ns": 4452312,
+    "p99_ns": 7483396,
+    "max_ns": 54067142,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "prealloc-fsync",
+    "writers": 5,
+    "bytes": 512,
+    "syncs": 5906,
+    "syncs_per_s": 590.6,
+    "p50_ns": 7736737,
+    "p99_ns": 13024223,
+    "max_ns": 55196781,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "prealloc-fsync",
+    "writers": 5,
+    "bytes": 16384,
+    "syncs": 5260,
+    "syncs_per_s": 526,
+    "p50_ns": 8826684,
+    "p99_ns": 17712174,
+    "max_ns": 64729912,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "prealloc-fdatasync",
+    "writers": 1,
+    "bytes": 512,
+    "syncs": 3600,
+    "syncs_per_s": 360,
+    "p50_ns": 2316611,
+    "p99_ns": 7025638,
+    "max_ns": 40370162,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "prealloc-fdatasync",
+    "writers": 1,
+    "bytes": 16384,
+    "syncs": 1973,
+    "syncs_per_s": 197.3,
+    "p50_ns": 4717686,
+    "p99_ns": 9580672,
+    "max_ns": 55040172,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "prealloc-fdatasync",
+    "writers": 5,
+    "bytes": 512,
+    "syncs": 4930,
+    "syncs_per_s": 493,
+    "p50_ns": 8562368,
+    "p99_ns": 29317029,
+    "max_ns": 119823505,
+    "duration_ns": 10000000000
+  },
+  {
+    "mode": "prealloc-fdatasync",
+    "writers": 5,
+    "bytes": 16384,
+    "syncs": 4896,
+    "syncs_per_s": 489.6,
+    "p50_ns": 9238057,
+    "p99_ns": 26694594,
+    "max_ns": 65949241,
+    "duration_ns": 10000000000
+  }
+]

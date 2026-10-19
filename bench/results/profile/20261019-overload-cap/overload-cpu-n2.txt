@@ -1,0 +1,48 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:38:19 +04
+Duration: 10s, Total samples = 740ms ( 7.40%)
+Showing nodes accounting for 740ms, 100% of 740ms total
+Showing top 40 nodes out of 177
+      flat  flat%   sum%        cum   cum%
+     450ms 60.81% 60.81%      450ms 60.81%  internal/runtime/syscall/linux.Syscall6
+      30ms  4.05% 64.86%       30ms  4.05%  runtime.futex
+      20ms  2.70% 67.57%      100ms 13.51%  google.golang.org/grpc/internal/transport/readyreader.NewNonBlocking.func1
+      20ms  2.70% 70.27%       20ms  2.70%  runtime.memmove
+      20ms  2.70% 72.97%       20ms  2.70%  runtime.nanotime
+      10ms  1.35% 74.32%       10ms  1.35%  cmpbody
+      10ms  1.35% 75.68%       20ms  2.70%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find.func1 (inline)
+      10ms  1.35% 77.03%       10ms  1.35%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).serveReads
+      10ms  1.35% 78.38%       30ms  4.05%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).WriteBatch
+      10ms  1.35% 79.73%       30ms  4.05%  google.golang.org/grpc.recv
+      10ms  1.35% 81.08%      110ms 14.86%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+      10ms  1.35% 82.43%       10ms  1.35%  google.golang.org/protobuf/encoding/protowire.ConsumeBytes
+      10ms  1.35% 83.78%       10ms  1.35%  google.golang.org/protobuf/internal/impl.(*MessageInfo).sizePointerSlow
+      10ms  1.35% 85.14%       10ms  1.35%  internal/sync.(*Mutex).Lock (inline)
+      10ms  1.35% 86.49%       10ms  1.35%  runtime.(*m).becomeSpinning
+      10ms  1.35% 87.84%       10ms  1.35%  runtime.(*traceMap).put
+      10ms  1.35% 89.19%       10ms  1.35%  runtime.(*waitq).dequeue
+      10ms  1.35% 90.54%       10ms  1.35%  runtime.acquirepNoTrace
+      10ms  1.35% 91.89%       10ms  1.35%  runtime.findfunc
+      10ms  1.35% 93.24%       10ms  1.35%  runtime.nanotime1
+      10ms  1.35% 94.59%       10ms  1.35%  runtime.nextFreeFast (inline)
+      10ms  1.35% 95.95%       10ms  1.35%  runtime.notesleep
+      10ms  1.35% 97.30%       20ms  2.70%  runtime.selectgo
+      10ms  1.35% 98.65%       10ms  1.35%  runtime.traceWriter.refill
+      10ms  1.35%   100%       10ms  1.35%  runtime.unlock2
+         0     0%   100%       20ms  2.70%  github.com/google/btree.(*BTreeG[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).Get
+         0     0%   100%       20ms  2.70%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).get
+         0     0%   100%       20ms  2.70%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find
+         0     0%   100%       30ms  4.05%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._Peer_Send_Handler
+         0     0%   100%       20ms  2.70%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Apply
+         0     0%   100%       20ms  2.70%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).exec
+         0     0%   100%       10ms  1.35%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).put
+         0     0%   100%       10ms  1.35%  github.com/mirzanajafov/fivefamilies/internal/kv.lessKey
+         0     0%   100%       40ms  5.41%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+         0     0%   100%       20ms  2.70%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Receive
+         0     0%   100%       20ms  2.70%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).Step
+         0     0%   100%       20ms  2.70%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).handleAppend
+         0     0%   100%       10ms  1.35%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).sendAfterPersist (inline)
+         0     0%   100%       20ms  2.70%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).stepFollower
+         0     0%   100%       10ms  1.35%  github.com/mirzanajafov/fivefamilies/internal/raft.(*raftLog).append

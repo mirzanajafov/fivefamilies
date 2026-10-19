@@ -1,0 +1,48 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:36:48 +04
+Duration: 20s, Total samples = 1.85s ( 9.25%)
+Showing nodes accounting for 1.67s, 90.27% of 1.85s total
+Showing top 40 nodes out of 286
+      flat  flat%   sum%        cum   cum%
+     1.04s 56.22% 56.22%      1.04s 56.22%  internal/runtime/syscall/linux.Syscall6
+     0.08s  4.32% 60.54%      0.08s  4.32%  runtime.memmove
+     0.05s  2.70% 63.24%      0.05s  2.70%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find.func1 (inline)
+     0.04s  2.16% 65.41%      0.04s  2.16%  runtime.nextFreeFast (inline)
+     0.03s  1.62% 67.03%      0.03s  1.62%  runtime.futex
+     0.03s  1.62% 68.65%      0.03s  1.62%  runtime.memclrNoHeapPointers
+     0.02s  1.08% 69.73%      0.11s  5.95%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Apply
+     0.02s  1.08% 70.81%      0.02s  1.08%  google.golang.org/grpc/internal/mem.(*SimpleBufferPool).Put
+     0.02s  1.08% 71.89%      0.02s  1.08%  runtime.(*mspan).writeHeapBitsSmall
+     0.02s  1.08% 72.97%      0.02s  1.08%  runtime.findfunc
+     0.02s  1.08% 74.05%      0.02s  1.08%  runtime.lock2
+     0.02s  1.08% 75.14%      0.02s  1.08%  runtime.nanotime
+     0.01s  0.54% 75.68%      0.01s  0.54%  aeshashbody
+     0.01s  0.54% 76.22%      0.06s  3.24%  github.com/google/btree.(*BTreeG[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).Get
+     0.01s  0.54% 76.76%      0.01s  0.54%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).mutableChild (inline)
+     0.01s  0.54% 77.30%      0.01s  0.54%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1.(*RaftMessage).GetHint
+     0.01s  0.54% 77.84%      0.01s  0.54%  github.com/mirzanajafov/fivefamilies/internal/kv.(*decoder).uvarint
+     0.01s  0.54% 78.38%      0.03s  1.62%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).WriteDone
+     0.01s  0.54% 78.92%      0.01s  0.54%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).onAppend
+     0.01s  0.54% 79.46%      0.10s  5.41%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).stepFollower
+     0.01s  0.54% 80.00%      0.07s  3.78%  github.com/mirzanajafov/fivefamilies/internal/raft.(*raftLog).maybeAppend
+     0.01s  0.54% 80.54%      0.02s  1.08%  github.com/mirzanajafov/fivefamilies/internal/server.(*Filter).Allow
+     0.01s  0.54% 81.08%      0.01s  0.54%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Write
+     0.01s  0.54% 81.62%      0.05s  2.70%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+     0.01s  0.54% 82.16%      0.01s  0.54%  github.com/mirzanajafov/fivefamilies/internal/wal.encodeEntry
+     0.01s  0.54% 82.70%      0.01s  0.54%  golang.org/x/net/http2.(*Framer).checkFrameOrder
+     0.01s  0.54% 83.24%      0.01s  0.54%  google.golang.org/grpc/encoding/proto.messageV2Of
+     0.01s  0.54% 83.78%      0.02s  1.08%  google.golang.org/grpc/internal/transport.(*controlBuffer).executeAndPut
+     0.01s  0.54% 84.32%      0.01s  0.54%  google.golang.org/grpc/internal/transport.(*http2Server).adjustWindow
+     0.01s  0.54% 84.86%      0.02s  1.08%  google.golang.org/grpc/internal/transport.(*http2Server).handleData
+     0.01s  0.54% 85.41%      0.01s  0.54%  google.golang.org/grpc/mem.(*Reader).Discard
+     0.01s  0.54% 85.95%      0.01s  0.54%  google.golang.org/protobuf/internal/impl.(*MessageInfo).sizePointerSlow
+     0.01s  0.54% 86.49%      0.06s  3.24%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshalPointerEager
+     0.01s  0.54% 87.03%      0.02s  1.08%  google.golang.org/protobuf/proto.MarshalOptions.size
+     0.01s  0.54% 87.57%      0.01s  0.54%  indexbytebody
+     0.01s  0.54% 88.11%      0.01s  0.54%  internal/runtime/atomic.(*UnsafePointer).Load (inline)
+     0.01s  0.54% 88.65%      0.01s  0.54%  runtime.(*itabTableType).find
+     0.01s  0.54% 89.19%      0.01s  0.54%  runtime.(*mspan).init
+     0.01s  0.54% 89.73%      0.01s  0.54%  runtime.(*mspan).moveInlineMarks
+     0.01s  0.54% 90.27%      0.01s  0.54%  runtime.(*spanSet).push

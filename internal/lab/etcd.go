@@ -21,6 +21,7 @@ const (
 type EtcdCluster struct {
 	Nodes    int
 	NodeCPUs []string
+	Procs    int
 	dir      string
 	d        *Docker
 	gens     int
@@ -48,6 +49,9 @@ func (e *EtcdCluster) compose() string {
 			"--initial-cluster", strings.Join(initial, ","), "--initial-cluster-state", "new",
 			"--heartbeat-interval", "100", "--election-timeout", "1000", "--logger", "zap", "--log-level", "warn"}
 		fmt.Fprintf(&sb, "  e%d:\n    image: %s\n    restart: \"no\"\n    cpuset: %q\n    mem_limit: 1g\n    pids_limit: 512\n", i, EtcdImage, e.NodeCPUs[(i-1)%len(e.NodeCPUs)])
+		if e.Procs > 0 {
+			fmt.Fprintf(&sb, "    environment: [\"GOMAXPROCS=%d\"]\n", e.Procs)
+		}
 		fmt.Fprintf(&sb, "    command: [%s]\n    volumes: [\"e%d:/data\"]\n    networks: [bench]\n", quote(args), i)
 	}
 	sb.WriteString("networks:\n  bench: {}\nvolumes:\n")
@@ -174,18 +178,20 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		gen    []string
 		node   []string
 		leader bool
+		procs  int
 	}
 	writes := []string{"-reads", "0", "-value-bytes", "128"}
 	specs := []spec{
-		{"fivefamilies, 3 nodes, writes", false, 3, writes, withBase(), false},
-		{"etcd, 3 nodes, writes", true, 3, writes, nil, false},
-		{"fivefamilies, 5 nodes, writes", false, 5, writes, withBase(), false},
-		{"etcd, 5 nodes, writes", true, 5, writes, nil, false},
-		{"etcd, 5 nodes, writes, client on the leader only", true, 5, writes, nil, true},
-		{"fivefamilies, 5 nodes, ReadIndex reads 0.95", false, 5, []string{"-reads", "0.95", "-read-mode", "index"}, withBase(), false},
-		{"etcd, 5 nodes, linearizable reads 0.95", true, 5, []string{"-reads", "0.95", "-read-mode", "linearizable"}, nil, false},
-		{"fivefamilies, 5 nodes, local reads (unsafe) 0.95", false, 5, []string{"-reads", "0.95", "-read-mode", "follower"}, withBase("-bug", "followerread"), false},
-		{"etcd, 5 nodes, serializable reads 0.95", true, 5, []string{"-reads", "0.95", "-read-mode", "serializable"}, nil, false},
+		{"fivefamilies, 3 nodes, writes", false, 3, writes, withBase(), false, 0},
+		{"etcd, 3 nodes, writes", true, 3, writes, nil, false, 0},
+		{"fivefamilies, 5 nodes, writes", false, 5, writes, withBase(), false, 0},
+		{"etcd, 5 nodes, writes", true, 5, writes, nil, false, 0},
+		{"etcd, 5 nodes, writes, client on the leader only", true, 5, writes, nil, true, 0},
+		{"etcd, 5 nodes, writes, two Go processors", true, 5, writes, nil, false, 2},
+		{"fivefamilies, 5 nodes, ReadIndex reads 0.95", false, 5, []string{"-reads", "0.95", "-read-mode", "index"}, withBase(), false, 0},
+		{"etcd, 5 nodes, linearizable reads 0.95", true, 5, []string{"-reads", "0.95", "-read-mode", "linearizable"}, nil, false, 0},
+		{"fivefamilies, 5 nodes, local reads (unsafe) 0.95", false, 5, []string{"-reads", "0.95", "-read-mode", "follower"}, withBase("-bug", "followerread"), false, 0},
+		{"etcd, 5 nodes, serializable reads 0.95", true, 5, []string{"-reads", "0.95", "-read-mode", "serializable"}, nil, false, 0},
 	}
 	if o.Quick {
 		specs = specs[1:2]
@@ -198,7 +204,7 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		var down func()
 		c := Curve{Name: sp.name, Nodes: sp.nodes, NodeFlags: sp.node, GenFlags: sp.gen}
 		if sp.etcd {
-			ec := &EtcdCluster{Nodes: sp.nodes, NodeCPUs: o.NodeCPUs}
+			ec := &EtcdCluster{Nodes: sp.nodes, NodeCPUs: o.NodeCPUs, Procs: sp.procs}
 			if err := ec.Up(ctx); err != nil {
 				ec.Down()
 				return curves, fmt.Errorf("%s: %w", sp.name, err)

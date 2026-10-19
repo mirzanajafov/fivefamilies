@@ -1,0 +1,45 @@
+Type: delay
+Showing nodes accounting for 269.74ms, 94.58% of 285.19ms total
+Dropped 21 nodes (cum <= 1.43ms)
+Showing top 40 nodes out of 46
+      flat  flat%   sum%        cum   cum%
+  134.29ms 47.09% 47.09%   134.29ms 47.09%  runtime.selectnbsend
+  110.20ms 38.64% 85.73%   110.20ms 38.64%  runtime.selectgo
+   25.26ms  8.86% 94.58%    25.26ms  8.86%  runtime.Gosched
+         0     0% 94.58%     5.27ms  1.85%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._Peer_Send_Handler
+         0     0% 94.58%     3.66ms  1.28%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+         0     0% 94.58%    12.84ms  4.50%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).WriteDone
+         0     0% 94.58%     3.37ms  1.18%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).write
+         0     0% 94.58%    16.88ms  5.92%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0% 94.58%   101.87ms 35.72%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+         0     0% 94.58%    13.13ms  4.60%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Send
+         0     0% 94.58%     3.37ms  1.18%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Write
+         0     0% 94.58%     4.96ms  1.74%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).deliver
+         0     0% 94.58%    16.88ms  5.92%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0% 94.58%   101.87ms 35.72%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0% 94.58%    13.13ms  4.60%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Send
+         0     0% 94.58%     3.19ms  1.12%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Start.func1
+         0     0% 94.58%     3.19ms  1.12%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+         0     0% 94.58%     4.96ms  1.74%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).receive
+         0     0% 94.58%     3.19ms  1.12%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).runPeer
+         0     0% 94.58%     5.27ms  1.85%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+         0     0% 94.58%     3.19ms  1.12%  google.golang.org/grpc.(*GenericClientStream[...]).Send
+         0     0% 94.58%   110.39ms 38.71%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0% 94.58%     5.27ms  1.85%  google.golang.org/grpc.(*Server).handleStream
+         0     0% 94.58%     5.27ms  1.85%  google.golang.org/grpc.(*Server).processRPC
+         0     0% 94.58%   110.39ms 38.71%  google.golang.org/grpc.(*Server).serveStreams
+         0     0% 94.58%     5.27ms  1.85%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+         0     0% 94.58%     3.19ms  1.12%  google.golang.org/grpc.(*clientStream).SendMsg
+         0     0% 94.58%     3.19ms  1.12%  google.golang.org/grpc.(*clientStream).SendMsg.func3
+         0     0% 94.58%     3.19ms  1.12%  google.golang.org/grpc.(*clientStream).withRetry
+         0     0% 94.58%     3.19ms  1.12%  google.golang.org/grpc.(*clientStreamWrapper).SendMsg
+         0     0% 94.58%     3.19ms  1.12%  google.golang.org/grpc.(*csAttempt).sendMsg
+         0     0% 94.58%     3.19ms  1.12%  google.golang.org/grpc/internal/transport.(*ClientStream).Write
+         0     0% 94.58%    16.10ms  5.65%  google.golang.org/grpc/internal/transport.(*Stream).write
+         0     0% 94.58%   105.05ms 36.84%  google.golang.org/grpc/internal/transport.(*controlBuffer).executeAndPut
+         0     0% 94.58%   105.05ms 36.84%  google.golang.org/grpc/internal/transport.(*controlBuffer).put
+         0     0% 94.58%     7.27ms  2.55%  google.golang.org/grpc/internal/transport.(*http2Client).handleWindowUpdate
+         0     0% 94.58%     7.27ms  2.55%  google.golang.org/grpc/internal/transport.(*http2Client).reader
+         0     0% 94.58%     3.19ms  1.12%  google.golang.org/grpc/internal/transport.(*http2Client).write
+         0     0% 94.58%   110.39ms 38.71%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+         0     0% 94.58%   110.39ms 38.71%  google.golang.org/grpc/internal/transport.(*http2Server).handleData

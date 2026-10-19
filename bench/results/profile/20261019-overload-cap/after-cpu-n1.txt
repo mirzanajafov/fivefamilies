@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:38:54 +04
+Duration: 10.01s, Total samples = 4.32s (43.16%)
+Showing nodes accounting for 3.01s, 69.68% of 4.32s total
+Dropped 288 nodes (cum <= 0.02s)
+Showing top 40 nodes out of 184
+      flat  flat%   sum%        cum   cum%
+     2.16s 50.00% 50.00%      2.16s 50.00%  internal/runtime/syscall/linux.Syscall6
+     0.08s  1.85% 51.85%      0.08s  1.85%  runtime.nextFreeFast (inline)
+     0.07s  1.62% 53.47%      0.41s  9.49%  runtime.selectgo
+     0.06s  1.39% 54.86%      0.06s  1.39%  runtime.acquireSudog
+     0.04s  0.93% 55.79%      0.05s  1.16%  runtime.fpTracebackPartialExpand
+     0.04s  0.93% 56.71%      0.04s  0.93%  runtime.nanotime (inline)
+     0.03s  0.69% 57.41%      0.03s  0.69%  runtime.(*mspan).writeHeapBitsSmall
+     0.03s  0.69% 58.10%      0.04s  0.93%  runtime.execute
+     0.03s  0.69% 58.80%      0.22s  5.09%  runtime.findRunnable
+     0.03s  0.69% 59.49%      0.03s  0.69%  runtime.memclrNoHeapPointers
+     0.03s  0.69% 60.19%      0.03s  0.69%  runtime.memmove
+     0.03s  0.69% 60.88%      0.03s  0.69%  runtime.unlock2
+     0.02s  0.46% 61.34%      0.04s  0.93%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find.func1 (inline)
+     0.02s  0.46% 61.81%      0.04s  0.93%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).call.func1
+     0.02s  0.46% 62.27%      0.41s  9.49%  golang.org/x/net/http2.readFrameHeader
+     0.02s  0.46% 62.73%      1.92s 44.44%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+     0.02s  0.46% 63.19%      0.03s  0.69%  google.golang.org/protobuf/internal/impl.(*MessageInfo).sizePointerSlow
+     0.02s  0.46% 63.66%      0.39s  9.03%  io.ReadAtLeast
+     0.02s  0.46% 64.12%      0.36s  8.33%  net.(*rawConn).Read
+     0.02s  0.46% 64.58%      0.03s  0.69%  runtime.scanObject
+     0.02s  0.46% 65.05%      0.03s  0.69%  runtime.selunlock
+     0.02s  0.46% 65.51%      0.03s  0.69%  runtime.step
+     0.01s  0.23% 65.74%      0.04s  0.93%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).get
+     0.01s  0.23% 65.97%      0.22s  5.09%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+     0.01s  0.23% 66.20%      0.09s  2.08%  golang.org/x/net/http2.(*Framer).readMetaFrame
+     0.01s  0.23% 66.44%      0.07s  1.62%  golang.org/x/net/http2/hpack.(*Decoder).parseFieldIndexed
+     0.01s  0.23% 66.67%      0.06s  1.39%  google.golang.org/grpc.(*clientStream).withRetry
+     0.01s  0.23% 66.90%      0.19s  4.40%  google.golang.org/grpc.(*parser).recvMsg
+     0.01s  0.23% 67.13%      0.20s  4.63%  google.golang.org/grpc.recvAndDecompress
+     0.01s  0.23% 67.36%      0.06s  1.39%  google.golang.org/grpc/encoding/proto.(*codecV2).Unmarshal
+     0.01s  0.23% 67.59%      0.17s  3.94%  google.golang.org/grpc/internal/transport.(*Stream).ReadMessageHeader
+     0.01s  0.23% 67.82%      0.08s  1.85%  google.golang.org/grpc/internal/transport.(*controlBuffer).executeAndPut
+     0.01s  0.23% 68.06%      0.11s  2.55%  google.golang.org/grpc/internal/transport.(*controlBuffer).get
+     0.01s  0.23% 68.29%      0.09s  2.08%  google.golang.org/grpc/internal/transport.(*controlBuffer).put (inline)
+     0.01s  0.23% 68.52%      0.55s 12.73%  google.golang.org/grpc/internal/transport.(*framer).readFrame
+     0.01s  0.23% 68.75%      0.11s  2.55%  google.golang.org/grpc/internal/transport.(*http2Client).reader
+     0.01s  0.23% 68.98%      0.69s 15.97%  google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams
+     0.01s  0.23% 69.21%      0.10s  2.31%  google.golang.org/grpc/internal/transport.(*loopyWriter).handle
+     0.01s  0.23% 69.44%      0.03s  0.69%  google.golang.org/grpc/internal/transport.(*loopyWriter).preprocessData
+     0.01s  0.23% 69.68%      0.37s  8.56%  google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read

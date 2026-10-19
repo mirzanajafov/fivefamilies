@@ -1,0 +1,27 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: delay
+Time: 2026-10-19 10:39:04 +04
+Showing nodes accounting for 56.28hrs, 99.94% of 56.31hrs total
+Dropped 107 nodes (cum <= 0.28hrs)
+      flat  flat%   sum%        cum   cum%
+  56.28hrs 99.94% 99.94%   56.28hrs 99.94%  runtime.selectgo
+         0     0% 99.94%   55.81hrs 99.11%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._KV_Put_Handler
+         0     0% 99.94%    5.16hrs  9.17%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Submit
+         0     0% 99.94%    5.16hrs  9.17%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).admit (inline)
+         0     0% 99.94%    5.16hrs  9.17%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).call
+         0     0% 99.94%    5.16hrs  9.17%  github.com/mirzanajafov/fivefamilies/internal/server.(*kvService).Put
+         0     0% 99.94%    5.16hrs  9.17%  github.com/mirzanajafov/fivefamilies/internal/server.(*kvService).submit
+         0     0% 99.94%   55.90hrs 99.26%  google.golang.org/grpc.(*Server).handleStream
+         0     0% 99.94%   55.90hrs 99.26%  google.golang.org/grpc.(*Server).processRPC
+         0     0% 99.94%   55.81hrs 99.11%  google.golang.org/grpc.(*Server).register.(*Server).wrapUnaryHandler.func1
+         0     0% 99.94%   50.65hrs 89.94%  google.golang.org/grpc.(*Server).register.(*Server).wrapUnaryHandler.func1.1
+         0     0% 99.94%   55.90hrs 99.26%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+         0     0% 99.94%   50.73hrs 90.09%  google.golang.org/grpc.(*parser).recvMsg
+         0     0% 99.94%   50.73hrs 90.09%  google.golang.org/grpc.(*serverStream).RecvMsg
+         0     0% 99.94%   50.73hrs 90.09%  google.golang.org/grpc.recv
+         0     0% 99.94%   50.73hrs 90.09%  google.golang.org/grpc.recvAndDecompress
+         0     0% 99.94%   50.73hrs 90.08%  google.golang.org/grpc/internal/transport.(*Stream).ReadMessageHeader
+         0     0% 99.94%   50.73hrs 90.08%  google.golang.org/grpc/internal/transport.(*recvBufferReader).ReadMessageHeader
+         0     0% 99.94%   50.73hrs 90.08%  google.golang.org/grpc/internal/transport.(*recvBufferReader).readMessageHeader
+         0     0% 99.94%   50.73hrs 90.08%  google.golang.org/grpc/internal/transport.(*transportReader).ReadMessageHeader

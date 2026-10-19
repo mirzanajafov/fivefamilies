@@ -1,0 +1,43 @@
+Type: delay
+Showing nodes accounting for 40.64s, 100% of 40.65s total
+Dropped 1 node (cum <= 0.20s)
+      flat  flat%   sum%        cum   cum%
+    31.72s 78.04% 78.04%     31.72s 78.04%  runtime.selectgo
+     8.92s 21.96%   100%      8.92s 21.96%  runtime.chanrecv1
+         0     0%   100%      4.94s 12.14%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._Peer_Send_Handler
+         0     0%   100%      4.84s 11.90%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0%   100%      0.32s  0.78%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+         0     0%   100%      4.84s 11.90%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0%   100%      0.32s  0.78%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0%   100%      4.96s 12.19%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Start.func1
+         0     0%   100%      4.96s 12.19%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+         0     0%   100%      4.96s 12.19%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).runPeer
+         0     0%   100%      4.94s 12.14%  github.com/mirzanajafov/fivefamilies/internal/transport.server.Send
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc.(*GenericServerStream[...]).Recv
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc.(*Server).handleStream
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc.(*Server).processRPC
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc.(*Server).serveStreams.func2.1
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc.(*parser).recvMsg
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc.(*serverStream).RecvMsg
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc.recv
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc.recvAndDecompress
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc/internal/transport.(*Stream).ReadMessageHeader
+         0     0%   100%      9.67s 23.79%  google.golang.org/grpc/internal/transport.(*controlBuffer).get
+         0     0%   100%         2s  4.92%  google.golang.org/grpc/internal/transport.(*http2Client).keepalive
+         0     0%   100%      9.67s 23.79%  google.golang.org/grpc/internal/transport.(*loopyWriter).run
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc/internal/transport.(*recvBufferReader).ReadMessageHeader
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc/internal/transport.(*recvBufferReader).readMessageHeader
+         0     0%   100%      4.94s 12.14%  google.golang.org/grpc/internal/transport.(*transportReader).ReadMessageHeader
+         0     0%   100%      4.85s 11.94%  google.golang.org/grpc/internal/transport.NewHTTP2Client.func6
+         0     0%   100%      4.82s 11.85%  google.golang.org/grpc/internal/transport.NewServerTransport.func3
+         0     0%   100%      4.84s 11.90%  main.main
+         0     0%   100%         5s 12.30%  net/http.(*ServeMux).ServeHTTP
+         0     0%   100%         5s 12.30%  net/http.(*conn).serve
+         0     0%   100%         5s 12.30%  net/http.HandlerFunc.ServeHTTP
+         0     0%   100%         5s 12.30%  net/http.serverHandler.ServeHTTP
+         0     0%   100%         5s 12.30%  net/http/pprof.Trace
+         0     0%   100%         5s 12.30%  net/http/pprof.sleep
+         0     0%   100%         4s  9.85%  runtime.(*traceAdvancerState).start.func1
+         0     0%   100%      8.92s 21.96%  runtime.(*wakeableSleep).sleep
+         0     0%   100%      4.92s 12.11%  runtime.traceStartReadCPU.func1
+         0     0%   100%      5.27s 12.97%  sync.(*WaitGroup).Go.func1

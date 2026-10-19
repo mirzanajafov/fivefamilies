@@ -1,0 +1,155 @@
+{
+  "nodes": 5,
+  "node_flags": [
+    "-election",
+    "1s",
+    "-heartbeat",
+    "100ms"
+  ],
+  "generator_flags": [
+    "-reads",
+    "0",
+    "-value-bytes",
+    "128"
+  ],
+  "phases": [
+    {
+      "name": "before",
+      "rate": 6000,
+      "leader": 5,
+      "follower": 1,
+      "report": {
+        "summary": {
+          "config": {
+            "Rate": 6000,
+            "Duration": 24000000000,
+            "Warmup": 3000000000,
+            "ReadFraction": 0,
+            "Keys": 1000,
+            "ValueBytes": 128,
+            "MaxInflight": 10000,
+            "Timeout": 2000000000,
+            "Poisson": false,
+            "Seed": 1
+          },
+          "offered_per_s": 6000,
+          "achieved_per_s": 5999.75,
+          "window_ns": 24000000000,
+          "reads": {
+            "n": 0,
+            "p50_ns": 0,
+            "p90_ns": 0,
+            "p99_ns": 0,
+            "p999_ns": 0,
+            "max_ns": 0,
+            "mean_ns": 0,
+            "errors": 0
+          },
+          "writes": {
+            "n": 143994,
+            "p50_ns": 30500850,
+            "p90_ns": 68872819,
+            "p99_ns": 1363528404,
+            "p999_ns": 1495595241,
+            "max_ns": 1724909414,
+            "mean_ns": 83776114,
+            "errors": 5
+          },
+          "all": {
+            "n": 143994,
+            "p50_ns": 30500850,
+            "p90_ns": 68872819,
+            "p99_ns": 1363528404,
+            "p999_ns": 1495595241,
+            "max_ns": 1724909414,
+            "mean_ns": 83776114,
+            "errors": 5
+          },
+          "dropped": 0,
+          "lag": {
+            "n": 143999,
+            "p50_ns": 141428,
+            "p90_ns": 258475,
+            "p99_ns": 737532,
+            "p999_ns": 2434937,
+            "max_ns": 7703195,
+            "mean_ns": 172079,
+            "errors": 0
+          },
+          "errors": {
+            "ResourceExhausted": 5
+          },
+          "valid": true,
+          "timed_out": 0,
+          "scheduled": 143999
+        },
+        "nodes": 5,
+        "read_mode": "index",
+        "per_node_delta": [
+          {
+            "Fsyncs": 2249,
+            "Batches": 34039,
+            "Entries": 144095,
+            "Sent": 134510,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2232,
+            "Batches": 34431,
+            "Entries": 144095,
+            "Sent": 135050,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2248,
+            "Batches": 34419,
+            "Entries": 144149,
+            "Sent": 134791,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2291,
+            "Batches": 35367,
+            "Entries": 144094,
+            "Sent": 134466,
+            "Writes": 0,
+            "Reads": 0,
+            "Elections": 0
+          },
+          {
+            "Fsyncs": 2891,
+            "Batches": 139033,
+            "Entries": 144009,
+            "Sent": 538150,
+            "Writes": 143991,
+            "Reads": 0,
+            "Elections": 0
+          }
+        ],
+        "fsyncs_per_op": 0.08271872439129409,
+        "msgs_per_op": 7.479249135380641,
+        "entries_per_fsync": 60.48543363277643,
+        "elections": 0
+      },
+      "files": [
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-block-n1.pprof",
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-block-n5.pprof",
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-cpu-n1.pprof",
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-cpu-n5.pprof",
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-goroutine-n5.pprof",
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-heap-n1.pprof",
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-heap-n5.pprof",
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-mutex-n1.pprof",
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-mutex-n5.pprof",
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-trace-n1.trace",
+        "bench\\results\\profile\\20261019-w6000\\raw\\before-trace-n5.trace"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: cpu
+Time: 2026-10-19 10:35:01 +04
+Duration: 20s, Total samples = 8.02s (40.10%)
+Showing nodes accounting for 5.48s, 68.33% of 8.02s total
+Dropped 380 nodes (cum <= 0.04s)
+Showing top 40 nodes out of 231
+      flat  flat%   sum%        cum   cum%
+     3.19s 39.78% 39.78%      3.19s 39.78%  internal/runtime/syscall/linux.Syscall6
+     0.20s  2.49% 42.27%      0.20s  2.49%  runtime.memmove
+     0.19s  2.37% 44.64%      0.97s 12.09%  runtime.selectgo
+     0.12s  1.50% 46.13%      0.12s  1.50%  runtime.nextFreeFast (inline)
+     0.09s  1.12% 47.26%      0.10s  1.25%  github.com/google/btree.items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }].find.func1 (inline)
+     0.09s  1.12% 48.38%      0.09s  1.12%  runtime.fpTracebackPartialExpand
+     0.09s  1.12% 49.50%      0.09s  1.12%  runtime.memclrNoHeapPointers
+     0.09s  1.12% 50.62%      0.14s  1.75%  runtime.tryDeferToSpanScan
+     0.08s     1% 51.62%      0.08s     1%  runtime.findfunc
+     0.07s  0.87% 52.49%      0.11s  1.37%  google.golang.org/grpc/internal/transport.(*itemList).enqueue
+     0.07s  0.87% 53.37%      0.07s  0.87%  runtime.(*mspan).writeHeapBitsSmall
+     0.07s  0.87% 54.24%      0.08s     1%  runtime.step
+     0.05s  0.62% 54.86%      0.32s  3.99%  google.golang.org/grpc.(*clientStream).SendMsg
+     0.05s  0.62% 55.49%      0.06s  0.75%  google.golang.org/grpc/internal/transport.(*itemList).dequeue
+     0.05s  0.62% 56.11%      0.07s  0.87%  google.golang.org/protobuf/internal/impl.(*MessageInfo).sizePointerSlow
+     0.05s  0.62% 56.73%      0.05s  0.62%  internal/sync.(*Mutex).Lock (inline)
+     0.05s  0.62% 57.36%      0.05s  0.62%  runtime.(*moduledata).textAddr
+     0.05s  0.62% 57.98%      0.14s  1.75%  runtime.(*unwinder).resolveInternal
+     0.05s  0.62% 58.60%      0.05s  0.62%  runtime.lock2
+     0.05s  0.62% 59.23%      0.43s  5.36%  runtime.mallocgcSmallScanNoHeader
+     0.05s  0.62% 59.85%      0.19s  2.37%  runtime.pcvalue
+     0.05s  0.62% 60.47%      0.55s  6.86%  runtime.sellock
+     0.05s  0.62% 61.10%      0.05s  0.62%  runtime.spanClass.sizeclass (inline)
+     0.05s  0.62% 61.72%      0.05s  0.62%  time.runtimeNow
+     0.04s   0.5% 62.22%      0.14s  1.75%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).get
+     0.04s   0.5% 62.72%      0.44s  5.49%  internal/poll.(*FD).RawRead
+     0.04s   0.5% 63.22%      0.17s  2.12%  runtime.(*stkframe).getStackMap
+     0.04s   0.5% 63.72%      0.21s  2.62%  runtime.adjustframe
+     0.04s   0.5% 64.21%      0.17s  2.12%  runtime.chansend
+     0.04s   0.5% 64.71%      0.07s  0.87%  runtime.unlock2
+     0.03s  0.37% 65.09%      0.27s  3.37%  github.com/mirzanajafov/fivefamilies/internal/server.(*kvService).Put
+     0.03s  0.37% 65.46%      0.08s     1%  google.golang.org/grpc/internal/transport.(*http2Server).finishStream
+     0.03s  0.37% 65.84%      0.31s  3.87%  google.golang.org/grpc/internal/transport.(*http2Server).operateHeaders
+     0.03s  0.37% 66.21%      0.09s  1.12%  google.golang.org/grpc/internal/transport.(*loopyWriter).processData
+     0.03s  0.37% 66.58%      0.09s  1.12%  google.golang.org/protobuf/internal/impl.(*MessageInfo).marshalAppendPointer
+     0.03s  0.37% 66.96%      0.14s  1.75%  google.golang.org/protobuf/internal/impl.(*MessageInfo).unmarshalPointerEager
+     0.03s  0.37% 67.33%      0.67s  8.35%  runtime.mallocgc
+     0.03s  0.37% 67.71%      0.42s  5.24%  runtime.park_m
+     0.03s  0.37% 68.08%      0.43s  5.36%  runtime.schedule
+     0.02s  0.25% 68.33%      0.39s  4.86%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process

@@ -1,0 +1,47 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: inuse_space
+Time: 2026-10-19 10:41:08 +04
+Showing nodes accounting for 19759.55kB, 100% of 19759.55kB total
+Showing top 40 nodes out of 64
+      flat  flat%   sum%        cum   cum%
+ 4142.90kB 20.97% 20.97%  4142.90kB 20.97%  runtime.mallocgc
+ 3584.55kB 18.14% 39.11%  3584.55kB 18.14%  github.com/mirzanajafov/fivefamilies/internal/kv.Encode
+ 3073.03kB 15.55% 54.66%  3073.03kB 15.55%  github.com/mirzanajafov/fivefamilies/internal/transport.New
+ 1497.22kB  7.58% 62.24%  1497.22kB  7.58%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Hub).Publish
+ 1235.57kB  6.25% 68.49%  1235.57kB  6.25%  github.com/mirzanajafov/fivefamilies/internal/wal.encodeEntry (inline)
+ 1184.27kB  5.99% 74.48%  1184.27kB  5.99%  runtime/pprof.StartCPUProfile
+ 1024.47kB  5.18% 79.67%  1024.47kB  5.18%  time.goFunc
+  908.20kB  4.60% 84.26%   908.20kB  4.60%  github.com/mirzanajafov/fivefamilies/internal/raft.(*raftLog).append
+  544.67kB  2.76% 87.02%  3617.69kB 18.31%  github.com/mirzanajafov/fivefamilies/internal/server.New
+  514.38kB  2.60% 89.62%   514.38kB  2.60%  github.com/google/btree.(*items[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).insertAt (inline)
+     514kB  2.60% 92.23%      514kB  2.60%  google.golang.org/grpc/internal/mem.(*sizedBufferPool).Get
+  512.17kB  2.59% 94.82%  1024.23kB  5.18%  google.golang.org/grpc/internal/transport.(*http2Server).operateHeaders
+  512.08kB  2.59% 97.41%   512.08kB  2.59%  github.com/mirzanajafov/fivefamilies/internal/transport.toProto
+  512.05kB  2.59%   100%   512.05kB  2.59%  google.golang.org/grpc/internal/transport.(*writeQuota).init (inline)
+         0     0%   100%   514.38kB  2.60%  github.com/google/btree.(*BTreeG[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).ReplaceOrInsert
+         0     0%   100%   514.38kB  2.60%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).insert
+         0     0%   100%   514.38kB  2.60%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Apply
+         0     0%   100%   514.38kB  2.60%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).exec
+         0     0%   100%   514.38kB  2.60%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).put
+         0     0%   100%  2011.60kB 10.18%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+         0     0%   100%  4492.74kB 22.74%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Submit
+         0     0%   100%   908.20kB  4.60%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).Propose
+         0     0%   100%   908.20kB  4.60%  github.com/mirzanajafov/fivefamilies/internal/raft.(*Raft).appendEntry
+         0     0%   100%  6504.34kB 32.92%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0%   100%  1235.57kB  6.25%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run.func1
+         0     0%   100%  4492.74kB 22.74%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Submit.func1
+         0     0%   100%  4492.74kB 22.74%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).call.func1
+         0     0%   100%  6504.34kB 32.92%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).loop
+         0     0%   100%  1235.57kB  6.25%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).writer
+         0     0%   100%   512.08kB  2.59%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).Start.func1
+         0     0%   100%   512.08kB  2.59%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).pump
+         0     0%   100%   512.08kB  2.59%  github.com/mirzanajafov/fivefamilies/internal/transport.(*Transport).runPeer
+         0     0%   100%  1235.57kB  6.25%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).WriteBatch
+         0     0%   100%  1235.57kB  6.25%  github.com/mirzanajafov/fivefamilies/internal/wal.(*Log).WriteBatch.func3
+         0     0%   100%  1235.57kB  6.25%  github.com/mirzanajafov/fivefamilies/internal/wal.appendRecord
+         0     0%   100%  2011.60kB 10.18%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Machine).Apply
+         0     0%   100%  1538.23kB  7.78%  google.golang.org/grpc.(*Server).handleRawConn.func1
+         0     0%   100%  1538.23kB  7.78%  google.golang.org/grpc.(*Server).serveStreams
+         0     0%   100%      514kB  2.60%  google.golang.org/grpc/internal/mem.(*BinaryTieredBufferPool).Get
+         0     0%   100%      514kB  2.60%  google.golang.org/grpc/internal/transport.(*framer).readDataFrame

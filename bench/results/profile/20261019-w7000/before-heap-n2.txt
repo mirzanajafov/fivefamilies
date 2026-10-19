@@ -1,0 +1,47 @@
+File: ffnode
+Build ID: 92cd53ffafe93e328b0aff8339c2bd309621a340
+Type: inuse_space
+Time: 2026-10-19 10:36:15 +04
+Showing nodes accounting for 46251.23kB, 100% of 46251.23kB total
+Showing top 40 nodes out of 122
+      flat  flat%   sum%        cum   cum%
+ 8706.78kB 18.82% 18.82% 16899.59kB 36.54%  google.golang.org/grpc/internal/transport.(*http2Server).operateHeaders
+ 5251.10kB 11.35% 30.18%  5251.10kB 11.35%  google.golang.org/grpc/internal/mem.(*sizedBufferPool).Get
+ 3073.41kB  6.65% 36.82%  3073.41kB  6.65%  runtime.mallocgc
+ 2560.39kB  5.54% 42.36%  2560.39kB  5.54%  github.com/mirzanajafov/fivefamilies/internal/kv.Encode
+ 2560.23kB  5.54% 47.89%  2560.23kB  5.54%  google.golang.org/grpc/internal/transport.(*recvBuffer).init (inline)
+ 2304.77kB  4.98% 52.88%  2304.77kB  4.98%  github.com/mirzanajafov/fivefamilies/internal/transport.New
+ 2048.50kB  4.43% 57.31%  6656.90kB 14.39%  google.golang.org/grpc.(*Server).processRPC
+ 2048.22kB  4.43% 61.74%  2048.22kB  4.43%  google.golang.org/grpc/internal/transport.(*writeQuota).init (inline)
+ 1825.78kB  3.95% 65.68%  1825.78kB  3.95%  github.com/mirzanajafov/fivefamilies/internal/watch.(*Hub).Publish
+ 1536.16kB  3.32% 69.00%  1536.16kB  3.32%  context.(*cancelCtx).Done
+ 1536.16kB  3.32% 72.33%  3072.33kB  6.64%  github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1._KV_Put_Handler
+ 1536.07kB  3.32% 75.65%  1536.07kB  3.32%  context.WithValue
+ 1184.27kB  2.56% 78.21%  1184.27kB  2.56%  runtime/pprof.StartCPUProfile
+ 1024.47kB  2.22% 80.42%  1024.47kB  2.22%  time.goFunc
+ 1024.20kB  2.21% 82.64%  1024.20kB  2.21%  golang.org/x/net/http2.(*Framer).readMetaFrame.func1
+ 1024.11kB  2.21% 84.85%  1024.11kB  2.21%  google.golang.org/grpc/internal/transport.(*recvBufferReader).readMessageHeader
+ 1024.11kB  2.21% 87.07%  1024.11kB  2.21%  time.newTimer
+ 1024.09kB  2.21% 89.28%  1024.09kB  2.21%  google.golang.org/grpc/internal/transport.(*loopyWriter).registerStreamHandler
+  768.26kB  1.66% 90.94%  3073.03kB  6.64%  github.com/mirzanajafov/fivefamilies/internal/server.New
+  600.58kB  1.30% 92.24%   600.58kB  1.30%  github.com/mirzanajafov/fivefamilies/internal/kv.appendBytes (inline)
+  517.33kB  1.12% 93.36%   517.33kB  1.12%  golang.org/x/net/http2/hpack.(*headerFieldTable).addEntry
+  512.05kB  1.11% 94.46%  1024.11kB  2.21%  context.WithDeadlineCause
+  512.05kB  1.11% 95.57%   512.05kB  1.11%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).call
+  512.05kB  1.11% 96.68%   512.05kB  1.11%  github.com/mirzanajafov/fivefamilies/internal/transport.toProto
+  512.03kB  1.11% 97.79%   512.03kB  1.11%  google.golang.org/grpc.newContextWithRPCInfo (inline)
+  512.02kB  1.11% 98.89%   512.02kB  1.11%  google.golang.org/protobuf/internal/impl.(*MessageInfo).makeFieldTypes
+  512.02kB  1.11%   100%   512.02kB  1.11%  google.golang.org/grpc/internal/transport.(*http2Server).finishStream
+         0     0%   100%  1024.11kB  2.21%  context.WithDeadline (inline)
+         0     0%   100%  1024.11kB  2.21%  context.WithTimeout
+         0     0%   100%   600.58kB  1.30%  github.com/google/btree.(*BTreeG[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).Ascend
+         0     0%   100%   600.58kB  1.30%  github.com/google/btree.(*node[go.shape.struct { Key string; Value []uint8; CreateRev uint64; ModRev uint64; Version uint64; Lease uint64 }]).iterate
+         0     0%   100%   600.58kB  1.30%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Snapshot
+         0     0%   100%   600.58kB  1.30%  github.com/mirzanajafov/fivefamilies/internal/kv.(*Store).Snapshot.func1
+         0     0%   100%   600.58kB  1.30%  github.com/mirzanajafov/fivefamilies/internal/kv.appendKV
+         0     0%   100%  2426.36kB  5.25%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Process
+         0     0%   100%  2560.39kB  5.54%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).Submit
+         0     0%   100%   600.58kB  1.30%  github.com/mirzanajafov/fivefamilies/internal/node.(*Node).maybeSnapshot
+         0     0%   100%  4986.75kB 10.78%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Run
+         0     0%   100%   512.05kB  1.11%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Submit
+         0     0%   100%  2560.39kB  5.54%  github.com/mirzanajafov/fivefamilies/internal/server.(*Server).Submit.func1
