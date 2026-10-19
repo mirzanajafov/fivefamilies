@@ -250,7 +250,13 @@ func TestAClientStartsANewSessionAfterTheClusterForgetsItsOldOne(t *testing.T) {
 	if _, err := forgotten.Put(ctx, "k", []byte("again")); err != nil {
 		t.Fatalf("the write after the session expired: %v", err)
 	}
-	if kv, _, err := other.Get(ctx, "k", client.ReadIndex); err != nil || string(kv.Value) != "again" {
+	if _, err := other.Put(ctx, "k", []byte("lost")); !errors.Is(err, client.ErrSessionExpired) {
+		t.Fatalf("a write on the session the new one evicted: %v", err)
+	}
+	if _, err := other.Put(ctx, "k", []byte("other again")); err != nil {
+		t.Fatalf("the evicted client's next write: %v", err)
+	}
+	if kv, _, err := forgotten.Get(ctx, "k", client.ReadIndex); err != nil || string(kv.Value) != "other again" {
 		t.Fatalf("read %q %v", kv.Value, err)
 	}
 }

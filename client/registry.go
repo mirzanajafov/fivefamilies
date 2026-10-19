@@ -176,6 +176,9 @@ func (c *Client) Deregister(ctx context.Context, r *Registration) error {
 	r.cancel()
 	<-r.done
 	err := c.Revoke(ctx, r.Lease())
+	if errors.Is(err, ErrSessionExpired) {
+		err = c.Revoke(ctx, r.Lease())
+	}
 	if errors.Is(err, ErrLeaseNotFound) {
 		return nil
 	}

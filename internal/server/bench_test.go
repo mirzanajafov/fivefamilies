@@ -151,6 +151,12 @@ func TestALeaderOverItsPendingCapRefusesAtOnce(t *testing.T) {
 	}
 }
 
+func TestAGrantRefusedForTooManyLeasesIsNotRetried(t *testing.T) {
+	if code := status.Code(outcome(kv.Result{Code: kv.ErrTooManyLeases})); code != codes.FailedPrecondition {
+		t.Fatalf("too many leases reaches the client as %s, which it retries with the same sequence number", code)
+	}
+}
+
 func TestAFullCallQueueRefusesAtOnceOnlyWithACap(t *testing.T) {
 	for _, limit := range []uint64{4096, 0} {
 		t.Run(fmt.Sprintf("max-pending=%d", limit), func(t *testing.T) {

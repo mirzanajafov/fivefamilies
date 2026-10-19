@@ -118,11 +118,15 @@ func TestARegistrationComesBackAfterTheClusterForgetsItsSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 1 })
-	if err := other.Revoke(ctx, reg.Lease()); err != nil {
+	lost := reg.Lease()
+	if err := other.Revoke(ctx, lost); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 0 })
-	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 1 })
+	back, _ := waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 1 })
+	if back[0].Addr != "10.0.0.1:80" || reg.Renewals() != 1 || reg.Lease() == lost {
+		t.Fatalf("came back as %v after %d renewals on lease %d", back, reg.Renewals(), reg.Lease())
+	}
 }
 
 func TestARegistrationOutlivesALeaderAndComesBackAfterItsLeaseIsLost(t *testing.T) {
