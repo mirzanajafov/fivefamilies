@@ -2,6 +2,7 @@ package lab
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -96,18 +97,16 @@ func (b *BenchCluster) phase(ctx context.Context, o ProfileOptions, name string,
 	}
 	p.Leader, p.Follower = l, l%b.Nodes+1
 	args := append([]string{"-rate", fmt.Sprint(rate), "-duration", fmt.Sprintf("%ds", seconds+4), "-warmup", "3s"}, o.GenFlags...)
+	var report loadgen.Report
+	var genErr error
 	var wg sync.WaitGroup
-	wg.Go(func() {
-		r, err := b.Generate(ctx, o.GenCPUs, args...)
-		p.Report = r
-		if err != nil {
-			p.Err = err.Error()
-		}
-	})
-	if err := collect(ctx, o, &p, min(o.Seconds, seconds)); err != nil {
+	wg.Go(func() { report, genErr = b.Generate(ctx, o.GenCPUs, args...) })
+	collectErr := collect(ctx, o, &p, min(o.Seconds, seconds))
+	wg.Wait()
+	p.Report = report
+	if err := errors.Join(genErr, collectErr); err != nil {
 		p.Err = err.Error()
 	}
-	wg.Wait()
 	return p
 }
 

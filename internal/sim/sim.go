@@ -618,7 +618,7 @@ func (s *Sim) saveSnapshot(sn *simNode, snapshot raft.Snapshot) {
 func (s *Sim) compacted(sn *simNode, snapshot raft.Snapshot) {
 	n, err := sn.disk.log.Compact(snapshot.Index)
 	if err == nil {
-		err = snap.Clean(sn.disk.fs, snapshot)
+		err = snap.RemoveBelow(sn.disk.fs, snapshot.Index)
 	}
 	if err != nil {
 		s.chk.safetyf("node %d could not compact to %d: %v", sn.id, snapshot.Index, err)

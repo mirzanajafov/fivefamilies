@@ -172,6 +172,9 @@ func New(cfg Config) (*Server, error) {
 		quit:    make(chan struct{}),
 		log:     cfg.Logger.With("node", cfg.ID),
 	}
+	if err := snap.RemoveUnfinished(s.fs); err != nil {
+		return nil, fmt.Errorf("removing unfinished snapshots: %w", err)
+	}
 	l, st, rec, err := wal.Open(s.fs, wal.Options{SegmentBytes: cfg.SegmentBytes, Salt: randomUint64})
 	if err != nil {
 		return nil, fmt.Errorf("opening the log: %w", err)
@@ -441,11 +444,11 @@ func (s *Server) writer(ctx context.Context) {
 		}
 		for _, c := range compacts {
 			if _, err := s.wal.Compact(c.Index); err != nil {
-				s.die(fmt.Errorf("compacting the log: %w", err))
+				s.die(fmt.Errorf("compacting the log to %d: %w", c.Index, err))
 				return
 			}
-			if err := snap.Clean(s.fs, *c); err != nil {
-				s.die(fmt.Errorf("cleaning snapshots: %w", err))
+			if err := snap.RemoveBelow(s.fs, c.Index); err != nil {
+				s.die(fmt.Errorf("removing snapshots below %d: %w", c.Index, err))
 				return
 			}
 		}

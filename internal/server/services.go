@@ -65,7 +65,7 @@ func outcome(res kv.Result) error {
 	case kv.ErrLeaseNotFound:
 		return status.Error(codes.NotFound, "lease not found")
 	case kv.ErrTooManyLeases:
-		return status.Error(codes.ResourceExhausted, "too many leases")
+		return status.Error(codes.FailedPrecondition, "too many leases")
 	}
 	return status.Error(codes.InvalidArgument, res.Code.String())
 }

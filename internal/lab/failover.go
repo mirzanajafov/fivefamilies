@@ -192,24 +192,23 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 }
 
 func steady(ctx context.Context, adm *cluster) (int, error) {
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
+	var leader int
+	err := poll(ctx, 200*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
 		sts := adm.statuses(ctx, time.Second)
-		l, _ := leaderOf(sts)
+		l := agreedOn(sts)
 		if l == 0 {
-			wait(ctx, 200*time.Millisecond)
-			continue
+			return false, nil
 		}
-		ok := true
 		for _, st := range sts {
-			if st == nil || st.GetLeader() != uint64(l) || st.GetCommit() != sts[l-1].GetCommit() {
-				ok = false
+			if st.GetCommit() != sts[l-1].GetCommit() {
+				return false, nil
 			}
 		}
-		if ok {
-			return l, nil
-		}
-		wait(ctx, 200*time.Millisecond)
+		leader = l
+		return true, nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("the cluster did not settle: %w", err)
 	}
-	return 0, fmt.Errorf("the cluster did not settle within 60 s")
+	return leader, nil
 }

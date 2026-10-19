@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"fmt"
+
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
@@ -30,9 +32,13 @@ func toProto(m raft.Message) *pb.RaftMessage {
 	return out
 }
 
-func fromProto(m *pb.RaftMessage) raft.Message {
+func fromProto(m *pb.RaftMessage) (raft.Message, error) {
+	typ := raft.MessageType(m.GetType())
+	if uint32(typ) != m.GetType() || !typ.Remote() {
+		return raft.Message{}, fmt.Errorf("transport: message type %d is not one a peer sends", m.GetType())
+	}
 	out := raft.Message{
-		Type:    raft.MessageType(m.GetType()),
+		Type:    typ,
 		From:    raft.NodeID(m.GetFrom()),
 		To:      raft.NodeID(m.GetTo()),
 		Term:    m.GetTerm(),
@@ -45,14 +51,26 @@ func fromProto(m *pb.RaftMessage) raft.Message {
 	}
 	if n := len(m.GetEntries()); n > 0 {
 		out.Entries = make([]raft.Entry, n)
+		prevIndex, prevTerm := m.GetIndex(), max(m.GetLogTerm(), 1)
 		for i, e := range m.GetEntries() {
-			out.Entries[i] = raft.Entry{Term: e.GetTerm(), Index: e.GetIndex(), Type: raft.EntryType(e.GetType()), Data: e.GetData()}
+			et := raft.EntryType(e.GetType())
+			if uint32(et) != e.GetType() || !et.Valid() {
+				return raft.Message{}, fmt.Errorf("transport: unknown entry type %d", e.GetType())
+			}
+			if e.GetIndex() != prevIndex+1 || e.GetIndex() == 0 {
+				return raft.Message{}, fmt.Errorf("transport: entry %d of an append after %d has index %d", i, m.GetIndex(), e.GetIndex())
+			}
+			if e.GetTerm() < prevTerm || e.GetTerm() > m.GetTerm() {
+				return raft.Message{}, fmt.Errorf("transport: entry %d has term %d, after term %d in an append of term %d", e.GetIndex(), e.GetTerm(), prevTerm, m.GetTerm())
+			}
+			prevIndex, prevTerm = e.GetIndex(), e.GetTerm()
+			out.Entries[i] = raft.Entry{Term: e.GetTerm(), Index: e.GetIndex(), Type: et, Data: e.GetData()}
 		}
 	}
 	if s := m.GetSnapshot(); s != nil {
 		out.Snapshot = &raft.Snapshot{Index: s.GetIndex(), Term: s.GetTerm(), Conf: raft.ConfState{Voters: nodeIDs(s.GetVoters()), Learners: nodeIDs(s.GetLearners())}}
 	}
-	return out
+	return out, nil
 }
 
 func ids64(ids []raft.NodeID) []uint64 {

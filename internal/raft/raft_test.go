@@ -639,6 +639,25 @@ func TestALaggingFollowerGetsASnapshot(t *testing.T) {
 	}
 }
 
+func TestOnlyTheNodeItselfAcknowledgesItsWrites(t *testing.T) {
+	r := newNode(t, 2, five(), Restore{HardState: HardState{Term: 1}}, nil)
+	r.Step(Message{Type: MsgApp, From: 1, To: 2, Term: 1, Entries: ents(1, 1)})
+	ack, ok := find(r.Ready().AfterPersist, MsgStorageAck, 2)
+	if !ok {
+		t.Fatal("no storage acknowledgement after the write")
+	}
+	forged := ack
+	forged.From = 1
+	r.Step(forged)
+	if r.Stabled() != 0 {
+		t.Fatalf("stabled %d after another node acknowledged this node's write", r.Stabled())
+	}
+	r.Step(ack)
+	if r.Stabled() != 2 {
+		t.Fatalf("stabled %d after the write", r.Stabled())
+	}
+}
+
 func TestSnapshotHandOffWaitsForItsWrite(t *testing.T) {
 	r := newNode(t, 2, five(), Restore{HardState: HardState{Term: 1}}, nil)
 	snap := &Snapshot{Index: 50, Term: 1, Data: []byte("s")}

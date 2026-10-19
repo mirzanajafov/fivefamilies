@@ -27,12 +27,7 @@ func leaseErr(err error) error {
 }
 
 func (c *Client) Grant(ctx context.Context, ttl time.Duration) (Lease, error) {
-	session, seq, done, err := c.nextSeq(ctx)
-	if err != nil {
-		return Lease{}, err
-	}
-	defer done()
-	res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.LeaseGrantResponse, error) {
+	res, err := write(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (*pb.LeaseGrantResponse, error) {
 		return pb.NewLeaseClient(cc).Grant(ctx, &pb.LeaseGrantRequest{Client: session, Seq: seq, TtlMs: uint64(ttl / time.Millisecond)}, opts...)
 	})
 	if err != nil {
@@ -42,14 +37,13 @@ func (c *Client) Grant(ctx context.Context, ttl time.Duration) (Lease, error) {
 }
 
 func (c *Client) Revoke(ctx context.Context, id uint64) error {
-	session, seq, done, err := c.nextSeq(ctx)
-	if err != nil {
-		return err
-	}
-	defer done()
-	_, err = do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.LeaseRevokeResponse, error) {
+	call := func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (*pb.LeaseRevokeResponse, error) {
 		return pb.NewLeaseClient(cc).Revoke(ctx, &pb.LeaseRevokeRequest{Client: session, Seq: seq, Id: id}, opts...)
-	})
+	}
+	_, err := write(ctx, c, call)
+	if errors.Is(err, ErrSessionExpired) {
+		_, err = write(ctx, c, call)
+	}
 	return leaseErr(err)
 }
 

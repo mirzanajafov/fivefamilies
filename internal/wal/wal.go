@@ -499,7 +499,7 @@ func decodeEntry(p []byte) (raft.Entry, error) {
 		return e, corrupt("bad entry")
 	}
 	e.Type = raft.EntryType(p[0])
-	if e.Type != raft.EntryNormal && e.Type != raft.EntryConfig {
+	if !e.Type.Valid() {
 		return e, corrupt("bad entry type %d", p[0])
 	}
 	if len(p) > 1 {
