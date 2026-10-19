@@ -151,6 +151,47 @@ func TestALeaderOverItsPendingCapRefusesAtOnce(t *testing.T) {
 	}
 }
 
+func TestAFullCallQueueRefusesAtOnceOnlyWithACap(t *testing.T) {
+	for _, limit := range []uint64{4096, 0} {
+		t.Run(fmt.Sprintf("max-pending=%d", limit), func(t *testing.T) {
+			c := newTestCluster(t, 3, func(cfg *Config) { cfg.MaxPending = limit })
+			l := c.leader(5 * time.Second)
+			srv := c.running[l].srv
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			release := blockLoop(t, ctx, srv)
+			room := cap(srv.calls)
+			var ok, busy atomic.Int32
+			var wg sync.WaitGroup
+			for i := range room + 50 {
+				wg.Go(func() {
+					_, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: fmt.Sprint(i), Value: []byte("v")})
+					switch {
+					case err == nil:
+						ok.Add(1)
+					case errors.Is(err, raft.ErrBusy):
+						busy.Add(1)
+					default:
+						t.Error(err)
+					}
+				})
+			}
+			for len(srv.calls) < room || (limit > 0 && busy.Load() < 50) {
+				time.Sleep(time.Millisecond)
+			}
+			release()
+			wg.Wait()
+			want := int32(0)
+			if limit > 0 {
+				want = 50
+			}
+			if busy.Load() != want || ok.Load() != int32(room+50)-want {
+				t.Fatalf("%d written and %d refused, want %d refused", ok.Load(), busy.Load(), want)
+			}
+		})
+	}
+}
+
 func TestARequestWhoseClientGaveUpIsNotProposed(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
 	l := c.leader(5 * time.Second)

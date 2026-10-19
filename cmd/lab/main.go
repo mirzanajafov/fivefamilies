@@ -93,6 +93,7 @@ func profile(args []string) {
 	nodes := fs.Int("nodes", 5, "cluster size")
 	rate := fs.Float64("rate", 4000, "operations per second while profiling")
 	seconds := fs.Int("seconds", 20, "length of each CPU profile")
+	trace := fs.Duration("trace", 0, "also take an execution trace this long on the leader and a follower")
 	overload := fs.Float64("overload", 0, "if set, overload the cluster at this rate and then profile again at -rate")
 	overloadFor := fs.Duration("overload-for", 15*time.Second, "how long the overload lasts")
 	nodeFlags := fs.String("node-flags", "-election,1s,-heartbeat,100ms", "node flags, comma separated")
@@ -110,7 +111,7 @@ func profile(args []string) {
 	out := filepath.Join("bench", "results", "profile", *label)
 	o := lab.ProfileOptions{
 		Nodes: *nodes, Flags: strings.Split(*nodeFlags, ","), GenFlags: strings.Split(*genFlags, ","),
-		Rate: *rate, Seconds: *seconds, Overload: *overload, OverloadFor: *overloadFor,
+		Rate: *rate, Seconds: *seconds, Trace: *trace, Overload: *overload, OverloadFor: *overloadFor,
 		NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Out: out,
 		Log: func(format string, args ...any) {
 			fmt.Printf("%s "+format+"\n", append([]any{time.Now().Format("15:04:05")}, args...)...)
@@ -119,6 +120,30 @@ func profile(args []string) {
 	rep, err := lab.Profile(ctx, o)
 	for _, p := range rep.Phases {
 		for _, f := range p.Files {
+			if strings.HasSuffix(f, ".trace") {
+				for _, kind := range []string{"sync", "syscall", "sched"} {
+					text, err := exec.CommandContext(ctx, "go", "tool", "trace", "-pprof="+kind, f).Output()
+					if err != nil {
+						fmt.Fprintln(os.Stderr, f+":", err)
+						continue
+					}
+					prof := strings.TrimSuffix(f, ".trace") + "-" + kind + ".pprof"
+					if err := os.WriteFile(prof, text, 0o644); err != nil {
+						fmt.Fprintln(os.Stderr, err)
+						continue
+					}
+					top, err := exec.CommandContext(ctx, "go", "tool", "pprof", "-top", "-nodecount=40", prof).Output()
+					if err != nil {
+						fmt.Fprintln(os.Stderr, prof+":", err)
+						continue
+					}
+					name := strings.TrimSuffix(filepath.Base(f), ".trace") + "-" + kind + ".txt"
+					if err := os.WriteFile(filepath.Join(out, name), top, 0o644); err != nil {
+						fmt.Fprintln(os.Stderr, err)
+					}
+				}
+				continue
+			}
 			views := map[string][]string{".txt": {"-top"}}
 			if strings.Contains(f, "-cpu-") {
 				views[".cum.txt"] = []string{"-top", "-cum"}

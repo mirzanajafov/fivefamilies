@@ -20,6 +20,7 @@ type ProfileOptions struct {
 	GenFlags    []string
 	Rate        float64
 	Seconds     int
+	Trace       time.Duration
 	Overload    float64
 	OverloadFor time.Duration
 	NodeCPUs    []string
@@ -119,7 +120,11 @@ func (b *BenchCluster) phase(ctx context.Context, o ProfileOptions, name string,
 			var fetches sync.WaitGroup
 			get := func(node int, what, path string) {
 				fetches.Go(func() {
-					file := filepath.Join(raw, fmt.Sprintf("%s-%s-n%d.pprof", name, what, node))
+					ext := ".pprof"
+					if what == "trace" {
+						ext = ".trace"
+					}
+					file := filepath.Join(raw, fmt.Sprintf("%s-%s-n%d%s", name, what, node, ext))
 					if err := fetchProfile(ctx, profileURL(node, path), file); err != nil {
 						o.Log("%s: %s on n%d: %v", name, what, node, err)
 						return
@@ -131,6 +136,9 @@ func (b *BenchCluster) phase(ctx context.Context, o ProfileOptions, name string,
 			}
 			for _, n := range []int{p.Leader, p.Follower} {
 				get(n, "cpu", fmt.Sprintf("profile?seconds=%d", o.Seconds))
+				if o.Trace > 0 {
+					get(n, "trace", fmt.Sprintf("trace?seconds=%d", int(o.Trace/time.Second)))
+				}
 			}
 			if wait(ctx, time.Duration(o.Seconds)*time.Second/2) {
 				get(p.Leader, "goroutine", "goroutine")
