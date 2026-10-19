@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"strconv"
 	"strings"
 
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
@@ -121,13 +122,37 @@ func readConf(b []byte) (raft.ConfState, []byte, bool) {
 }
 
 func Clean(fs vfs.FS, keep raft.Snapshot) error {
+	return removeIf(fs, func(n string) bool {
+		i, ok := index(n)
+		return ok && i < keep.Index
+	})
+}
+
+func RemoveUnfinished(fs vfs.FS) error {
+	return removeIf(fs, func(n string) bool { return strings.HasSuffix(n, suffix+tmpSuffix) })
+}
+
+func index(name string) (uint64, bool) {
+	base, ok := strings.CutSuffix(name, suffix)
+	if !ok {
+		return 0, false
+	}
+	_, hex, ok := strings.Cut(base, "-")
+	if !ok {
+		return 0, false
+	}
+	i, err := strconv.ParseUint(hex, 16, 64)
+	return i, err == nil
+}
+
+func removeIf(fs vfs.FS, match func(string) bool) error {
 	names, err := fs.List()
 	if err != nil {
 		return err
 	}
 	removed := false
 	for _, n := range names {
-		if (strings.HasSuffix(n, suffix) && n != Name(keep.Index, keep.Term)) || strings.HasSuffix(n, suffix+tmpSuffix) {
+		if match(n) {
 			if err := fs.Remove(n); err != nil {
 				return err
 			}

@@ -174,6 +174,9 @@ func New(cfg Config) (*Server, error) {
 		stopped: make(chan struct{}),
 		log:     cfg.Logger.With("node", cfg.ID),
 	}
+	if err := snap.RemoveUnfinished(s.fs); err != nil {
+		return nil, fmt.Errorf("removing unfinished snapshots: %w", err)
+	}
 	l, st, rec, err := wal.Open(s.fs, wal.Options{SegmentBytes: cfg.SegmentBytes, Salt: randomUint64})
 	if err != nil {
 		return nil, fmt.Errorf("opening the log: %w", err)
