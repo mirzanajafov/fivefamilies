@@ -13,6 +13,10 @@ const (
 	EntryConfig
 )
 
+func (t EntryType) Valid() bool {
+	return t == EntryNormal || t == EntryConfig
+}
+
 type Entry struct {
 	Term  uint64
 	Index uint64
@@ -71,11 +75,19 @@ var messageTypeNames = [...]string{
 	MsgTimeoutNow:    "TimeoutNow",
 }
 
+func (t MessageType) known() bool {
+	return int(t) < len(messageTypeNames) && messageTypeNames[t] != ""
+}
+
 func (t MessageType) String() string {
-	if int(t) < len(messageTypeNames) && messageTypeNames[t] != "" {
+	if t.known() {
 		return messageTypeNames[t]
 	}
 	return fmt.Sprintf("MessageType(%d)", uint8(t))
+}
+
+func (t MessageType) Remote() bool {
+	return t.known() && t != MsgStorageAck
 }
 
 type Message struct {

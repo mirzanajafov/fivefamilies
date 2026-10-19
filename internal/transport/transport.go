@@ -226,8 +226,12 @@ func (s server) Send(stream grpc.ClientStreamingServer[pb.Batch, pb.Ack]) error 
 		if err != nil {
 			return err
 		}
-		for _, m := range b.GetMessages() {
-			s.t.receive(fromProto(m))
+		for _, pm := range b.GetMessages() {
+			m, err := fromProto(pm)
+			if err != nil {
+				return err
+			}
+			s.t.receive(m)
 		}
 	}
 }
@@ -247,7 +251,10 @@ func (s server) InstallSnapshot(stream grpc.ClientStreamingServer[pb.SnapshotChu
 			if c.GetMessage() == nil || c.GetMessage().GetSnapshot() == nil {
 				return errors.New("transport: snapshot stream without a snapshot message")
 			}
-			m := fromProto(c.GetMessage())
+			m, err := fromProto(c.GetMessage())
+			if err != nil {
+				return err
+			}
 			msg = &m
 		}
 		data = append(data, c.GetData()...)

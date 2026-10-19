@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
@@ -20,8 +21,26 @@ func TestConversionRoundTrip(t *testing.T) {
 		{Type: raft.MsgReadIndex, From: 2, To: 1, Term: 4, Context: 12},
 	}
 	for _, m := range msgs {
-		if got := fromProto(toProto(m)); !reflect.DeepEqual(got, m) {
-			t.Fatalf("round trip changed %v into %v", m, got)
+		if got, err := fromProto(toProto(m)); err != nil || !reflect.DeepEqual(got, m) {
+			t.Fatalf("round trip changed %v into %v: %v", m, got, err)
+		}
+	}
+}
+
+func TestAPeerCannotSendLocalOrUnknownTypes(t *testing.T) {
+	bad := map[string]*pb.RaftMessage{
+		"no type":                {From: 2, To: 1, Term: 3},
+		"a storage ack":          {Type: uint32(raft.MsgStorageAck), From: 1, To: 1, Index: 9},
+		"a storage ack plus 256": {Type: uint32(raft.MsgStorageAck) + 256, From: 1, To: 1, Index: 9},
+		"a type after the last":  {Type: uint32(raft.MsgTimeoutNow) + 1, From: 2, To: 1},
+		"an unknown entry type": {Type: uint32(raft.MsgApp), From: 2, To: 1, Term: 3,
+			Entries: []*pb.Entry{{Term: 3, Index: 1, Type: uint32(raft.EntryConfig) + 1}}},
+		"an entry type plus 256": {Type: uint32(raft.MsgApp), From: 2, To: 1, Term: 3,
+			Entries: []*pb.Entry{{Term: 3, Index: 1, Type: uint32(raft.EntryNormal) + 256}}},
+	}
+	for name, m := range bad {
+		if got, err := fromProto(m); err == nil {
+			t.Errorf("%s was accepted as %v", name, got)
 		}
 	}
 }
