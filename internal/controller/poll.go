@@ -128,15 +128,26 @@ func (c *Controller) statuses(ctx context.Context) []*pb.StatusResponse {
 
 func (c *Controller) pollOnce(ctx context.Context) {
 	sts := c.statuses(ctx)
-	now := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.observe(sts, time.Now())
+}
+
+func (c *Controller) observe(sts []*pb.StatusResponse, now time.Time) {
 	elapsed := now.Sub(c.prevAt).Seconds()
 	leader, term := 0, uint64(0)
 	for i, st := range sts {
 		v := &c.nodes[i]
 		wasUp := v.Up
-		v.Up = st != nil
+		switch {
+		case st != nil:
+			c.silent[i], v.Up = time.Time{}, true
+		case c.silent[i].IsZero():
+			c.silent[i] = now
+		}
+		if st == nil && (c.prevAt.IsZero() || now.Sub(c.silent[i]) >= c.cfg.DownAfter) {
+			v.Up = false
+		}
 		if v.Up != wasUp && !c.prevAt.IsZero() {
 			if v.Up {
 				c.event("up", i+1, 0, fmt.Sprintf("node %d answers again", i+1))
@@ -145,7 +156,9 @@ func (c *Controller) pollOnce(ctx context.Context) {
 			}
 		}
 		if st == nil {
-			v.MsgsPerS = 0
+			if !v.Up {
+				v.MsgsPerS = 0
+			}
 			continue
 		}
 		v.State, v.Term, v.Leader = st.GetState(), st.GetTerm(), int(st.GetLeader())

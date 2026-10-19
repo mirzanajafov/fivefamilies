@@ -20,6 +20,7 @@ import (
 	"github.com/anishathalye/porcupine"
 	"google.golang.org/grpc"
 
+	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/internal/check"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/server"
@@ -321,5 +322,39 @@ func TestThePollerSlowsDownWithNobodyWatching(t *testing.T) {
 	c.viewers, c.fault = 0, &Fault{}
 	if got := c.pollEvery(); got != 100*time.Millisecond {
 		t.Fatalf("during a fault: %v", got)
+	}
+}
+
+func TestANodeIsShownDownOnlyAfterItHasBeenSilentForAWhile(t *testing.T) {
+	c := &Controller{cfg: Config{DownAfter: time.Second}, nodes: make([]NodeView, 2), silent: make([]time.Time, 2)}
+	leader := &pb.StatusResponse{State: "leader", Term: 1, Leader: 1}
+	follower := &pb.StatusResponse{State: "follower", Term: 1, Leader: 1}
+	t0 := time.Now()
+	downs := func() (n int) {
+		for _, e := range c.events {
+			if e.Kind == "down" {
+				n++
+			}
+		}
+		return n
+	}
+	c.observe([]*pb.StatusResponse{leader, follower}, t0)
+	for _, ms := range []int{300, 900, 1200} {
+		c.observe([]*pb.StatusResponse{leader, nil}, t0.Add(time.Duration(ms)*time.Millisecond))
+		if !c.nodes[1].Up || downs() != 0 {
+			t.Fatalf("after %d ms of missed polls the node shows as down", ms-300)
+		}
+	}
+	c.observe([]*pb.StatusResponse{leader, nil}, t0.Add(1300*time.Millisecond))
+	if c.nodes[1].Up || downs() != 1 {
+		t.Fatalf("a node silent for a second still shows as up (events %+v)", c.events)
+	}
+	c.observe([]*pb.StatusResponse{leader, follower}, t0.Add(1400*time.Millisecond))
+	if !c.nodes[1].Up || c.events[len(c.events)-1].Kind != "up" {
+		t.Fatalf("the node came back but shows %+v", c.nodes[1])
+	}
+	c.observe([]*pb.StatusResponse{leader, nil}, t0.Add(1500*time.Millisecond))
+	if !c.nodes[1].Up {
+		t.Fatal("one missed poll after coming back shows the node as down")
 	}
 }
