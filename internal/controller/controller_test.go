@@ -325,6 +325,23 @@ func TestThePollerSlowsDownWithNobodyWatching(t *testing.T) {
 	}
 }
 
+func TestAFreshControllerSendsEmptyListsTheDashboardCanRead(t *testing.T) {
+	c, err := New(Config{Nodes: []string{"127.0.0.1:1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	b, err := json.Marshal(c.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, list := range []string{`"events":[]`, `"windows":[]`} {
+		if !bytes.Contains(b, []byte(list)) {
+			t.Errorf("the snapshot %s has no %s", b, list)
+		}
+	}
+}
+
 func TestANodeIsShownDownOnlyAfterItHasBeenSilentForAWhile(t *testing.T) {
 	c := &Controller{cfg: Config{DownAfter: time.Second}, nodes: make([]NodeView, 2), silent: make([]time.Time, 2)}
 	leader := &pb.StatusResponse{State: "leader", Term: 1, Leader: 1}

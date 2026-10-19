@@ -165,8 +165,8 @@ func (c *Controller) Snapshot() Snapshot {
 		Nodes:   append([]NodeView(nil), c.nodes...),
 		Leader:  c.leader,
 		Term:    c.term,
-		Events:  append([]Event(nil), c.events[max(0, len(c.events)-50):]...),
-		Windows: append([]Window(nil), c.windows[max(0, len(c.windows)-20):]...),
+		Events:  append([]Event{}, c.events[max(0, len(c.events)-50):]...),
+		Windows: append([]Window{}, c.windows[max(0, len(c.windows)-20):]...),
 		Load:    Load{Active: c.loadOn, OpsPerS: c.opsRate, Viewers: c.viewers},
 		Limits:  Limits{MaxSeconds: int(c.cfg.VisitorMax / time.Second), CooldownSeconds: int(c.cfg.Cooldown / time.Second)},
 	}
