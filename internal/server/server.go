@@ -83,13 +83,13 @@ func New(cfg Config) (*Server, error) {
 		s.log.Warn("cut a torn tail from the log", "bytes", rec.TornBytes)
 	}
 	s.disk = disk
-	if err := s.start(st); err != nil {
+	if err := s.assemble(st); err != nil {
 		return nil, errors.Join(err, disk.Close())
 	}
 	return s, nil
 }
 
-func (s *Server) start(st raft.Restore) error {
+func (s *Server) assemble(st raft.Restore) error {
 	cfg := s.cfg
 	s.sm = watch.NewMachine(cfg.MaxSessions, cfg.WatchHistory, cfg.Bugs)
 	if st.Snapshot != nil {
@@ -151,7 +151,10 @@ func (s *Server) Run(ctx context.Context) error {
 	close(s.stopped)
 	wg.Wait()
 	s.tr.Close()
-	return errors.Join(s.failure, s.disk.Close())
+	if err := s.disk.Close(); err != nil {
+		s.log.Error("closing the log", "err", err)
+	}
+	return s.failure
 }
 
 func (s *Server) die(err error) {

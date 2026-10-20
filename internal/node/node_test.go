@@ -30,9 +30,10 @@ func (e *recEnv) SaveSnapshot(s raft.Snapshot) error {
 func (e *recEnv) Compacted(s raft.Snapshot) { e.compacted = append(e.compacted, s) }
 
 type recApp struct {
-	applied  []raft.Entry
-	restored []byte
-	at       uint64
+	applied    []raft.Entry
+	restored   []byte
+	at         uint64
+	restoreErr error
 }
 
 func (a *recApp) Apply(e raft.Entry) kv.Result {
@@ -58,6 +59,9 @@ func (a *recApp) Leases() []kv.LeaseInfo {
 }
 
 func (a *recApp) Restore(index uint64, data []byte) error {
+	if a.restoreErr != nil {
+		return a.restoreErr
+	}
 	a.restored, a.at = data, index
 	return nil
 }
@@ -400,6 +404,18 @@ func TestAnInstalledSnapshotRestoresTheStateMachine(t *testing.T) {
 	settle(t, n, env)
 	if len(env.sent) != 1 || env.sent[0].Index != 30 {
 		t.Fatalf("sent %v", env.sent)
+	}
+}
+
+func TestASnapshotThatFailsToRestoreStopsTheNodeBeforeItWritesOrAcknowledgesTheInstall(t *testing.T) {
+	n, env, app := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	app.restoreErr = errors.New("the snapshot data does not decode")
+	n.Receive(raft.Message{Type: raft.MsgSnap, From: 1, To: 2, Term: 2, Snapshot: &raft.Snapshot{Index: 30, Term: 2, Data: []byte("garbage")}})
+	if err := n.Process(); !errors.Is(err, app.restoreErr) {
+		t.Fatalf("the node went on after the install failed: %v", err)
+	}
+	if len(env.writes) != 0 || len(env.sent) != 0 {
+		t.Fatalf("after a failed install: writes %+v, sent %v", env.writes, env.sent)
 	}
 }
 

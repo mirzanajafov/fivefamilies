@@ -39,10 +39,7 @@ func (s *Server) writer(ctx context.Context) {
 			return
 		case first = <-s.jobs:
 		}
-		jobs := s.batch(ctx, first)
-		if ctx.Err() != nil {
-			return
-		}
+		jobs := s.gather(first)
 		last, err := s.persist(jobs)
 		if err != nil {
 			s.die(err)
@@ -67,9 +64,9 @@ func (s *Server) writer(ctx context.Context) {
 	}
 }
 
-func (s *Server) batch(ctx context.Context, first diskJob) []diskJob {
+func (s *Server) gather(first diskJob) []diskJob {
 	jobs := []diskJob{first}
-	for s.cfg.FsyncMode == FsyncGroup && ctx.Err() == nil {
+	for s.cfg.FsyncMode == FsyncGroup {
 		select {
 		case j := <-s.jobs:
 			jobs = append(jobs, j)

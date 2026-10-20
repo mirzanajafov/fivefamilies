@@ -91,41 +91,12 @@ func (s *Server) waitForDisk(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) leaderless() bool {
-	return s.node.LeaderlessTicks() > uint64(2*s.cfg.ElectionTick)
-}
-
-func (s *Server) tendWatches() {
-	if s.sm.Hub.Len() == 0 {
-		return
-	}
-	if s.leaderless() {
-		s.sm.Hub.EndAll()
-		return
-	}
-	if time.Since(s.lastWatch) >= s.cfg.WatchProgress {
-		s.lastWatch = time.Now()
-		s.sm.Hub.Progress()
-	}
-}
-
 func (s *Server) onLoop(ctx context.Context, f func()) error {
-	done := make(chan struct{})
-	select {
-	case s.calls <- func() { f(); close(done) }:
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-s.stopped:
-		return ErrStopped
-	}
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-s.stopped:
-		return ErrStopped
-	}
+	_, err := s.run(ctx, func(done node.Done) {
+		f()
+		done(kv.Result{}, nil)
+	})
+	return err
 }
 
 type result struct {
@@ -153,6 +124,8 @@ func (s *Server) call(ctx context.Context, refuse bool, f func(done node.Done)) 
 	if refuse {
 		select {
 		case s.calls <- call:
+		case <-s.stopped:
+			return kv.Result{}, ErrStopped
 		default:
 			return kv.Result{}, raft.ErrBusy
 		}
@@ -171,6 +144,11 @@ func (s *Server) call(ctx context.Context, refuse bool, f func(done node.Done)) 
 	case <-ctx.Done():
 		return kv.Result{}, ctx.Err()
 	case <-s.stopped:
-		return kv.Result{}, ErrStopped
+		select {
+		case r := <-ch:
+			return r.res, r.err
+		default:
+			return kv.Result{}, ErrStopped
+		}
 	}
 }

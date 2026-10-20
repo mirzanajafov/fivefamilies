@@ -253,7 +253,7 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 		select {
 		case a.s.calls <- func() { a.s.paused.wait(a.s.quit) }:
 		case <-ctx.Done():
-			return nil, status.FromContextError(ctx.Err()).Err()
+			return nil, fail(ctx, a.s, ctx.Err())
 		case <-a.s.stopped:
 			return nil, fail(ctx, a.s, ErrStopped)
 		}

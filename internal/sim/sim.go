@@ -369,6 +369,9 @@ func (s *Sim) boot(sn *simNode) {
 	sn.n = node.New(r, nodeEnv{s: s, sn: sn}, sn.sm, node.Config{SnapshotEvery: s.sw.snapEvery, Retain: s.sw.retain, Tick: s.opts.Tick})
 	s.chk.restarted(sn.idx)
 	s.process(sn)
+	if sn.n == nil {
+		return
+	}
 	s.scheduleTick(sn, time.Duration(s.rng.Int64N(int64(s.opts.Tick))))
 }
 
@@ -443,18 +446,21 @@ func (s *Sim) dispatch(e event) {
 		}
 		if sn.disk.covers > 0 {
 			if err := sn.disk.sync(s.chk, sn.idx); err != nil {
-				s.chk.safetyf("node %d: %v", sn.id, err)
+				s.crashWith(sn, err)
 				return
 			}
 		}
 		if err := sn.n.WriteDone(e.wseq); err != nil {
-			s.failed(sn, err)
+			s.crashWith(sn, err)
 			return
 		}
 		compacting := sn.disk.compacting
 		sn.disk.compacting, sn.disk.syncing = nil, false
 		for _, c := range compacting {
-			s.compact(sn, c)
+			if err := s.compact(sn, c); err != nil {
+				s.crashWith(sn, err)
+				return
+			}
 		}
 		s.startSync(sn)
 	case evRequest:
@@ -500,14 +506,14 @@ func (s *Sim) deferProcess(sn *simNode) {
 
 func (s *Sim) process(sn *simNode) {
 	if err := sn.n.Process(); err != nil {
-		s.failed(sn, err)
+		s.crashWith(sn, err)
 		return
 	}
 	s.observe(sn)
 }
 
-func (s *Sim) failed(sn *simNode, err error) {
-	s.chk.safetyf("node %d failed: %v", sn.id, err)
+func (s *Sim) crashWith(sn *simNode, err error) {
+	s.chk.report(CatPanic, "node %d failed: %v", sn.id, err)
 	s.crash(sn)
 }
 
@@ -565,7 +571,7 @@ func (s *Sim) write(sn *simNode, w node.Write) {
 		}
 	}
 	if err := sn.disk.submit(w); err != nil {
-		s.chk.safetyf("node %d: %v", sn.id, err)
+		s.crashWith(sn, err)
 		return
 	}
 	if !sn.disk.syncing {
@@ -646,13 +652,10 @@ func (s *Sim) compacted(sn *simNode, snapshot raft.Snapshot) {
 	sn.disk.compacts = append(sn.disk.compacts, snapshot)
 }
 
-func (s *Sim) compact(sn *simNode, snapshot raft.Snapshot) {
+func (s *Sim) compact(sn *simNode, snapshot raft.Snapshot) error {
 	n, err := sn.disk.store.Compact(snapshot.Index)
-	if err != nil {
-		s.chk.safetyf("node %d: %v", sn.id, err)
-		return
-	}
 	s.stats.Compactions += n
+	return err
 }
 
 func (s *Sim) crash(sn *simNode) {
@@ -686,6 +689,9 @@ func (s *Sim) resume(sn *simNode) {
 	if missed := int64((s.now - sn.pausedAt) / s.tickInterval(sn)); missed > 0 && sn.n != nil && !s.opts.NoCatchUp {
 		sn.n.Advance(time.Duration(missed) * s.opts.Tick)
 		s.process(sn)
+		if sn.n == nil {
+			return
+		}
 	}
 	backlog := sn.backlog
 	sn.backlog = nil
