@@ -38,9 +38,8 @@ export function Dashboard() {
   return (
     <div className="grid gap-4">
       <p className="muted max-w-3xl text-sm leading-relaxed">
-        Five processes keep one replicated log with Raft, written from scratch in Go. The Don is the leader, and when it falls, the others
-        hold a succession. Break a family below and watch the rest keep their word: every ten seconds the clients&apos; history is
-        checked for linearizability.
+        Five processes keep one replicated log with Raft, written from scratch in Go. The Don is the leader, and when it falls, the others hold a succession.
+        Break a family below and watch the rest keep their word: every ten seconds the clients&apos; history is checked for linearizability.
       </p>
       {!connected && <p className="text-sm text-[var(--blood)]">The stream dropped and the page is reconnecting. What you see may be stale.</p>}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">

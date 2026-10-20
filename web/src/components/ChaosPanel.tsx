@@ -85,7 +85,14 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
         <span className="muted text-xs tracking-wide uppercase">
           For {seconds} s <span className="normal-case">(at most {max})</span>
         </span>
-        <input type="range" min={1} max={max} value={Math.min(seconds, max)} onChange={(e) => setSeconds(Number(e.target.value))} className="accent-[var(--gold)]" />
+        <input
+          type="range"
+          min={1}
+          max={max}
+          value={Math.min(seconds, max)}
+          onChange={(e) => setSeconds(Number(e.target.value))}
+          className="accent-[var(--gold)]"
+        />
       </label>
       <div className="flex flex-wrap gap-2">
         <button

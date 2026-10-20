@@ -52,7 +52,11 @@ export function AdminBox() {
             aria-label="admin token"
             className="rounded-lg border border-[var(--line)] bg-transparent px-3 py-2"
           />
-          <button type="submit" disabled={!token} className="justify-self-start rounded-lg bg-[var(--gold)] px-4 py-2 font-medium text-black disabled:opacity-40">
+          <button
+            type="submit"
+            disabled={!token}
+            className="justify-self-start rounded-lg bg-[var(--gold)] px-4 py-2 font-medium text-black disabled:opacity-40"
+          >
             Open
           </button>
           {error && <p className="text-[var(--blood)]">{error}</p>}

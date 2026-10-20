@@ -60,18 +60,20 @@ function lab() {
   return runs('lab').flatMap((run) => {
     const f = read('lab', run, 'report.json')
     if (!f) return []
-    return [{
-      run,
-      seed: f.options.seed,
-      seconds: f.options.duration_ns / 1e9,
-      bug: f.options.bug || null,
-      faults: f.faults?.length ?? 0,
-      ops: f.ops,
-      unknown: f.unknown_writes,
-      linearizable: f.linearizable,
-      statesEqual: f.states_equal,
-      problems: f.problems ?? [],
-    }]
+    return [
+      {
+        run,
+        seed: f.options.seed,
+        seconds: f.options.duration_ns / 1e9,
+        bug: f.options.bug || null,
+        faults: f.faults?.length ?? 0,
+        ops: f.ops,
+        unknown: f.unknown_writes,
+        linearizable: f.linearizable,
+        statesEqual: f.states_equal,
+        problems: f.problems ?? [],
+      },
+    ]
   })
 }
 
@@ -114,7 +116,10 @@ function curves(kind, label) {
 }
 
 function curve(c) {
-  const steps = c.steps.filter((s) => s.report.summary.scheduled > 0).map(point).sort((a, b) => a.rate - b.rate)
+  const steps = c.steps
+    .filter((s) => s.report.summary.scheduled > 0)
+    .map(point)
+    .sort((a, b) => a.rate - b.rate)
   const knee = Math.max(0, ...steps.filter((p) => p.kept).map((p) => p.achieved))
   const below = steps.filter((p) => p.rate <= 0.8 * knee).reverse()
   return {
@@ -133,7 +138,9 @@ function combine(cs) {
 }
 
 function batching() {
-  const label = runs('e2').filter((r) => r.endsWith('-batch-check')).at(-1)
+  const label = runs('e2')
+    .filter((r) => r.endsWith('-batch-check'))
+    .at(-1)
   const parts = label ? ['e2', 'e4'].map((k) => curves(k, label)).filter(Boolean) : []
   const names = {
     '5 nodes': 'writes, queue taken in one Ready',
@@ -161,5 +168,19 @@ function e1b() {
 mkdirSync(path.dirname(out), { recursive: true })
 writeFileSync(
   out,
-  JSON.stringify({ failover: failover(), registry: registry(), lab: lab(), e1b: e1b(), e2: curves('e2'), e3: curves('e3'), e4: curves('e4'), e5: curves('e5'), batching: batching() }, null, 2) + '\n',
+  JSON.stringify(
+    {
+      failover: failover(),
+      registry: registry(),
+      lab: lab(),
+      e1b: e1b(),
+      e2: curves('e2'),
+      e3: curves('e3'),
+      e4: curves('e4'),
+      e5: curves('e5'),
+      batching: batching(),
+    },
+    null,
+    2,
+  ) + '\n',
 )
