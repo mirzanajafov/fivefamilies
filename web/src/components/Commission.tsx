@@ -16,7 +16,12 @@ export function Commission({ nodes, leader, term }: { nodes: NodeView[]; leader:
   const don = seats.find((s) => s.n.id === leader && s.n.up)
   const busiest = Math.max(1, ...nodes.map((n) => n.msgs_per_s))
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="mx-auto block w-full max-w-[460px]" role="img" aria-label={`The Commission: ${nodes.length} families, ${leader ? `family ${numeral(leader)} leads reign ${term}` : 'no Don'}`}>
+    <svg
+      viewBox={`0 0 ${size} ${size}`}
+      className="mx-auto block w-full max-w-[460px]"
+      role="img"
+      aria-label={`The Commission: ${nodes.length} families, ${leader ? `family ${numeral(leader)} leads reign ${term}` : 'no Don'}`}
+    >
       {don &&
         seats
           .filter((s) => s !== don && s.n.up)
@@ -42,7 +47,7 @@ export function Commission({ nodes, leader, term }: { nodes: NodeView[]; leader:
       </text>
       {seats.map(({ n, x, y }) => {
         const isDon = n.id === leader && n.up
-        const label = n.fault ? faultLabels[n.fault] ?? n.fault : role(n)
+        const label = n.fault ? (faultLabels[n.fault] ?? n.fault) : role(n)
         return (
           <g key={n.id}>
             <circle

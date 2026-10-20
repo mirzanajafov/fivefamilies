@@ -35,9 +35,10 @@ type Server struct {
 	jobs      chan diskJob
 	written   chan uint64
 	stopped   chan struct{}
-	quit      chan struct{}
+	quit      <-chan struct{}
+	diskDone  chan struct{}
 	stop      context.CancelFunc
-	failOnce  sync.Once
+	failMu    sync.Mutex
 	failure   error
 	lastTick  time.Time
 	lastWatch time.Time
@@ -66,14 +67,14 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
-		cfg:     cfg,
-		inbound: make(chan raft.Message, 4096),
-		calls:   make(chan func(), 1024),
-		jobs:    make(chan diskJob, 4096),
-		written: make(chan uint64, 1024),
-		stopped: make(chan struct{}),
-		quit:    make(chan struct{}),
-		log:     cfg.Logger.With("node", cfg.ID),
+		cfg:      cfg,
+		inbound:  make(chan raft.Message, 4096),
+		calls:    make(chan func(), 1024),
+		jobs:     make(chan diskJob, 4096),
+		written:  make(chan uint64, 1024),
+		stopped:  make(chan struct{}),
+		diskDone: make(chan struct{}),
+		log:      cfg.Logger.With("node", cfg.ID),
 	}
 	disk, st, rec, err := storage.Open(vfs.OS{Dir: cfg.DataDir}, wal.Options{SegmentBytes: cfg.SegmentBytes, Salt: randomUint64})
 	if err != nil {
@@ -83,13 +84,13 @@ func New(cfg Config) (*Server, error) {
 		s.log.Warn("cut a torn tail from the log", "bytes", rec.TornBytes)
 	}
 	s.disk = disk
-	if err := s.start(st); err != nil {
+	if err := s.assemble(st); err != nil {
 		return nil, errors.Join(err, disk.Close())
 	}
 	return s, nil
 }
 
-func (s *Server) start(st raft.Restore) error {
+func (s *Server) assemble(st raft.Restore) error {
 	cfg := s.cfg
 	s.sm = watch.NewMachine(cfg.MaxSessions, cfg.WatchHistory, cfg.Bugs)
 	if st.Snapshot != nil {
@@ -140,7 +141,7 @@ func (s *Server) Register(g *grpc.Server) {
 func (s *Server) Run(ctx context.Context) error {
 	ctx, s.stop = context.WithCancel(ctx)
 	defer s.stop()
-	context.AfterFunc(ctx, func() { close(s.quit) })
+	s.quit = ctx.Done()
 	var wg sync.WaitGroup
 	s.tr.Start(ctx)
 	wg.Go(func() { s.writer(ctx) })
@@ -151,14 +152,19 @@ func (s *Server) Run(ctx context.Context) error {
 	close(s.stopped)
 	wg.Wait()
 	s.tr.Close()
-	return errors.Join(s.failure, s.disk.Close())
+	if err := s.disk.Close(); err != nil {
+		s.log.Error("closing the log", "err", err)
+	}
+	s.failMu.Lock()
+	defer s.failMu.Unlock()
+	return s.failure
 }
 
 func (s *Server) die(err error) {
-	s.failOnce.Do(func() {
-		s.failure = err
-		s.stop()
-	})
+	s.failMu.Lock()
+	s.failure = errors.Join(s.failure, err)
+	s.failMu.Unlock()
+	s.stop()
 }
 
 func (s *Server) deliver(m raft.Message) {

@@ -250,12 +250,8 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 		a.s.stalled.set(d)
 	case "pause":
 		a.s.paused.set(d)
-		select {
-		case a.s.calls <- func() { a.s.paused.wait(a.s.quit) }:
-		case <-ctx.Done():
-			return nil, status.FromContextError(ctx.Err()).Err()
-		case <-a.s.stopped:
-			return nil, fail(ctx, a.s, ErrStopped)
+		if err := a.s.enqueue(ctx, func() { a.s.paused.wait(a.s.quit) }); err != nil {
+			return nil, fail(ctx, a.s, err)
 		}
 	case "isolate":
 		a.s.isolated.set(d)

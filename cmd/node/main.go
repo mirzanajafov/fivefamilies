@@ -213,13 +213,13 @@ func main() {
 		go serveProfiles(*profile, logger)
 	}
 	logger.Info("node started", "id", *id, "addr", addr, "nodes", len(nodes), "election", *election, "lease", *lease)
-	err = srv.Run(ctx)
-	stop()
-	if err != nil {
+	if err := srv.Run(ctx); err != nil {
+		stop()
 		g.Stop()
 		logger.Error("fatal", "err", err)
 		os.Exit(70)
 	}
 	g.GracefulStop()
+	stop()
 	logger.Info("node stopped")
 }

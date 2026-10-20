@@ -30,9 +30,10 @@ func (e *recEnv) SaveSnapshot(s raft.Snapshot) error {
 func (e *recEnv) Compacted(s raft.Snapshot) { e.compacted = append(e.compacted, s) }
 
 type recApp struct {
-	applied  []raft.Entry
-	restored []byte
-	at       uint64
+	applied    []raft.Entry
+	restored   []byte
+	at         uint64
+	restoreErr error
 }
 
 func (a *recApp) Apply(e raft.Entry) kv.Result {
@@ -58,6 +59,9 @@ func (a *recApp) Leases() []kv.LeaseInfo {
 }
 
 func (a *recApp) Restore(index uint64, data []byte) error {
+	if a.restoreErr != nil {
+		return a.restoreErr
+	}
 	a.restored, a.at = data, index
 	return nil
 }
@@ -170,6 +174,30 @@ func settle(t *testing.T, n *Node, env *recEnv) {
 		env.writes = env.writes[1:]
 		writeDone(t, n, w.Seq)
 		process(t, n)
+	}
+}
+
+func TestAdvanceCarriesWhatIsLeftOfATickIntoTheNextCall(t *testing.T) {
+	n, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	tick := n.cfg.Tick
+	n.Advance(tick * 3 / 2)
+	n.Advance(tick * 2 / 5)
+	if got := n.LeaderlessTicks(); got != 1 {
+		t.Fatalf("%d ticks after 1.9 ticks of time", got)
+	}
+	n.Advance(tick / 10)
+	if got := n.LeaderlessTicks(); got != 2 {
+		t.Fatalf("%d ticks after 2 ticks of time", got)
+	}
+}
+
+func TestAdvanceDropsTicksPastTheCatchUpCap(t *testing.T) {
+	n, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	tick := n.cfg.Tick
+	n.Advance((maxCatchUp+50)*tick + tick/2)
+	n.Advance(tick / 2)
+	if got := n.LeaderlessTicks(); got != maxCatchUp+1 {
+		t.Fatalf("%d ticks, want the cap of %d and one more from the carried half tick", got, maxCatchUp)
 	}
 }
 
@@ -313,7 +341,7 @@ func TestAFailedSnapshotSaveStopsTheNodeBeforeItWritesTheMarker(t *testing.T) {
 	settle(t, n, env)
 	env.saveErr = errors.New("no space left on device")
 	var err error
-	for i := 0; i < 5 && err == nil; i++ {
+	for i := 0; i < 20 && err == nil; i++ {
 		n.Submit(kv.Command{Op: kv.OpPut, Key: "k", Value: []byte{byte(i)}}, nil)
 		if err = n.Process(); err == nil && len(env.writes) > 0 {
 			err = n.WriteDone(env.writes[len(env.writes)-1].Seq)
@@ -376,6 +404,18 @@ func TestAnInstalledSnapshotRestoresTheStateMachine(t *testing.T) {
 	settle(t, n, env)
 	if len(env.sent) != 1 || env.sent[0].Index != 30 {
 		t.Fatalf("sent %v", env.sent)
+	}
+}
+
+func TestASnapshotThatFailsToRestoreStopsTheNodeBeforeItWritesOrAcknowledgesTheInstall(t *testing.T) {
+	n, env, app := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	app.restoreErr = errors.New("the snapshot data does not decode")
+	n.Receive(raft.Message{Type: raft.MsgSnap, From: 1, To: 2, Term: 2, Snapshot: &raft.Snapshot{Index: 30, Term: 2, Data: []byte("garbage")}})
+	if err := n.Process(); !errors.Is(err, app.restoreErr) {
+		t.Fatalf("the node went on after the install failed: %v", err)
+	}
+	if len(env.writes) != 0 || len(env.sent) != 0 {
+		t.Fatalf("after a failed install: writes %+v, sent %v", env.writes, env.sent)
 	}
 }
 
