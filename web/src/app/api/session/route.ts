@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers'
-import { ADMIN_COOKIE, CONTROLLER, adminToken } from '@/lib/server'
+import { ADMIN_COOKIE, CONTROLLER, adminToken, readBody, tokenIn } from '@/lib/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +18,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const { token } = (await req.json().catch(() => ({}))) as { token?: string }
+  const body = await readBody(req)
+  if (body instanceof Response) return body
+  const token = tokenIn(body)
   if (!token || token.length > 512 || !(await valid(token))) {
     return Response.json({ error: 'that token does not open the admin controls' }, { status: 401 })
   }

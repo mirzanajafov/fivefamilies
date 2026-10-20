@@ -21,39 +21,55 @@ func Open(fs vfs.FS, opts wal.Options) (*Disk, raft.Restore, wal.Recovery, error
 	}
 	l, st, rec, err := wal.Open(fs, opts)
 	if err != nil {
-		return nil, st, rec, fmt.Errorf("opening the log: %w", err)
+		return nil, raft.Restore{}, wal.Recovery{}, fmt.Errorf("opening the log: %w", err)
 	}
 	if st.Snapshot != nil {
 		s, err := snap.Load(fs, st.Snapshot.Index, st.Snapshot.Term)
 		if err != nil {
-			return nil, st, rec, errors.Join(fmt.Errorf("loading snapshot %d: %w", st.Snapshot.Index, err), l.Close())
+			return nil, raft.Restore{}, wal.Recovery{}, errors.Join(fmt.Errorf("loading snapshot %d: %w", st.Snapshot.Index, err), l.Close())
 		}
 		st.Snapshot = &s
 	}
 	return &Disk{fs: fs, log: l}, st, rec, nil
 }
 
-func Seed(fs vfs.FS, s raft.Snapshot, opts wal.Options) error {
+func Seed(fs vfs.FS, s raft.Snapshot, opts wal.Options) (bool, error) {
+	exists, err := wal.Exists(fs)
+	if err != nil {
+		return false, fmt.Errorf("looking for a log: %w", err)
+	}
+	if exists {
+		return false, nil
+	}
 	if err := snap.Save(fs, s); err != nil {
-		return fmt.Errorf("writing the snapshot: %w", err)
+		return false, fmt.Errorf("saving snapshot %d: %w", s.Index, err)
 	}
 	l, _, _, err := wal.Open(fs, opts)
 	if err != nil {
-		return err
+		return false, fmt.Errorf("opening the log: %w", err)
 	}
 	err = l.WriteBatch(wal.Batch{HardState: raft.HardState{Term: s.Term, Commit: s.Index}, Snapshot: &s, Reset: true})
 	if err == nil {
 		err = l.Sync()
 	}
-	return errors.Join(err, l.Close())
+	if err := errors.Join(err, l.Close()); err != nil {
+		return false, fmt.Errorf("writing the marker for snapshot %d: %w", s.Index, err)
+	}
+	return true, nil
 }
 
 func (d *Disk) Write(b wal.Batch) error {
-	return d.log.WriteBatch(b)
+	if err := d.log.WriteBatch(b); err != nil {
+		return fmt.Errorf("writing the log: %w", err)
+	}
+	return nil
 }
 
 func (d *Disk) Sync() error {
-	return d.log.Sync()
+	if err := d.log.Sync(); err != nil {
+		return fmt.Errorf("syncing the log: %w", err)
+	}
+	return nil
 }
 
 func (d *Disk) SaveSnapshot(s raft.Snapshot) error {

@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
@@ -91,7 +90,7 @@ func (s *Server) persist(jobs []diskJob) (uint64, error) {
 		}
 		for _, p := range s.parts(w) {
 			if err := s.disk.Write(p); err != nil {
-				return 0, fmt.Errorf("writing the log: %w", err)
+				return 0, err
 			}
 			s.counts.batches.Add(1)
 			s.counts.entries.Add(uint64(len(p.Entries)))
@@ -131,7 +130,7 @@ func (s *Server) sync() error {
 		return nil
 	}
 	if err := s.disk.Sync(); err != nil {
-		return fmt.Errorf("syncing the log: %w", err)
+		return err
 	}
 	s.counts.fsyncs.Add(1)
 	return nil
