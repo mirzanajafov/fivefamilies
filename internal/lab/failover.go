@@ -112,14 +112,14 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 	return res, err
 }
 
-func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, error) {
-	res := FailoverResult{Options: opts}
+func runFailover(ctx context.Context, opts FailoverOptions) (res FailoverResult, err error) {
+	res = FailoverResult{Options: opts}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{"FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease, "FF_BUG="}
 	if err := d.Up(ctx, env); err != nil {
 		return res, err
 	}
-	defer d.Down(context.Background())
+	defer func() { err = errors.Join(err, d.Down(context.Background())) }()
 	var addrs []string
 	for i := 1; i <= d.Nodes; i++ {
 		addrs = append(addrs, fmt.Sprintf("127.0.0.1:315%d", i))

@@ -104,13 +104,15 @@ func (b *BenchCluster) Up(ctx context.Context) error {
 	return err
 }
 
-func (b *BenchCluster) Down() {
+func (b *BenchCluster) Down() error {
+	var errs []error
 	if b.d != nil {
-		b.d.compose(context.Background(), nil, "down", "-v", "--remove-orphans")
+		errs = append(errs, b.d.compose(context.Background(), nil, "down", "-v", "--remove-orphans"))
 	}
 	if b.dir != "" {
-		os.RemoveAll(b.dir)
+		errs = append(errs, os.RemoveAll(b.dir))
 	}
+	return errors.Join(errs...)
 }
 
 func (b *BenchCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
@@ -120,8 +122,8 @@ func (b *BenchCluster) Generate(ctx context.Context, genCPUs string, args ...str
 	out, err := b.d.cmd(ctx, nil, full...)
 	var r loadgen.Report
 	if err != nil {
-		b.d.cmd(context.Background(), nil, "rm", "-f", name)
-		return r, err
+		_, rmErr := b.d.cmd(context.Background(), nil, "rm", "-f", name)
+		return r, errors.Join(err, rmErr)
 	}
 	if err := json.Unmarshal([]byte(out), &r); err != nil {
 		return r, fmt.Errorf("generator output: %w: %.200s", err, out)
@@ -200,7 +202,10 @@ func sweep(ctx context.Context, gen generator, quiet quieter, c Curve, opts Swee
 		lo, c.Knee = rate, s.Report.Summary.Achieved
 		return true
 	}
-	for rate := opts.Start; rate <= opts.Max && going() && try(rate); rate *= opts.Factor {
+	for rate := opts.Start; rate <= opts.Max && going(); rate *= opts.Factor {
+		if !try(rate) {
+			break
+		}
 	}
 	for rate := opts.Start / opts.Factor; lo == 0 && rate >= opts.Floor && going(); rate /= opts.Factor {
 		try(rate)

@@ -115,7 +115,9 @@ func (c *Controller) supervisor(ctx context.Context, node int, path string) erro
 	if err != nil {
 		return fmt.Errorf("supervisor of node %d: %w", node, err)
 	}
-	resp.Body.Close()
+	if err := resp.Body.Close(); err != nil {
+		return fmt.Errorf("supervisor of node %d: %w", node, err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("supervisor of node %d: %s", node, resp.Status)
 	}

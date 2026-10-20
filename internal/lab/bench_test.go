@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,16 +19,18 @@ type fakeCluster struct {
 	busy     bool
 }
 
-func (f *fakeCluster) gen(ctx context.Context, cpus string, args ...string) (loadgen.Report, error) {
-	var rate float64
-	fmt.Sscan(args[1], &rate)
+func (f *fakeCluster) gen(_ context.Context, _ string, args ...string) (loadgen.Report, error) {
+	rate, err := strconv.ParseFloat(args[1], 64)
+	if err != nil {
+		return loadgen.Report{}, err
+	}
 	f.rates = append(f.rates, args[1])
 	s := loadgen.Summary{Valid: true, Achieved: min(rate, f.capacity)}
 	s.All.P99 = 10 * time.Millisecond
 	return loadgen.Report{Summary: s}, nil
 }
 
-func (f *fakeCluster) quiet(ctx context.Context) error {
+func (f *fakeCluster) quiet(context.Context) error {
 	f.quiets++
 	if f.busy {
 		return errors.New("still busy")

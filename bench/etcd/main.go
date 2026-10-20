@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -35,8 +36,7 @@ func (t *target) Do(ctx context.Context, op loadgen.Op) error {
 	return err
 }
 
-func scrape(ctx context.Context, endpoint string) (loadgen.Counters, error) {
-	var c loadgen.Counters
+func scrape(ctx context.Context, endpoint string) (c loadgen.Counters, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+endpoint+"/metrics", nil)
 	if err != nil {
 		return c, err
@@ -45,7 +45,7 @@ func scrape(ctx context.Context, endpoint string) (loadgen.Counters, error) {
 	if err != nil {
 		return c, err
 	}
-	defer resp.Body.Close()
+	defer func() { err = errors.Join(err, resp.Body.Close()) }()
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	for sc.Scan() {
@@ -106,7 +106,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	defer cli.Close()
 	t := &target{cli: cli, serializable: *readMode == "serializable"}
 	ctx := context.Background()
 	value := make([]byte, *valueBytes)

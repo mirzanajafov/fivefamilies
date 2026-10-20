@@ -51,7 +51,7 @@ func profileURL(node int, path string) string {
 	return fmt.Sprintf("http://127.0.0.1:316%d/debug/pprof/%s", node, path)
 }
 
-func fetchProfile(ctx context.Context, url, file string) error {
+func fetchProfile(ctx context.Context, url, file string) (err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -60,7 +60,7 @@ func fetchProfile(ctx context.Context, url, file string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { err = errors.Join(err, resp.Body.Close()) }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s: %s", url, resp.Status)
 	}
@@ -68,11 +68,8 @@ func fetchProfile(ctx context.Context, url, file string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
+	_, err = io.Copy(f, resp.Body)
+	return errors.Join(err, f.Close())
 }
 
 func (b *BenchCluster) leader(ctx context.Context) (int, error) {
@@ -156,15 +153,14 @@ func collect(ctx context.Context, o ProfileOptions, p *ProfilePhase, seconds int
 	return nil
 }
 
-func Profile(ctx context.Context, o ProfileOptions) (ProfileReport, error) {
-	rep := ProfileReport{Nodes: o.Nodes, Flags: o.Flags, GenFlags: o.GenFlags}
+func Profile(ctx context.Context, o ProfileOptions) (rep ProfileReport, err error) {
+	rep = ProfileReport{Nodes: o.Nodes, Flags: o.Flags, GenFlags: o.GenFlags}
 	b := &BenchCluster{Nodes: o.Nodes, Flags: o.Flags, NodeCPUs: o.NodeCPUs, Profiles: true}
 	o.Log("starting %d nodes", o.Nodes)
+	defer func() { err = errors.Join(err, b.Down()) }()
 	if err := b.Up(ctx); err != nil {
-		b.Down()
 		return rep, err
 	}
-	defer b.Down()
 	type step struct {
 		name    string
 		rate    float64

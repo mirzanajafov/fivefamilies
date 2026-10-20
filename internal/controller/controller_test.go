@@ -1,10 +1,10 @@
 package controller
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -39,7 +39,7 @@ func (f *fakeSupervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.calls = append(f.calls, r.Method+" "+r.URL.RequestURI())
-	w.Write([]byte("{}"))
+	_, _ = w.Write([]byte("{}"))
 }
 
 func (f *fakeSupervisor) seen() []string {
@@ -81,7 +81,11 @@ func newHarness(t *testing.T, n int, tweak func(*Config)) *harness {
 		}
 		g := grpc.NewServer()
 		srv.Register(g)
-		go g.Serve(ln)
+		go func() {
+			if err := g.Serve(ln); err != nil {
+				t.Error(err)
+			}
+		}()
 		wg.Go(func() { srv.Run(ctx) })
 		t.Cleanup(g.Stop)
 	}
@@ -144,8 +148,10 @@ func (h *harness) chaos(body string, from string, admin bool) (int, string) {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
+	if err := errors.Join(err, resp.Body.Close()); err != nil {
+		h.t.Fatal(err)
+	}
 	return resp.StatusCode, string(b)
 }
 
@@ -155,11 +161,8 @@ func (h *harness) watch(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	defer resp.Body.Close()
-	sc := bufio.NewScanner(resp.Body)
-	sc.Buffer(make([]byte, 1<<20), 1<<20)
-	for sc.Scan() {
-	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 }
 
 func TestTheControllerFollowsTheClusterAndChecksTheDemoWhileSomeoneWatches(t *testing.T) {
@@ -287,9 +290,11 @@ func TestAWindowWithAStaleReadIsCaught(t *testing.T) {
 			t.Fatalf("window %d: %s, want %s", i+1, w.Result, want[i])
 		}
 	}
-	var buf bytes.Buffer
-	json.NewEncoder(&buf).Encode(c.windows)
-	if !strings.Contains(buf.String(), "unknown") {
+	b, err := json.Marshal(c.windows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "unknown") {
 		t.Fatal("the unchecked window does not say why")
 	}
 }

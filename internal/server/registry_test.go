@@ -118,7 +118,11 @@ func TestARegistrationComesBackAfterTheClusterForgetsItsSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Deregister(context.Background(), reg)
+	defer func() {
+		if err := cl.Deregister(context.Background(), reg); err != nil {
+			t.Error(err)
+		}
+	}()
 	other, err := client.New(c.addrs(), client.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +189,11 @@ func TestARegistrationOutlivesALeaderAndComesBackAfterItsLeaseIsLost(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Deregister(context.Background(), reg)
+	defer func() {
+		if err := cl.Deregister(context.Background(), reg); err != nil {
+			t.Error(err)
+		}
+	}()
 	seen, _ := cl.Discover(ctx, "api")
 	waitFor(t, seen, 5*time.Second, func(l []client.Instance) bool { return len(l) == 1 })
 	c.stop(c.leader(time.Second))

@@ -114,14 +114,14 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 	return res, err
 }
 
-func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, error) {
-	res := RegistryResult{Options: opts, Variants: map[string]RegistryVariant{}}
+func runRegistry(ctx context.Context, opts RegistryOptions) (res RegistryResult, err error) {
+	res = RegistryResult{Options: opts, Variants: map[string]RegistryVariant{}}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{"FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=0s", "FF_BUG="}
 	if err := d.Up(ctx, env); err != nil {
 		return res, err
 	}
-	defer d.Down(context.Background())
+	defer func() { err = errors.Join(err, d.Down(context.Background())) }()
 	var addrs, inside []string
 	for i := 1; i <= d.Nodes; i++ {
 		addrs = append(addrs, fmt.Sprintf("127.0.0.1:315%d", i))
@@ -173,23 +173,30 @@ func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, err
 				tr.Held = time.Duration(rng.Int64N(int64(opts.TTL))) + opts.TTL
 				wait(ctx, time.Until(appeared.Add(tr.Held)))
 				killed := time.Now()
+				var instanceErr, leaderErr error
 				var wg sync.WaitGroup
-				wg.Go(func() { d.cmd(context.Background(), nil, "kill", name) })
+				wg.Go(func() { _, instanceErr = d.cmd(context.Background(), nil, "kill", name) })
 				if variant == "instance+leader" {
 					tr.Leader = leader
-					wg.Go(func() { d.Kill(context.Background(), leader) })
+					wg.Go(func() { leaderErr = d.Kill(context.Background(), leader) })
 				}
 				wg.Wait()
-				if gone, err := sg.await(ctx, tr.Instance, true, 10*opts.TTL+30*time.Second); err != nil {
+				if err := errors.Join(instanceErr, leaderErr); err != nil {
+					tr.Err = err.Error()
+				} else if gone, err := sg.await(ctx, tr.Instance, true, 10*opts.TTL+30*time.Second); err != nil {
 					tr.Err = err.Error()
 				} else {
 					tr.Gone = gone.Sub(killed)
 				}
 			}
 		}
-		d.cmd(context.Background(), nil, "rm", "-f", name)
+		if _, err := d.cmd(context.Background(), nil, "rm", "-f", name); err != nil {
+			runErr = errors.Join(runErr, err)
+		}
 		if tr.Leader > 0 {
-			d.Start(context.Background(), tr.Leader)
+			if err := d.Start(context.Background(), tr.Leader); err != nil {
+				runErr = errors.Join(runErr, err)
+			}
 		}
 		if runErr != nil {
 			break

@@ -99,7 +99,6 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		defer conn.Close()
 		r.clients = append(r.clients, pb.NewKVClient(conn))
 		adm := conn
 		if *coldKV {
@@ -108,7 +107,6 @@ func main() {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
-			defer adm.Close()
 		}
 		r.admins = append(r.admins, pb.NewAdminClient(adm))
 	}

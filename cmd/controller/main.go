@@ -53,5 +53,7 @@ func main() {
 	c.Run(ctx)
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	srv.Shutdown(sctx)
+	if err := srv.Shutdown(sctx); err != nil {
+		logger.Error("shutting down", "err", err)
+	}
 }

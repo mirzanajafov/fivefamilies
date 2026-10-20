@@ -39,6 +39,21 @@ func sameEntries(a, b []raft.Entry) bool {
 	})
 }
 
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func appendTo(t *testing.T, fs *vfs.Mem, name string, data []byte) {
+	t.Helper()
+	f, err := fs.OpenAppend(name)
+	must(t, err)
+	_, err = f.Write(data)
+	must(t, err)
+}
+
 func mustWrite(t *testing.T, l *Log, hs raft.HardState, ents []raft.Entry, sync bool) {
 	t.Helper()
 	if err := l.Write(hs, ents); err != nil {
@@ -59,7 +74,7 @@ func TestRoundTrip(t *testing.T) {
 	}
 	mustWrite(t, l, raft.HardState{Term: 1, Vote: 2}, entries(1, 1, 3), true)
 	mustWrite(t, l, raft.HardState{Term: 1, Vote: 2, Commit: 3}, nil, true)
-	l.Close()
+	must(t, l.Close())
 	_, st, rec := open(t, fs, 0)
 	if st.HardState != (raft.HardState{Term: 1, Vote: 2, Commit: 3}) || !sameEntries(st.Entries, entries(1, 1, 3)) {
 		t.Fatalf("restored %+v", st)
@@ -74,7 +89,7 @@ func TestALaterEntryReplacesTheSuffix(t *testing.T) {
 	l, _, _ := open(t, fs, 0)
 	mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 1, 5), true)
 	mustWrite(t, l, raft.HardState{Term: 2}, entries(2, 3, 4), true)
-	l.Close()
+	must(t, l.Close())
 	_, st, _ := open(t, fs, 0)
 	want := append(entries(1, 1, 2), entries(2, 3, 4)...)
 	if !sameEntries(st.Entries, want) {
@@ -89,7 +104,7 @@ func TestRotationAcrossSegments(t *testing.T) {
 		mustWrite(t, l, raft.HardState{Term: 1, Commit: i - 1}, entries(1, i, i), true)
 	}
 	mustWrite(t, l, raft.HardState{Term: 2}, entries(2, 40, 41), true)
-	l.Close()
+	must(t, l.Close())
 	names, _ := fs.List()
 	if len(names) < 5 {
 		t.Fatalf("only %d segments", len(names))
@@ -181,11 +196,10 @@ func TestGarbageInTheTailIsCut(t *testing.T) {
 		mustWrite(t, l, raft.HardState{Term: 2}, entries(2, 2, 5), false)
 		full, _ := fs.ReadFile(names[0])
 		pos := len(synced) + rng.IntN(len(full)-len(synced))
-		fs.Truncate(names[0], int64(len(synced)))
-		g, _ := fs.OpenAppend(names[0])
 		tail := slices.Clone(full[len(synced):])
 		tail[pos-len(synced)] ^= byte(1 + rng.IntN(255))
-		g.Write(tail)
+		must(t, fs.Truncate(names[0], int64(len(synced))))
+		appendTo(t, fs, names[0], tail)
 		_, st, _, err := Open(fs, Options{Salt: saltSource(2)})
 		if err != nil {
 			t.Fatalf("flipped byte %d: %v", pos, err)
@@ -203,13 +217,12 @@ func TestCorruptionBeforeTheLastSegmentRefusesToOpen(t *testing.T) {
 	for i := uint64(1); i <= 20; i++ {
 		mustWrite(t, l, raft.HardState{Term: 1}, entries(1, i, i), true)
 	}
-	l.Close()
+	must(t, l.Close())
 	names, _ := fs.List()
 	first, _ := fs.ReadFile(names[0])
 	first[len(first)-3] ^= 0xff
-	fs.Truncate(names[0], 0)
-	g, _ := fs.OpenAppend(names[0])
-	g.Write(first)
+	must(t, fs.Truncate(names[0], 0))
+	appendTo(t, fs, names[0], first)
 	_, _, _, err := Open(fs, Options{Salt: saltSource(2)})
 	if !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("err %v, want ErrCorrupt", err)
@@ -221,16 +234,16 @@ func TestALastSegmentWithABadHeaderIsDropped(t *testing.T) {
 	l, _, _ := open(t, fs, 64)
 	mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 1, 2), true)
 	mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 3, 3), true)
-	l.Close()
+	must(t, l.Close())
 	names, _ := fs.List()
 	lastName := names[len(names)-1]
-	fs.Truncate(lastName, 10)
+	must(t, fs.Truncate(lastName, 10))
 	l, st, rec := open(t, fs, 64)
 	if !rec.DroppedEmpty || !sameEntries(st.Entries, entries(1, 1, 2)) {
 		t.Fatalf("recovery %+v restored %d entries", rec, len(st.Entries))
 	}
 	mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 3, 4), true)
-	l.Close()
+	must(t, l.Close())
 	_, st, _ = open(t, fs, 64)
 	if !sameEntries(st.Entries, entries(1, 1, 4)) {
 		t.Fatalf("after writing again: %v", st.Entries)
@@ -242,7 +255,7 @@ func TestAGapInTheEntriesIsCorruption(t *testing.T) {
 	l, _, _ := open(t, fs, 0)
 	mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 1, 2), true)
 	mustWrite(t, l, raft.HardState{}, entries(1, 5, 5), true)
-	l.Close()
+	must(t, l.Close())
 	if _, _, _, err := Open(fs, Options{Salt: saltSource(2)}); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("err %v", err)
 	}
@@ -252,7 +265,7 @@ func TestCommitIsClampedToTheRecoveredLog(t *testing.T) {
 	fs := vfs.NewMem()
 	l, _, _ := open(t, fs, 0)
 	mustWrite(t, l, raft.HardState{Term: 1, Commit: 9}, entries(1, 1, 3), true)
-	l.Close()
+	must(t, l.Close())
 	_, st, _ := open(t, fs, 0)
 	if st.HardState.Commit != 3 {
 		t.Fatalf("commit %d", st.HardState.Commit)
@@ -339,15 +352,14 @@ func FuzzOpen(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		l.Write(raft.HardState{Term: 1, Commit: 2}, entries(1, 1, 3))
-		l.Sync()
-		l.Write(raft.HardState{Term: 2}, entries(2, 3, 4))
+		must(t, l.Write(raft.HardState{Term: 1, Commit: 2}, entries(1, 1, 3)))
+		must(t, l.Sync())
+		must(t, l.Write(raft.HardState{Term: 2}, entries(2, 3, 4)))
 		names, _ := fs.List()
 		data, _ := fs.ReadFile(names[0])
 		keep := len(data) - int(cut)%len(data)
-		fs.Truncate(names[0], int64(keep))
-		g, _ := fs.OpenAppend(names[0])
-		g.Write(tail)
+		must(t, fs.Truncate(names[0], int64(keep)))
+		appendTo(t, fs, names[0], tail)
 		_, st, _, err := Open(fs, Options{Salt: saltSource(2)})
 		if err != nil {
 			t.Fatalf("garbage at the end of the only segment: %v", err)
@@ -375,7 +387,7 @@ func TestACompactionMarkerKeepsWhatFollows(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustWrite(t, l, raft.HardState{}, entries(1, 11, 12), true)
-	l.Close()
+	must(t, l.Close())
 	_, st, _ := open(t, fs, 0)
 	if st.Snapshot == nil || st.Snapshot.Index != 6 || !sameEntries(st.Entries, entries(1, 7, 12)) {
 		t.Fatalf("snapshot %+v entries %d", st.Snapshot, len(st.Entries))
@@ -389,8 +401,8 @@ func TestAnInstalledSnapshotDropsTheOldLog(t *testing.T) {
 	if err := l.WriteBatch(Batch{HardState: raft.HardState{Term: 2, Commit: 8}, Snapshot: snapAt(8, 2), Reset: true, Entries: entries(2, 9, 9)}); err != nil {
 		t.Fatal(err)
 	}
-	l.Sync()
-	l.Close()
+	must(t, l.Sync())
+	must(t, l.Close())
 	_, st, _ := open(t, fs, 0)
 	if st.Snapshot == nil || st.Snapshot.Index != 8 || st.Snapshot.Term != 2 || !sameEntries(st.Entries, entries(2, 9, 9)) {
 		t.Fatalf("snapshot %+v entries %v", st.Snapshot, st.Entries)
@@ -411,12 +423,12 @@ func TestCompactRemovesOldSegmentsButKeepsTheTerm(t *testing.T) {
 	if err := l.WriteBatch(Batch{HardState: raft.HardState{Term: 5, Vote: 2, Commit: 40}, Snapshot: snapAt(40, 5)}); err != nil {
 		t.Fatal(err)
 	}
-	l.Sync()
+	must(t, l.Sync())
 	removed, err := l.Compact(40)
 	if err != nil || removed == 0 || l.Segments() != before-removed {
 		t.Fatalf("removed %d of %d segments: %v", removed, before, err)
 	}
-	l.Close()
+	must(t, l.Close())
 	_, st, _ := open(t, fs, 200)
 	if st.HardState.Term != 5 || st.HardState.Vote != 2 {
 		t.Fatalf("hard state after compaction %+v", st.HardState)
@@ -437,9 +449,9 @@ func TestACompactionOutsideTheLogIsCorruption(t *testing.T) {
 	fs := vfs.NewMem()
 	l, _, _ := open(t, fs, 0)
 	mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 1, 3), true)
-	l.WriteBatch(Batch{HardState: raft.HardState{Term: 1}, Snapshot: snapAt(9, 1)})
-	l.Sync()
-	l.Close()
+	must(t, l.WriteBatch(Batch{HardState: raft.HardState{Term: 1}, Snapshot: snapAt(9, 1)}))
+	must(t, l.Sync())
+	must(t, l.Close())
 	if _, _, _, err := Open(fs, Options{Salt: saltSource(2)}); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("err %v", err)
 	}
@@ -531,7 +543,7 @@ func TestCrashesWithSnapshotsAndCompaction(t *testing.T) {
 			}
 			pending = append(pending, b)
 			if rng.IntN(3) > 0 {
-				l.Sync()
+				must(t, l.Sync())
 				for _, p := range pending {
 					synced.apply(p, func(model) {})
 				}

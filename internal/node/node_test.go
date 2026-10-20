@@ -34,7 +34,7 @@ func (a *recApp) Apply(e raft.Entry) kv.Result {
 	return kv.Result{Rev: e.Index, Ok: true}
 }
 
-func (a *recApp) Get(key string) kv.Result {
+func (a *recApp) Get(string) kv.Result {
 	return kv.Result{Rev: a.at, Ok: true}
 }
 

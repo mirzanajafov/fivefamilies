@@ -83,15 +83,14 @@ func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []cu
 		b := &BenchCluster{Nodes: sp.nodes, Flags: sp.node, NodeCPUs: o.NodeCPUs}
 		o.Log("%s, round %d: starting %d nodes", sp.name, round, sp.nodes)
 		if err := b.Up(ctx); err != nil {
-			b.Down()
-			return curves, fmt.Errorf("%s: %w", sp.name, err)
+			return curves, errors.Join(fmt.Errorf("%s: %w", sp.name, err), b.Down())
 		}
 		c := b.Sweep(ctx, sp.name, o.sweep(), sp.gen)
 		c.Round = round
-		b.Down()
+		downErr := b.Down()
 		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
-		if err := SaveJSON(o.Out, file, curves); err != nil {
+		if err := errors.Join(downErr, SaveJSON(o.Out, file, curves)); err != nil {
 			return curves, err
 		}
 		if ctx.Err() != nil {
@@ -206,13 +205,11 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		b := &BenchCluster{Nodes: 5, Flags: flags, NodeCPUs: o.NodeCPUs}
 		o.Log("e1b: election %v, sync storage %v", v.t, v.sync)
 		if err := b.Up(ctx); err != nil {
-			b.Down()
-			return rows, err
+			return rows, errors.Join(err, b.Down())
 		}
 		adm, err := dialAdmin(b.addrs())
 		if err != nil {
-			b.Down()
-			return rows, err
+			return rows, errors.Join(err, b.Down())
 		}
 		lctx, stopLoad := context.WithCancel(ctx)
 		loadDone := make(chan error, 1)
@@ -276,15 +273,15 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		stopLoad()
 		loadErr := <-loadDone
 		adm.close()
-		b.Down()
+		downErr := b.Down()
 		if err := ctx.Err(); err != nil {
-			return rows, err
+			return rows, errors.Join(err, downErr)
 		}
 		if generatorDied {
-			return rows, fmt.Errorf("the load generator stopped before the faults were over: %w", cmp.Or(loadErr, errors.New("it exited without an error")))
+			return rows, errors.Join(fmt.Errorf("the load generator stopped before the faults were over: %w", cmp.Or(loadErr, errors.New("it exited without an error"))), downErr)
 		}
 		rows = append(rows, row)
-		if err := SaveJSON(o.Out, "e1b.json", rows); err != nil {
+		if err := errors.Join(downErr, SaveJSON(o.Out, "e1b.json", rows)); err != nil {
 			return rows, err
 		}
 	}

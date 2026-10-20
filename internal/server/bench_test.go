@@ -108,7 +108,11 @@ func TestTheLoopTakesEverythingQueuedIntoOneReady(t *testing.T) {
 func blockLoop(t *testing.T, ctx context.Context, srv *Server) func() {
 	t.Helper()
 	blocked, release := make(chan struct{}), make(chan struct{})
-	go srv.inLoop(ctx, func() { close(blocked); <-release })
+	go func() {
+		if err := srv.inLoop(ctx, func() { close(blocked); <-release }); err != nil {
+			t.Error(err)
+		}
+	}()
 	<-blocked
 	return func() { close(release) }
 }

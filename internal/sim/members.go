@@ -113,7 +113,9 @@ func (s *Sim) transferFault() {
 		if to := voters[s.mrng.IntN(len(voters))]; to != l.id {
 			s.stats.Transfers++
 			s.tracef("members: node %d hands leadership to %d", l.id, to)
-			l.n.TransferLeadership(to)
+			if err := l.n.TransferLeadership(to); err != nil {
+				s.tracef("members: node %d refused the transfer: %v", l.id, err)
+			}
 			l.n.Process()
 			s.observe(l)
 		}

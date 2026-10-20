@@ -30,7 +30,11 @@ func child(t *testing.T, mode string) *Supervisor {
 	if err := s.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { s.Stop(os.Kill) })
+	t.Cleanup(func() {
+		if err := s.Stop(os.Kill); err != nil {
+			t.Error(err)
+		}
+	})
 	return s
 }
 
@@ -115,7 +119,9 @@ func TestALateTimerDoesNotEndTheFaultThatReplacedIt(t *testing.T) {
 
 func TestHealEndsAFaultAtOnce(t *testing.T) {
 	s := child(t, "sleep")
-	s.Kill(time.Minute)
+	if err := s.Kill(time.Minute); err != nil {
+		t.Fatal(err)
+	}
 	eventually(t, "the node stops", func() bool { return !s.State().Running })
 	if err := s.Heal(); err != nil {
 		t.Fatal(err)

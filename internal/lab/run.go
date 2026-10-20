@@ -3,6 +3,7 @@ package lab
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -137,8 +138,8 @@ func agreedOn(sts []*pb.StatusResponse) int {
 	return l
 }
 
-func Run(ctx context.Context, opts Options) (Report, error) {
-	rep := Report{Options: opts, Started: time.Now()}
+func Run(ctx context.Context, opts Options) (rep Report, err error) {
+	rep = Report{Options: opts, Started: time.Now()}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{
 		"FF_BUG=" + opts.Bug, "FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease,
@@ -147,7 +148,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		return rep, err
 	}
 	if !opts.Keep {
-		defer d.Down(context.Background())
+		defer func() { err = errors.Join(err, d.Down(context.Background())) }()
 	}
 	var addrs []string
 	for i := 1; i <= d.Nodes; i++ {
@@ -202,9 +203,13 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	for i := 1; i <= d.Nodes; i++ {
 		if msg, exited := d.Exited(context.Background(), i); exited {
 			rep.Problems = append(rep.Problems, msg)
-			d.Start(context.Background(), i)
+			if err := d.Start(context.Background(), i); err != nil {
+				rep.Problems = append(rep.Problems, fmt.Sprintf("restarting node %d: %v", i, err))
+			}
 		} else if !d.Running(context.Background(), i) {
-			d.Unpause(context.Background(), i)
+			if err := d.Unpause(context.Background(), i); err != nil {
+				rep.Problems = append(rep.Problems, fmt.Sprintf("unpausing node %d: %v", i, err))
+			}
 		}
 	}
 	rep.Faults = nem.log
@@ -273,8 +278,7 @@ func save(dir string, rep Report, w *workload) error {
 	defer w.mu.Unlock()
 	for _, op := range w.ops {
 		if err := enc.Encode(op); err != nil {
-			f.Close()
-			return err
+			return errors.Join(err, f.Close())
 		}
 	}
 	return f.Close()

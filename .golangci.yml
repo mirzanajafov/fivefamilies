@@ -2,6 +2,7 @@ version: "2"
 linters:
   default: none
   enable:
+    - errcheck
     - errorlint
     - gocritic
     - govet
@@ -10,42 +11,33 @@ linters:
     - staticcheck
     - unused
   settings:
-    errorlint:
-      errorf: false
-      comparison: false
-    gocritic:
-      disabled-checks:
-        - appendAssign
-        - exitAfterDefer
+    errcheck:
+      exclude-functions:
+        - (*google.golang.org/grpc.ClientConn).Close
+        - (*github.com/mirzanajafov/fivefamilies/client.Client).Close
     revive:
       enable-default-rules: true
       rules:
         - name: context-as-argument
           arguments:
             - allow-types-before: "*testing.T,*testing.B,testing.TB"
-        - name: empty-block
-          disabled: true
         - name: exported
           disabled: true
         - name: package-comments
-          disabled: true
-        - name: redefines-builtin-id
-          disabled: true
-        - name: unused-parameter
           disabled: true
     staticcheck:
       checks:
         - all
         - -ST1000
-        - -ST1003
-        - -ST1016
         - -ST1020
         - -ST1021
         - -ST1022
-        - -QF1001
   exclusions:
     paths:
       - ^api/
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
 formatters:
   enable:
     - gofmt

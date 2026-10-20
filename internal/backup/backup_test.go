@@ -49,7 +49,9 @@ func TestABackupRoundTrips(t *testing.T) {
 
 func TestEveryDamagedByteIsCaught(t *testing.T) {
 	var buf bytes.Buffer
-	Encode(&buf, sample(t))
+	if err := Encode(&buf, sample(t)); err != nil {
+		t.Fatal(err)
+	}
 	good := buf.Bytes()
 	for i := range good {
 		bad := append([]byte(nil), good...)
@@ -72,7 +74,9 @@ func TestAHeaderThatLiesAboutTheStateIsCaught(t *testing.T) {
 	f := sample(t)
 	f.Hash++
 	var buf bytes.Buffer
-	Encode(&buf, f)
+	if err := Encode(&buf, f); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := Decode(&buf); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("a wrong hash in the header: %v", err)
 	}

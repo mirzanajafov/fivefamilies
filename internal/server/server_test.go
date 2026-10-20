@@ -104,7 +104,11 @@ func (c *testCluster) startOn(id raft.NodeID, ln net.Listener) {
 	srv.Register(g)
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &running{srv: srv, grpc: g, cancel: cancel, done: make(chan struct{})}
-	go g.Serve(ln)
+	go func() {
+		if err := g.Serve(ln); err != nil {
+			c.t.Error(err)
+		}
+	}()
 	go func() {
 		srv.Run(ctx)
 		close(r.done)
@@ -293,7 +297,9 @@ func TestAWriteGivesUpWhileWaitingBehindAnotherWrite(t *testing.T) {
 	waiting := make(chan struct{})
 	go func() {
 		defer close(waiting)
-		cl.Put(stuck, "k", []byte("waits for a quorum"))
+		if _, err := cl.Put(stuck, "k", []byte("waits for a quorum")); err == nil {
+			t.Error("a write without a quorum was acknowledged")
+		}
 	}()
 	defer func() {
 		cancel()
