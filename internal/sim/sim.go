@@ -444,7 +444,7 @@ func (s *Sim) dispatch(e event) {
 		}
 		if sn.disk.covers > 0 {
 			if err := sn.disk.sync(s.chk, sn.idx); err != nil {
-				s.chk.safetyf("node %d could not sync its log: %v", sn.id, err)
+				s.chk.safetyf("node %d: %v", sn.id, err)
 				return
 			}
 		}
@@ -552,7 +552,7 @@ func (s *Sim) write(sn *simNode, w node.Write) {
 		}
 	}
 	if err := sn.disk.submit(w); err != nil {
-		s.chk.safetyf("node %d could not write its log: %v", sn.id, err)
+		s.chk.safetyf("node %d: %v", sn.id, err)
 		return
 	}
 	if !sn.disk.syncing {

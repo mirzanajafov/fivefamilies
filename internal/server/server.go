@@ -400,7 +400,7 @@ func (s *Server) writer(ctx context.Context) {
 			}
 			for _, p := range parts {
 				if err := s.disk.Write(p); err != nil {
-					s.die(fmt.Errorf("writing the log: %w", err))
+					s.die(err)
 					return
 				}
 				s.counts.batches.Add(1)
@@ -440,7 +440,7 @@ func (s *Server) sync() bool {
 		return true
 	}
 	if err := s.disk.Sync(); err != nil {
-		s.die(fmt.Errorf("syncing the log: %w", err))
+		s.die(err)
 		return false
 	}
 	s.counts.fsyncs.Add(1)

@@ -16,19 +16,12 @@ func Restore(dataDir string, voters []raft.NodeID, f backup.File) (bool, error) 
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return false, err
 	}
-	fs := vfs.OS{Dir: dataDir}
-	if exists, err := wal.Exists(fs); err != nil || exists {
-		return false, err
-	}
 	if _, err := backup.Check(f); err != nil {
 		return false, err
 	}
 	voters = slices.Sorted(slices.Values(voters))
 	s := raft.Snapshot{Index: f.Rev, Term: 1, Data: f.Data, Conf: raft.ConfState{Voters: voters}}
-	if err := storage.Seed(fs, s, wal.Options{Salt: randomUint64}); err != nil {
-		return false, err
-	}
-	return true, nil
+	return storage.Seed(vfs.OS{Dir: dataDir}, s, wal.Options{Salt: randomUint64})
 }
 
 func (s *Server) Backup(stop <-chan struct{}) (backup.File, error) {

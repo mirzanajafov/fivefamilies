@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"testing"
+	"time"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
@@ -148,6 +149,28 @@ func (n *Node) settle(env *recEnv) {
 		env.writes = env.writes[1:]
 		n.WriteDone(w.Seq)
 		n.Process()
+	}
+}
+
+func TestAdvanceCarriesWhatIsLeftOfATickIntoTheNextCall(t *testing.T) {
+	n, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	n.Advance(15 * time.Millisecond)
+	n.Advance(4 * time.Millisecond)
+	if got := n.LeaderlessTicks(); got != 1 {
+		t.Fatalf("%d ticks after 19 ms of 10 ms ticks", got)
+	}
+	n.Advance(time.Millisecond)
+	if got := n.LeaderlessTicks(); got != 2 {
+		t.Fatalf("%d ticks after 20 ms of 10 ms ticks", got)
+	}
+}
+
+func TestAdvanceDropsTicksPastTheCatchUpCap(t *testing.T) {
+	n, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	n.Advance((maxCatchUp+50)*10*time.Millisecond + 5*time.Millisecond)
+	n.Advance(5 * time.Millisecond)
+	if got := n.LeaderlessTicks(); got != maxCatchUp+1 {
+		t.Fatalf("%d ticks, want the cap of %d and one more from the carried 5 ms", got, maxCatchUp)
 	}
 }
 
