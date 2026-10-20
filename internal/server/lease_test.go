@@ -36,16 +36,12 @@ func TestLeasesOverTheWire(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	short, err := cl.Grant(ctx, time.Millisecond)
+	l, err := cl.Grant(ctx, time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := 30 * 5 * time.Millisecond * 3 / 2; short.TTL != want {
-		t.Fatalf("TTL %v, want it raised to one and a half election timeouts (%v)", short.TTL, want)
-	}
-	l, err := cl.Grant(ctx, 500*time.Millisecond)
-	if err != nil {
-		t.Fatal(err)
+	if want := 30 * 5 * time.Millisecond * 3 / 2; l.TTL != want {
+		t.Fatalf("TTL %v, want it raised to one and a half election timeouts (%v)", l.TTL, want)
 	}
 	if _, err := cl.Put(ctx, "/registry/api/1", []byte("a"), client.WithLease(l.ID)); err != nil {
 		t.Fatal(err)
@@ -56,6 +52,9 @@ func TestLeasesOverTheWire(t *testing.T) {
 	kctx, stopKeeping := context.WithCancel(ctx)
 	lost := cl.KeepAlive(kctx, l)
 	time.Sleep(4 * l.TTL)
+	if _, found, err := cl.Get(ctx, "/registry/api/1", client.ReadIndex); err != nil || !found {
+		t.Fatalf("a kept-alive key before any failover: %v %v", found, err)
+	}
 	old := c.leader(time.Second)
 	c.stop(old)
 	time.Sleep(4 * l.TTL)

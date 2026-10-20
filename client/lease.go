@@ -73,10 +73,14 @@ func (c *Client) KeepAlive(ctx context.Context, l Lease) <-chan error {
 				out <- err
 				return
 			}
+			wait := every
+			if err != nil {
+				wait = c.opts.Backoff
+			}
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(every):
+			case <-time.After(wait):
 			}
 		}
 	}()
