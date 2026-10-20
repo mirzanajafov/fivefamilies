@@ -482,7 +482,7 @@ func TestASnapshotRecordWithoutTheHardStateIsRefused(t *testing.T) {
 }
 
 func TestCompactingKeepsTheLastSyncedMarkerWhileANewerOneIsUnsynced(t *testing.T) {
-	for seed := range uint64(50) {
+	for seed := range uint64(500) {
 		fs := vfs.NewMem()
 		l, _, _ := open(t, fs, 1)
 		mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 1, 3), true)
@@ -501,7 +501,7 @@ func TestCompactingKeepsTheLastSyncedMarkerWhileANewerOneIsUnsynced(t *testing.T
 		if err != nil {
 			t.Fatalf("seed %d: %v", seed, err)
 		}
-		if st.Snapshot == nil || st.Snapshot.Index < 3 || st.Entries[len(st.Entries)-1].Index != 5 {
+		if st.Snapshot == nil || st.Snapshot.Index < 3 || st.Snapshot.Index+uint64(len(st.Entries)) != 5 {
 			t.Fatalf("seed %d: restored snapshot %+v and %d entries", seed, st.Snapshot, len(st.Entries))
 		}
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"testing"
-	"time"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
@@ -154,23 +153,25 @@ func (n *Node) settle(env *recEnv) {
 
 func TestAdvanceCarriesWhatIsLeftOfATickIntoTheNextCall(t *testing.T) {
 	n, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
-	n.Advance(15 * time.Millisecond)
-	n.Advance(4 * time.Millisecond)
+	tick := n.cfg.Tick
+	n.Advance(tick * 3 / 2)
+	n.Advance(tick * 2 / 5)
 	if got := n.LeaderlessTicks(); got != 1 {
-		t.Fatalf("%d ticks after 19 ms of 10 ms ticks", got)
+		t.Fatalf("%d ticks after 1.9 ticks of time", got)
 	}
-	n.Advance(time.Millisecond)
+	n.Advance(tick / 10)
 	if got := n.LeaderlessTicks(); got != 2 {
-		t.Fatalf("%d ticks after 20 ms of 10 ms ticks", got)
+		t.Fatalf("%d ticks after 2 ticks of time", got)
 	}
 }
 
 func TestAdvanceDropsTicksPastTheCatchUpCap(t *testing.T) {
 	n, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
-	n.Advance((maxCatchUp+50)*10*time.Millisecond + 5*time.Millisecond)
-	n.Advance(5 * time.Millisecond)
+	tick := n.cfg.Tick
+	n.Advance((maxCatchUp+50)*tick + tick/2)
+	n.Advance(tick / 2)
 	if got := n.LeaderlessTicks(); got != maxCatchUp+1 {
-		t.Fatalf("%d ticks, want the cap of %d and one more from the carried 5 ms", got, maxCatchUp)
+		t.Fatalf("%d ticks, want the cap of %d and one more from the carried half tick", got, maxCatchUp)
 	}
 }
 
