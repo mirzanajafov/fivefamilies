@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -399,6 +400,20 @@ func TestCheckerCatchesALeaderLeadingTheSameTermAfterARestart(t *testing.T) {
 	c.observe(0, soloLeader(t, 1, raft.Restore{}))
 	if !c.failed() {
 		t.Fatal("one node leading term 1 in two incarnations went unnoticed")
+	}
+}
+
+func TestAFailedLogWriteIsReportedEvenWithSafetyMuted(t *testing.T) {
+	opts := DefaultOptions()
+	opts.MuteSafety = true
+	s := newSim(1, opts)
+	s.start()
+	if err := s.nodes[0].disk.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s.loop(opts.Chaos)
+	if r := s.result(); r.Category != CatPanic || !strings.Contains(r.Violation, "node 1 failed: writing the log") {
+		t.Fatalf("category %q: %s", r.Category, r.Violation)
 	}
 }
 

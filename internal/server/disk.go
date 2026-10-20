@@ -16,7 +16,7 @@ type diskJob struct {
 func (s *Server) Write(w node.Write) {
 	select {
 	case s.jobs <- diskJob{write: &w}:
-	case <-s.quit:
+	case <-s.diskDone:
 	}
 }
 
@@ -27,11 +27,12 @@ func (s *Server) SaveSnapshot(sn raft.Snapshot) error {
 func (s *Server) Compacted(sn raft.Snapshot) {
 	select {
 	case s.jobs <- diskJob{compact: &sn}:
-	case <-s.quit:
+	case <-s.diskDone:
 	}
 }
 
 func (s *Server) writer(ctx context.Context) {
+	defer close(s.diskDone)
 	for {
 		var first diskJob
 		select {
@@ -66,7 +67,10 @@ func (s *Server) writer(ctx context.Context) {
 
 func (s *Server) gather(first diskJob) []diskJob {
 	jobs := []diskJob{first}
-	for s.cfg.FsyncMode == FsyncGroup {
+	if s.cfg.FsyncMode != FsyncGroup {
+		return jobs
+	}
+	for {
 		select {
 		case j := <-s.jobs:
 			jobs = append(jobs, j)
@@ -74,7 +78,6 @@ func (s *Server) gather(first diskJob) []diskJob {
 			return jobs
 		}
 	}
-	return jobs
 }
 
 func (s *Server) persist(jobs []diskJob) (uint64, error) {

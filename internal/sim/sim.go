@@ -147,6 +147,7 @@ type simNode struct {
 	sm          *recorder
 	ledTerm     uint64
 	deferred    bool
+	writeErr    error
 }
 
 type nodeEnv struct {
@@ -505,7 +506,11 @@ func (s *Sim) deferProcess(sn *simNode) {
 }
 
 func (s *Sim) process(sn *simNode) {
-	if err := sn.n.Process(); err != nil {
+	err := sn.n.Process()
+	if err == nil {
+		err = sn.writeErr
+	}
+	if err != nil {
 		s.crashWith(sn, err)
 		return
 	}
@@ -570,8 +575,11 @@ func (s *Sim) write(sn *simNode, w node.Write) {
 			s.stats.Snapshots++
 		}
 	}
+	if sn.writeErr != nil {
+		return
+	}
 	if err := sn.disk.submit(w); err != nil {
-		s.crashWith(sn, err)
+		sn.writeErr = err
 		return
 	}
 	if !sn.disk.syncing {
@@ -667,6 +675,7 @@ func (s *Sim) crash(sn *simNode) {
 	sn.tickGen++
 	sn.paused = false
 	sn.backlog = nil
+	sn.writeErr = nil
 	sn.disk.crash(s.rng)
 }
 

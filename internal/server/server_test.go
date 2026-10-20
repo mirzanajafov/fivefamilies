@@ -378,8 +378,17 @@ func TestASnapshotThatCannotBeSavedEndsRunWithoutItsLogRecordAndCallsStopWaiting
 	if err != nil {
 		t.Fatal(err)
 	}
-	ran := make(chan error, 1)
-	go func() { ran <- srv.Run(context.Background()) }()
+	runCtx, stopRun := context.WithCancel(context.Background())
+	var runErr error
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		runErr = srv.Run(runCtx)
+	}()
+	t.Cleanup(func() {
+		stopRun()
+		<-finished
+	})
 	deadline := time.Now().Add(5 * time.Second)
 	for srv.Status().GetState() != "leader" {
 		if time.Now().After(deadline) {
@@ -387,22 +396,31 @@ func TestASnapshotThatCannotBeSavedEndsRunWithoutItsLogRecordAndCallsStopWaiting
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	for index := uint64(1); index <= 8; index++ {
-		if err := os.MkdirAll(filepath.Join(dir, snap.Name(index, srv.Status().GetTerm()), "taken"), 0o700); err != nil {
+	for index := range uint64(8) {
+		if err := os.MkdirAll(filepath.Join(dir, snap.Name(index+1, srv.Status().GetTerm()), "taken"), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	for i := 0; i < 8; i++ {
-		if _, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: "k", Value: []byte{byte(i)}}); err != nil {
+	var last uint64
+	for i := range 8 {
+		res, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: "k", Value: []byte{byte(i)}})
+		if err != nil {
+			if !errors.Is(err, ErrStopped) {
+				t.Fatalf("a write to a stopping node: %v", err)
+			}
 			break
 		}
+		last = res.Rev
+	}
+	if last < 4 {
+		t.Fatalf("the last answered write is at %d, so the write whose entry reached the snapshot at 4 lost its answer", last)
 	}
 	select {
-	case err := <-ran:
-		if err == nil || !strings.Contains(err.Error(), "saving snapshot") {
-			t.Fatalf("Run returned %v", err)
+	case <-finished:
+		if runErr == nil || !strings.Contains(runErr.Error(), "saving snapshot") {
+			t.Fatalf("Run returned %v", runErr)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run went on after its snapshot could not be saved")

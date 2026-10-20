@@ -142,13 +142,17 @@ func (s *Server) call(ctx context.Context, refuse bool, f func(done node.Done)) 
 	case r := <-ch:
 		return r.res, r.err
 	case <-ctx.Done():
-		return kv.Result{}, ctx.Err()
+		return delivered(ch, ctx.Err())
 	case <-s.stopped:
-		select {
-		case r := <-ch:
-			return r.res, r.err
-		default:
-			return kv.Result{}, ErrStopped
-		}
+		return delivered(ch, ErrStopped)
+	}
+}
+
+func delivered(ch <-chan result, otherwise error) (kv.Result, error) {
+	select {
+	case r := <-ch:
+		return r.res, r.err
+	default:
+		return kv.Result{}, otherwise
 	}
 }

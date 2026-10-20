@@ -36,8 +36,9 @@ type Server struct {
 	written   chan uint64
 	stopped   chan struct{}
 	quit      chan struct{}
+	diskDone  chan struct{}
 	stop      context.CancelFunc
-	failOnce  sync.Once
+	failMu    sync.Mutex
 	failure   error
 	lastTick  time.Time
 	lastWatch time.Time
@@ -66,14 +67,15 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
-		cfg:     cfg,
-		inbound: make(chan raft.Message, 4096),
-		calls:   make(chan func(), 1024),
-		jobs:    make(chan diskJob, 4096),
-		written: make(chan uint64, 1024),
-		stopped: make(chan struct{}),
-		quit:    make(chan struct{}),
-		log:     cfg.Logger.With("node", cfg.ID),
+		cfg:      cfg,
+		inbound:  make(chan raft.Message, 4096),
+		calls:    make(chan func(), 1024),
+		jobs:     make(chan diskJob, 4096),
+		written:  make(chan uint64, 1024),
+		stopped:  make(chan struct{}),
+		quit:     make(chan struct{}),
+		diskDone: make(chan struct{}),
+		log:      cfg.Logger.With("node", cfg.ID),
 	}
 	disk, st, rec, err := storage.Open(vfs.OS{Dir: cfg.DataDir}, wal.Options{SegmentBytes: cfg.SegmentBytes, Salt: randomUint64})
 	if err != nil {
@@ -154,14 +156,16 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.disk.Close(); err != nil {
 		s.log.Error("closing the log", "err", err)
 	}
+	s.failMu.Lock()
+	defer s.failMu.Unlock()
 	return s.failure
 }
 
 func (s *Server) die(err error) {
-	s.failOnce.Do(func() {
-		s.failure = err
-		s.stop()
-	})
+	s.failMu.Lock()
+	s.failure = errors.Join(s.failure, err)
+	s.failMu.Unlock()
+	s.stop()
 }
 
 func (s *Server) deliver(m raft.Message) {
