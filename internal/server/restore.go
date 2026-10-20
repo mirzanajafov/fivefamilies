@@ -1,15 +1,13 @@
 package server
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"slices"
-	"strings"
 
 	"github.com/mirzanajafov/fivefamilies/internal/backup"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
-	"github.com/mirzanajafov/fivefamilies/internal/snap"
+	"github.com/mirzanajafov/fivefamilies/internal/storage"
 	"github.com/mirzanajafov/fivefamilies/internal/vfs"
 	"github.com/mirzanajafov/fivefamilies/internal/wal"
 )
@@ -19,32 +17,15 @@ func Restore(dataDir string, voters []raft.NodeID, f backup.File) (bool, error) 
 		return false, err
 	}
 	fs := vfs.OS{Dir: dataDir}
-	names, err := fs.List()
-	if err != nil {
+	if exists, err := wal.Exists(fs); err != nil || exists {
 		return false, err
-	}
-	for _, n := range names {
-		if strings.HasSuffix(n, ".wal") {
-			return false, nil
-		}
 	}
 	if _, err := backup.Check(f); err != nil {
 		return false, err
 	}
 	voters = slices.Sorted(slices.Values(voters))
 	s := raft.Snapshot{Index: f.Rev, Term: 1, Data: f.Data, Conf: raft.ConfState{Voters: voters}}
-	if err := snap.Save(fs, s); err != nil {
-		return false, fmt.Errorf("writing the snapshot: %w", err)
-	}
-	l, _, _, err := wal.Open(fs, wal.Options{Salt: randomUint64})
-	if err != nil {
-		return false, err
-	}
-	err = l.WriteBatch(wal.Batch{HardState: raft.HardState{Term: 1, Commit: f.Rev}, Snapshot: &raft.Snapshot{Index: f.Rev, Term: 1}, Reset: true})
-	if err == nil {
-		err = l.Sync()
-	}
-	if err := errors.Join(err, l.Close()); err != nil {
+	if err := storage.Seed(fs, s, wal.Options{Salt: randomUint64}); err != nil {
 		return false, err
 	}
 	return true, nil

@@ -51,7 +51,7 @@ type Batch struct {
 	Entries   []raft.Entry
 }
 
-func (b Batch) empty() bool {
+func (b Batch) Empty() bool {
 	return b.HardState.IsEmpty() && b.Snapshot == nil && len(b.Entries) == 0
 }
 
@@ -82,6 +82,17 @@ func parseSegmentName(name string) (uint64, bool) {
 	}
 	seq, err := strconv.ParseUint(hex, 16, 64)
 	return seq, err == nil && seq > 0
+}
+
+func Exists(fs vfs.FS) (bool, error) {
+	names, err := fs.List()
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(names, func(name string) bool {
+		_, ok := parseSegmentName(name)
+		return ok
+	}), nil
 }
 
 func corrupt(format string, args ...any) error {
@@ -332,7 +343,7 @@ func (l *Log) Write(hs raft.HardState, ents []raft.Entry) error {
 }
 
 func (l *Log) WriteBatch(b Batch) error {
-	if b.empty() {
+	if b.Empty() {
 		return nil
 	}
 	if b.Snapshot != nil && b.HardState.IsEmpty() {

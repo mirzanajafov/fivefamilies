@@ -51,7 +51,7 @@ func grant(t *testing.T, n *Node, env *recEnv, ttl uint64, key string) uint64 {
 
 func (n *Node) tickAndSettle(env *recEnv, k int) {
 	for range k {
-		n.Tick()
+		n.Advance(n.cfg.Tick)
 		n.settle(env)
 	}
 }
@@ -128,7 +128,7 @@ func TestANewLeaderGivesEveryLeaseAFullTTL(t *testing.T) {
 	}
 	for range 30 {
 		n.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 2, To: 1, Term: 1, Commit: 1})
-		n.Tick()
+		n.Advance(n.cfg.Tick)
 		n.settle(env)
 	}
 	if n.Raft().LastIndex() != 1 {

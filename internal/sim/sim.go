@@ -14,7 +14,6 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
-	"github.com/mirzanajafov/fivefamilies/internal/snap"
 )
 
 type Options struct {
@@ -419,7 +418,7 @@ func (s *Sim) dispatch(e event) {
 		if sn.n == nil || sn.paused || e.gen != sn.tickGen {
 			return
 		}
-		sn.n.Tick()
+		sn.n.Advance(s.opts.Tick)
 		s.scheduleTick(sn, s.tickInterval(sn))
 	case evDeliver:
 		if sn.n == nil {
@@ -623,18 +622,15 @@ func (s *Sim) buggify(from *simNode, m raft.Message) {
 }
 
 func (s *Sim) saveSnapshot(sn *simNode, snapshot raft.Snapshot) {
-	if err := snap.Save(sn.disk.fs, snapshot); err != nil {
-		s.chk.safetyf("node %d could not save snapshot %d: %v", sn.id, snapshot.Index, err)
+	if err := sn.disk.store.SaveSnapshot(snapshot); err != nil {
+		s.chk.safetyf("node %d: %v", sn.id, err)
 	}
 }
 
 func (s *Sim) compacted(sn *simNode, snapshot raft.Snapshot) {
-	n, err := sn.disk.log.Compact(snapshot.Index)
-	if err == nil {
-		err = snap.RemoveBelow(sn.disk.fs, snapshot.Index)
-	}
+	n, err := sn.disk.store.Compact(snapshot.Index)
 	if err != nil {
-		s.chk.safetyf("node %d could not compact to %d: %v", sn.id, snapshot.Index, err)
+		s.chk.safetyf("node %d: %v", sn.id, err)
 		return
 	}
 	s.stats.Compactions += n
@@ -668,10 +664,8 @@ func (s *Sim) pause(sn *simNode) {
 func (s *Sim) resume(sn *simNode) {
 	s.tracef("fault: resume node %d", sn.id)
 	sn.paused = false
-	if missed := int((s.now - sn.pausedAt) / s.tickInterval(sn)); missed > 0 && sn.n != nil && !s.opts.NoCatchUp {
-		for range min(missed, 10000) {
-			sn.n.Tick()
-		}
+	if missed := int64((s.now - sn.pausedAt) / s.tickInterval(sn)); missed > 0 && sn.n != nil && !s.opts.NoCatchUp {
+		sn.n.Advance(time.Duration(missed) * s.opts.Tick)
 		sn.n.Process()
 		s.observe(sn)
 	}

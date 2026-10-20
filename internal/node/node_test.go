@@ -195,7 +195,7 @@ func TestWritingBeforeSendingHoldsBackOnlyTheAppends(t *testing.T) {
 	n.settle(env)
 	env.sent = nil
 	n.Submit(kv.Command{Op: kv.OpPut, Key: "k"}, nil)
-	n.Tick()
+	n.Advance(n.cfg.Tick)
 	n.Process()
 	kinds := func() (apps, beats int) {
 		for _, m := range env.sent {
@@ -381,7 +381,7 @@ func TestAForwardedReadExpires(t *testing.T) {
 	}
 	for range readExpiry + 32 {
 		n.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 1, To: 2, Term: 1})
-		n.Tick()
+		n.Advance(n.cfg.Tick)
 		n.Process()
 	}
 	if !errors.Is(gotErr, ErrNotReady) {
