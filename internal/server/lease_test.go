@@ -40,8 +40,8 @@ func TestLeasesOverTheWire(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if min := 30 * 5 * time.Millisecond * 3 / 2; l.TTL != min {
-		t.Fatalf("TTL %v, want it raised to one and a half election timeouts (%v)", l.TTL, min)
+	if want := 30 * 5 * time.Millisecond * 3 / 2; l.TTL != want {
+		t.Fatalf("TTL %v, want it raised to one and a half election timeouts (%v)", l.TTL, want)
 	}
 	if _, err := cl.Put(ctx, "/registry/api/1", []byte("a"), client.WithLease(l.ID)); err != nil {
 		t.Fatal(err)

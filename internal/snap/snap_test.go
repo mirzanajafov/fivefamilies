@@ -33,14 +33,16 @@ func TestSaveLoad(t *testing.T) {
 func TestEveryFlippedByteIsCaught(t *testing.T) {
 	s := raft.Snapshot{Index: 7, Term: 2, Data: []byte("some state to protect"), Conf: raft.ConfState{Voters: []raft.NodeID{1, 2, 3}}}
 	fs := vfs.NewMem()
-	Save(fs, s)
+	if err := Save(fs, s); err != nil {
+		t.Fatal(err)
+	}
 	good, _ := fs.ReadFile(Name(7, 2))
 	for i := range good {
 		bad := append([]byte(nil), good...)
 		bad[i] ^= 0x40
-		fs.Truncate(Name(7, 2), 0)
-		f, _ := fs.OpenAppend(Name(7, 2))
-		f.Write(bad)
+		if err := vfs.WriteAtomic(fs, Name(7, 2), bad); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := Load(fs, 7, 2); !errors.Is(err, ErrCorrupt) {
 			t.Fatalf("flipped byte %d went unnoticed", i)
 		}
@@ -49,8 +51,13 @@ func TestEveryFlippedByteIsCaught(t *testing.T) {
 
 func TestACrashBeforeTheRenameLeavesNoSnapshot(t *testing.T) {
 	fs := vfs.NewMem()
-	f, _ := fs.Create(Name(9, 1) + vfs.TempSuffix)
-	f.Write([]byte("half"))
+	f, err := fs.Create(Name(9, 1) + vfs.TempSuffix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte("half")); err != nil {
+		t.Fatal(err)
+	}
 	fs.Crash(rand.New(rand.NewPCG(1, 1)))
 	if _, err := Load(fs, 9, 1); err == nil {
 		t.Fatal("a half-written snapshot loaded")
@@ -172,16 +179,18 @@ func TestRemovingUnfinishedSavesLeavesEverythingElse(t *testing.T) {
 
 func TestAVersionOneSnapshotLoadsWithoutAConfiguration(t *testing.T) {
 	fs := vfs.NewMem()
-	Save(fs, raft.Snapshot{Index: 5, Term: 1, Data: []byte("old")})
+	if err := Save(fs, raft.Snapshot{Index: 5, Term: 1, Data: []byte("old")}); err != nil {
+		t.Fatal(err)
+	}
 	b, _ := fs.ReadFile(Name(5, 1))
 	v1 := append([]byte(nil), b...)
 	v1[7] = 1
 	binary.LittleEndian.PutUint64(v1[24:], 3)
 	binary.LittleEndian.PutUint32(v1[32:], crc32.Checksum([]byte("old"), castagnoli))
 	v1 = append(v1[:headerSize], "old"...)
-	fs.Truncate(Name(5, 1), 0)
-	f, _ := fs.OpenAppend(Name(5, 1))
-	f.Write(v1)
+	if err := vfs.WriteAtomic(fs, Name(5, 1), v1); err != nil {
+		t.Fatal(err)
+	}
 	s, err := Load(fs, 5, 1)
 	if err != nil || string(s.Data) != "old" || len(s.Conf.Voters) != 0 {
 		t.Fatalf("%+v %v", s, err)

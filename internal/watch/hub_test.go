@@ -62,7 +62,7 @@ func TestAWatchFromNowStartsWithAnEmptyBatchAtTheCurrentRevision(t *testing.T) {
 	h := New(100, 0, 0)
 	feed(h, 1, 4)
 	s := &sink{}
-	h.Watch("/a/1", false, 0, s.send)
+	watch(t, h, "/a/1", false, s.send)
 	if len(s.got) != 1 || s.got[0].Rev != 4 || len(s.got[0].Events) != 0 {
 		t.Fatalf("first batch %+v: a client must learn where it starts even if nothing happens", s.got)
 	}
@@ -95,7 +95,7 @@ func TestARingNeverKeepsHalfARevision(t *testing.T) {
 func TestEndingEveryWatchTellsEachWatcher(t *testing.T) {
 	h := New(100, 0, 0)
 	a := &sink{}
-	h.Watch("/a/", true, 0, a.send)
+	watch(t, h, "/a/", true, a.send)
 	h.EndAll()
 	if last := a.got[len(a.got)-1]; !last.Ended || h.Len() != 0 {
 		t.Fatalf("last batch %+v, %d watchers left", last, h.Len())
@@ -105,7 +105,7 @@ func TestEndingEveryWatchTellsEachWatcher(t *testing.T) {
 func TestASlowWatcherIsDropped(t *testing.T) {
 	h := New(100, 0, 0)
 	s := &sink{}
-	h.Watch("/a/", true, 0, s.send)
+	watch(t, h, "/a/", true, s.send)
 	s.full = true
 	feed(h, 1, 1)
 	if h.Len() != 0 {
@@ -116,8 +116,8 @@ func TestASlowWatcherIsDropped(t *testing.T) {
 func TestProgressGoesOnlyToWatchersThatHaveNotHeardTheLatestRevision(t *testing.T) {
 	h := New(100, 0, 0)
 	a, b := &sink{}, &sink{}
-	h.Watch("/a/", true, 0, a.send)
-	h.Watch("/c/", true, 0, b.send)
+	watch(t, h, "/a/", true, a.send)
+	watch(t, h, "/c/", true, b.send)
 	feed(h, 1, 2)
 	h.Progress()
 	if n := len(a.got); n != 3 {
@@ -136,12 +136,19 @@ func TestInstallingASnapshotEndsEveryWatch(t *testing.T) {
 	h := New(100, 0, 0)
 	feed(h, 1, 2)
 	s := &sink{}
-	h.Watch("/a/", true, 0, s.send)
+	watch(t, h, "/a/", true, s.send)
 	h.Reset(50)
 	if last := s.got[len(s.got)-1]; last.Compacted != 51 || h.Len() != 0 {
 		t.Fatalf("last batch %+v, %d watchers left: the watcher missed 3 to 50 and must start over", last, h.Len())
 	}
 	if _, err := h.Watch("/a/", true, 10, (&sink{}).send); err == nil {
 		t.Fatal("a watch from before the snapshot was accepted")
+	}
+}
+
+func watch(t *testing.T, h *Hub, key string, prefix bool, send func(Batch) bool) {
+	t.Helper()
+	if _, err := h.Watch(key, prefix, 0, send); err != nil {
+		t.Fatal(err)
 	}
 }

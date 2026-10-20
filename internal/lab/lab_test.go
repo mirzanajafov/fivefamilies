@@ -30,7 +30,7 @@ func TestLabSurvivesFaults(t *testing.T) {
 		Seed: uint64(time.Now().UnixNano()), Duration: 30 * time.Second, Settle: 3 * time.Second,
 		Workers: 6, Keys: 3, Read: client.ReadIndex, Faults: AllFaults, FaultMean: 2 * time.Second,
 		Election: "1s", Heartbeat: "100ms", Lease: "0s", OpTimeout: 2 * time.Minute, CheckTimeout: 5 * time.Minute,
-		Project: "fflabtest", File: filepath.Join(root, "lab", "compose.yml"),
+		Project: "fflabtest", File: filepath.Join(root, "lab", "compose.yml"), Log: t.Logf,
 	})
 	if err != nil {
 		t.Fatal(err)

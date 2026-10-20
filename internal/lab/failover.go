@@ -14,17 +14,18 @@ import (
 )
 
 type FailoverOptions struct {
-	Election  string        `json:"election"`
-	Heartbeat string        `json:"heartbeat"`
-	Lease     string        `json:"lease"`
-	Trials    int           `json:"trials"`
-	Rate      int           `json:"rate"`
-	Timeout   time.Duration `json:"request_timeout_ns"`
-	Cold      bool          `json:"cold_connections"`
-	Before    time.Duration `json:"before_ns"`
-	After     time.Duration `json:"after_ns"`
-	Project   string        `json:"-"`
-	File      string        `json:"-"`
+	Election  string                           `json:"election"`
+	Heartbeat string                           `json:"heartbeat"`
+	Lease     string                           `json:"lease"`
+	Trials    int                              `json:"trials"`
+	Rate      int                              `json:"rate"`
+	Timeout   time.Duration                    `json:"request_timeout_ns"`
+	Cold      bool                             `json:"cold_connections"`
+	Before    time.Duration                    `json:"before_ns"`
+	After     time.Duration                    `json:"after_ns"`
+	Project   string                           `json:"-"`
+	File      string                           `json:"-"`
+	Log       func(format string, args ...any) `json:"-"`
 }
 
 type sample struct {
@@ -119,7 +120,11 @@ func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, err
 	if err := d.Up(ctx, env); err != nil {
 		return res, err
 	}
-	defer d.Down(context.Background())
+	defer func() {
+		if err := d.Down(context.Background()); err != nil {
+			opts.Log("tearing down the cluster: %v", err)
+		}
+	}()
 	var addrs []string
 	for i := 1; i <= d.Nodes; i++ {
 		addrs = append(addrs, fmt.Sprintf("127.0.0.1:315%d", i))

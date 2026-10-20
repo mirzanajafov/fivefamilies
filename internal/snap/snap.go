@@ -42,7 +42,7 @@ func Save(fs vfs.FS, s raft.Snapshot) error {
 func Load(fs vfs.FS, index, term uint64) (raft.Snapshot, error) {
 	b, err := fs.ReadFile(Name(index, term))
 	if err != nil {
-		return raft.Snapshot{}, fmt.Errorf("%w: %v", ErrCorrupt, err)
+		return raft.Snapshot{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
 	}
 	if len(b) < headerSize || ([8]byte(b[:8]) != magic && [8]byte(b[:8]) != magicV1) {
 		return raft.Snapshot{}, fmt.Errorf("%w: bad header", ErrCorrupt)

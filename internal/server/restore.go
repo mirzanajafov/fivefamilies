@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -39,11 +40,11 @@ func Restore(dataDir string, voters []raft.NodeID, f backup.File) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	defer l.Close()
-	if err := l.WriteBatch(wal.Batch{HardState: raft.HardState{Term: 1, Commit: f.Rev}, Snapshot: &raft.Snapshot{Index: f.Rev, Term: 1}, Reset: true}); err != nil {
-		return false, err
+	err = l.WriteBatch(wal.Batch{HardState: raft.HardState{Term: 1, Commit: f.Rev}, Snapshot: &raft.Snapshot{Index: f.Rev, Term: 1}, Reset: true})
+	if err == nil {
+		err = l.Sync()
 	}
-	if err := l.Sync(); err != nil {
+	if err := errors.Join(err, l.Close()); err != nil {
 		return false, err
 	}
 	return true, nil

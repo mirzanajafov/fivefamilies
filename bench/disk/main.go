@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -35,9 +36,18 @@ type writer struct {
 	files   int
 }
 
+func (w *writer) close() error {
+	if w.f == nil {
+		return nil
+	}
+	f := w.f
+	w.f = nil
+	return f.Close()
+}
+
 func (w *writer) open() error {
-	if w.f != nil {
-		w.f.Close()
+	if err := w.close(); err != nil {
+		return err
 	}
 	w.files++
 	name := filepath.Join(w.dir, fmt.Sprintf("w%d-%d.log", w.n, w.files))
@@ -111,9 +121,7 @@ func run(dir, mode string, writers, size int, segment int64, d time.Duration) (r
 				err = w.sync()
 				mine = append(mine, time.Since(t))
 			}
-			if w.f != nil {
-				w.f.Close()
-			}
+			err = errors.Join(err, w.close())
 			mu.Lock()
 			lat = append(lat, mine...)
 			if err != nil && first == nil {

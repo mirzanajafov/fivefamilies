@@ -490,7 +490,7 @@ func TestALeaderRefusesProposalsPastItsPendingCap(t *testing.T) {
 func TestProposeOnFollowerFails(t *testing.T) {
 	c := newCluster(t, 3, nil)
 	c.elect(1)
-	if _, err := c.node(2).Propose([]byte("x")); err != ErrNotLeader {
+	if _, err := c.node(2).Propose([]byte("x")); !errors.Is(err, ErrNotLeader) {
 		t.Fatalf("err %v", err)
 	}
 }

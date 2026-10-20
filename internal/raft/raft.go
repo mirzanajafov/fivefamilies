@@ -249,7 +249,7 @@ func (r *Raft) ProposeConfChange(cc ConfChange) (uint64, error) {
 		return 0, ErrConfPending
 	}
 	if _, err := r.conf().Apply(cc); err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrBadConfChange, err)
+		return 0, fmt.Errorf("%w: %w", ErrBadConfChange, err)
 	}
 	if cc.Type == ConfPromote {
 		if pr := r.progress(cc.Node); pr == nil || pr.match+r.cfg.MaxLearnerLag < r.log.lastIndex() {
@@ -297,7 +297,8 @@ func (r *Raft) Step(m Message) {
 	}
 	switch {
 	case m.Term > r.term:
-		if (m.Type == MsgVote || m.Type == MsgPreVote) && r.inLease() && !(m.Type == MsgVote && m.Context == campaignTransfer) {
+		transfer := m.Type == MsgVote && m.Context == campaignTransfer
+		if (m.Type == MsgVote || m.Type == MsgPreVote) && r.inLease() && !transfer {
 			return
 		}
 		switch {
@@ -753,7 +754,10 @@ func (r *Raft) handleAppendResp(pr *progress, m Message) {
 				pr.becomeReplicate()
 			}
 			r.maybeSendAppend(pr, true)
-			for pr.state == stateReplicate && r.maybeSendAppend(pr, false) {
+			for pr.state == stateReplicate {
+				if !r.maybeSendAppend(pr, false) {
+					break
+				}
 			}
 		}
 		return

@@ -60,7 +60,7 @@ func fetchProfile(ctx context.Context, url, file string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s: %s", url, resp.Status)
 	}
@@ -68,11 +68,8 @@ func fetchProfile(ctx context.Context, url, file string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
+	_, err = io.Copy(f, resp.Body)
+	return errors.Join(err, f.Close())
 }
 
 func (b *BenchCluster) leader(ctx context.Context) (int, error) {
@@ -160,11 +157,14 @@ func Profile(ctx context.Context, o ProfileOptions) (ProfileReport, error) {
 	rep := ProfileReport{Nodes: o.Nodes, Flags: o.Flags, GenFlags: o.GenFlags}
 	b := &BenchCluster{Nodes: o.Nodes, Flags: o.Flags, NodeCPUs: o.NodeCPUs, Profiles: true}
 	o.Log("starting %d nodes", o.Nodes)
+	defer func() {
+		if err := b.Down(); err != nil {
+			o.Log("tearing down: %v", err)
+		}
+	}()
 	if err := b.Up(ctx); err != nil {
-		b.Down()
 		return rep, err
 	}
-	defer b.Down()
 	type step struct {
 		name    string
 		rate    float64

@@ -433,13 +433,17 @@ func TestRecoveryMustBeTheSyncedStatePlusAPrefixOfWhatWasInFlight(t *testing.T) 
 	if err := d.sync(c, 0); err != nil {
 		t.Fatal(err)
 	}
-	d.submit(node.Write{Seq: 2, HardState: raft.HardState{Term: 2}, Entries: []raft.Entry{{Term: 2, Index: 3}}, Sync: true})
+	if err := d.submit(node.Write{Seq: 2, HardState: raft.HardState{Term: 2}, Entries: []raft.Entry{{Term: 2, Index: 3}}, Sync: true}); err != nil {
+		t.Fatal(err)
+	}
 	d.crash(rand.New(rand.NewPCG(5, 5)))
 	if _, _, err := d.open(c, 0); err != nil || c.failed() {
 		t.Fatalf("an honest crash: %v %s", err, c.failure)
 	}
 	names, _ := d.fs.List()
-	d.fs.Truncate(names[0], 24)
+	if err := d.fs.Truncate(names[0], 24); err != nil {
+		t.Fatal(err)
+	}
 	d.crash(rand.New(rand.NewPCG(6, 6)))
 	if _, _, err := d.open(c, 0); err != nil {
 		t.Fatal(err)

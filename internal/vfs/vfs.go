@@ -87,8 +87,7 @@ func (o OS) SyncDir() error {
 	if err != nil {
 		return err
 	}
-	defer d.Close()
-	return d.Sync()
+	return errors.Join(d.Sync(), d.Close())
 }
 
 func WriteAtomic(fs FS, name string, data []byte) error {

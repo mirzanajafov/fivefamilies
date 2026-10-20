@@ -182,7 +182,7 @@ func status(ctx context.Context, addrs []string) {
 	}
 }
 
-func onLeader(ctx context.Context, addrs []string, call func(pb.AdminClient) error) {
+func onLeader(addrs []string, call func(pb.AdminClient) error) {
 	var last error
 	for _, addr := range addrs {
 		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -221,7 +221,7 @@ func member(ctx context.Context, addrs []string, op, id string) {
 		usage()
 	}
 	req := &pb.ChangeMembersRequest{Change: change, Node: nodeID(id)}
-	onLeader(ctx, addrs, func(c pb.AdminClient) error {
+	onLeader(addrs, func(c pb.AdminClient) error {
 		resp, err := c.ChangeMembers(ctx, req)
 		if err == nil {
 			fmt.Printf("committed, applied %d: voters %v learners %v\n", resp.GetIndex(), resp.GetVoters(), resp.GetLearners())
@@ -232,7 +232,7 @@ func member(ctx context.Context, addrs []string, op, id string) {
 
 func transfer(ctx context.Context, addrs []string, id string) {
 	req := &pb.TransferLeadershipRequest{To: nodeID(id)}
-	onLeader(ctx, addrs, func(c pb.AdminClient) error {
+	onLeader(addrs, func(c pb.AdminClient) error {
 		start := time.Now()
 		resp, err := c.TransferLeadership(ctx, req)
 		if err == nil {
@@ -321,7 +321,7 @@ func config(ctx context.Context, c *client.Client, args []string) {
 
 func takeBackup(ctx context.Context, addrs []string, path string) {
 	var f backup.File
-	onLeader(ctx, addrs, func(c pb.AdminClient) error {
+	onLeader(addrs, func(c pb.AdminClient) error {
 		stream, err := c.Backup(ctx, &pb.BackupRequest{})
 		if err != nil {
 			return err

@@ -154,13 +154,15 @@ func (e *EtcdCluster) Leader(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no member reports itself as leader")
 }
 
-func (e *EtcdCluster) Down() {
+func (e *EtcdCluster) Down() error {
+	var errs []error
 	if e.d != nil {
-		e.d.compose(context.Background(), nil, "down", "-v", "--remove-orphans")
+		errs = append(errs, e.d.compose(context.Background(), nil, "down", "-v", "--remove-orphans"))
 	}
 	if e.dir != "" {
-		os.RemoveAll(e.dir)
+		errs = append(errs, os.RemoveAll(e.dir))
 	}
+	return errors.Join(errs...)
 }
 
 func (e *EtcdCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
@@ -171,8 +173,8 @@ func (e *EtcdCluster) Generate(ctx context.Context, genCPUs string, args ...stri
 	out, err := e.d.cmd(ctx, nil, full...)
 	var r loadgen.Report
 	if err != nil {
-		e.d.cmd(context.Background(), nil, "rm", "-f", name)
-		return r, err
+		_, rmErr := e.d.cmd(context.Background(), nil, "rm", "-f", name)
+		return r, errors.Join(err, rmErr)
 	}
 	if err := json.Unmarshal([]byte(out), &r); err != nil {
 		return r, fmt.Errorf("etcd generator output: %w: %.200s", err, out)
@@ -211,19 +213,19 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		o.Log("%s, round %d: starting", sp.name, round)
 		var gen generator
 		var quiet quieter
-		var down func()
+		var down func() error
 		c := Curve{Name: sp.name, Nodes: sp.nodes, NodeFlags: sp.node, GenFlags: sp.gen}
 		if sp.etcd {
 			ec := &EtcdCluster{Nodes: sp.nodes, NodeCPUs: o.NodeCPUs, Procs: sp.procs}
 			if err := ec.Up(ctx); err != nil {
-				ec.Down()
+				o.tearDown(sp.name, ec.Down)
 				return curves, fmt.Errorf("%s: %w", sp.name, err)
 			}
 			gen, quiet, down = ec.Generate, ec.Quiet, ec.Down
 			if sp.leader {
 				l, err := ec.Leader(ctx)
 				if err != nil {
-					ec.Down()
+					o.tearDown(sp.name, ec.Down)
 					return curves, err
 				}
 				c.GenFlags = append([]string{"-only", l}, sp.gen...)
@@ -231,14 +233,14 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		} else {
 			b := &BenchCluster{Nodes: sp.nodes, Flags: sp.node, NodeCPUs: o.NodeCPUs}
 			if err := b.Up(ctx); err != nil {
-				b.Down()
+				o.tearDown(sp.name, b.Down)
 				return curves, fmt.Errorf("%s: %w", sp.name, err)
 			}
 			gen, quiet, down = b.Generate, b.Quiet, b.Down
 		}
 		c = sweep(ctx, gen, quiet, c, o.sweep())
 		c.Round = round
-		down()
+		o.tearDown(sp.name, down)
 		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
 		if err := SaveJSON(o.Out, "e5.json", curves); err != nil {

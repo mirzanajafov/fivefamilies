@@ -125,11 +125,12 @@ func (s *Supervisor) Kill(d time.Duration) error {
 	if !s.state.Running || s.state.Killed {
 		return errors.New("supervisor: the node is not running")
 	}
+	var contErr error
 	if s.state.Paused {
-		cont(s.cmd.Process)
+		contErr = cont(s.cmd.Process)
 	}
 	if err := s.cmd.Process.Kill(); err != nil {
-		return fmt.Errorf("supervisor: killing the node: %w", err)
+		return fmt.Errorf("supervisor: killing the node: %w", errors.Join(err, contErr))
 	}
 	s.ours = true
 	s.state.Killed, s.state.Paused = true, false
@@ -157,17 +158,22 @@ func (s *Supervisor) Heal() error {
 	return s.endFaultLocked()
 }
 
-func (s *Supervisor) Stop(sig os.Signal) {
+func (s *Supervisor) Stop(sig os.Signal) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ours = true
 	s.stopTimerLocked()
-	if s.cmd != nil && s.state.Running {
-		if s.state.Paused {
-			cont(s.cmd.Process)
-		}
-		s.cmd.Process.Signal(sig)
+	if s.cmd == nil || !s.state.Running {
+		return nil
 	}
+	var contErr error
+	if s.state.Paused {
+		contErr = cont(s.cmd.Process)
+	}
+	if err := s.cmd.Process.Signal(sig); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return fmt.Errorf("supervisor: stopping the node: %w", errors.Join(err, contErr))
+	}
+	return nil
 }
 
 func (s *Supervisor) State() State {
@@ -201,7 +207,7 @@ func Handler(s *Supervisor, token string) http.Handler {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
-			json.NewEncoder(w).Encode(s.State())
+			_ = json.NewEncoder(w).Encode(s.State())
 		}
 	}
 	mux.HandleFunc("POST /kill", fault(s.Kill))
@@ -214,13 +220,13 @@ func Handler(s *Supervisor, token string) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		json.NewEncoder(w).Encode(s.State())
+		_ = json.NewEncoder(w).Encode(s.State())
 	})
 	mux.HandleFunc("GET /state", func(w http.ResponseWriter, r *http.Request) {
 		if !authed(w, r) {
 			return
 		}
-		json.NewEncoder(w).Encode(s.State())
+		_ = json.NewEncoder(w).Encode(s.State())
 	})
 	return mux
 }

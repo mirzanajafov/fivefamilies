@@ -151,7 +151,10 @@ func (c *Client) Register(ctx context.Context, service, instance, addr string, t
 			select {
 			case <-rctx.Done():
 				return
-			case <-c.KeepAlive(rctx, l):
+			case err := <-c.KeepAlive(rctx, l):
+				if !errors.Is(err, ErrLeaseNotFound) {
+					return
+				}
 			}
 			for rctx.Err() == nil {
 				nl, err := c.register(rctx, key, addr, ttl)

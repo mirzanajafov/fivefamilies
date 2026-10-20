@@ -211,13 +211,13 @@ func (c *Controller) admin(r *http.Request) bool {
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func (c *Controller) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
-	mux.HandleFunc("GET /api/snapshot", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, c.Snapshot()) })
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("GET /api/snapshot", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, c.Snapshot()) })
 	mux.HandleFunc("GET /api/events", c.serveEvents)
 	mux.HandleFunc("POST /api/chaos", c.serveChaos)
 	mux.HandleFunc("GET /api/admin", func(w http.ResponseWriter, r *http.Request) {
