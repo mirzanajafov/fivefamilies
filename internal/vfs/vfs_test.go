@@ -25,7 +25,9 @@ func write(t *testing.T, fs FS, name string, data []byte, sync bool) {
 			t.Fatal(err)
 		}
 	}
-	must(t, f.Close())
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestMemCrashKeepsSyncedBytesAndAPrefixOfTheRest(t *testing.T) {
@@ -35,7 +37,9 @@ func TestMemCrashKeepsSyncedBytesAndAPrefixOfTheRest(t *testing.T) {
 	for seed := range uint64(200) {
 		m := NewMem()
 		write(t, m, "a", synced, true)
-		must(t, m.SyncDir())
+		if err := m.SyncDir(); err != nil {
+			t.Fatal(err)
+		}
 		write(t, m, "a", unsynced, false)
 		m.Crash(rand.New(rand.NewPCG(seed, 0)))
 		got, err := m.ReadFile("a")
@@ -64,16 +68,24 @@ func TestMemCrashKeepsSyncedBytesAndAPrefixOfTheRest(t *testing.T) {
 func TestMemFilesNeedADirectorySyncToSurviveACrash(t *testing.T) {
 	m := NewMem()
 	write(t, m, "kept", []byte("x"), true)
-	must(t, m.SyncDir())
+	if err := m.SyncDir(); err != nil {
+		t.Fatal(err)
+	}
 	write(t, m, "new", []byte("y"), true)
-	must(t, m.Remove("kept"))
+	if err := m.Remove("kept"); err != nil {
+		t.Fatal(err)
+	}
 	m.Crash(rand.New(rand.NewPCG(1, 1)))
 	names, _ := m.List()
 	if len(names) != 1 || names[0] != "kept" {
 		t.Fatalf("after a crash without a directory sync: %v", names)
 	}
-	must(t, m.Rename("kept", "renamed"))
-	must(t, m.SyncDir())
+	if err := m.Rename("kept", "renamed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SyncDir(); err != nil {
+		t.Fatal(err)
+	}
 	m.Crash(rand.New(rand.NewPCG(1, 1)))
 	if names, _ := m.List(); len(names) != 1 || names[0] != "renamed" {
 		t.Fatalf("after a synced rename: %v", names)
@@ -220,12 +232,5 @@ func TestOS(t *testing.T) {
 	}
 	if err := fs.Remove("old"); err != nil {
 		t.Fatalf("removing a missing file: %v", err)
-	}
-}
-
-func must(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
 	}
 }

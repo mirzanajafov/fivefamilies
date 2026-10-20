@@ -61,6 +61,12 @@ func (o ExperimentOptions) sweep() SweepOptions {
 	return s
 }
 
+func (o ExperimentOptions) tearDown(name string, down func() error) {
+	if err := down(); err != nil {
+		o.Log("%s: tearing down: %v", name, err)
+	}
+}
+
 type curveSpec struct {
 	name  string
 	nodes int
@@ -83,14 +89,15 @@ func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []cu
 		b := &BenchCluster{Nodes: sp.nodes, Flags: sp.node, NodeCPUs: o.NodeCPUs}
 		o.Log("%s, round %d: starting %d nodes", sp.name, round, sp.nodes)
 		if err := b.Up(ctx); err != nil {
-			return curves, errors.Join(fmt.Errorf("%s: %w", sp.name, err), b.Down())
+			o.tearDown(sp.name, b.Down)
+			return curves, fmt.Errorf("%s: %w", sp.name, err)
 		}
 		c := b.Sweep(ctx, sp.name, o.sweep(), sp.gen)
 		c.Round = round
-		downErr := b.Down()
+		o.tearDown(sp.name, b.Down)
 		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
-		if err := errors.Join(downErr, SaveJSON(o.Out, file, curves)); err != nil {
+		if err := SaveJSON(o.Out, file, curves); err != nil {
 			return curves, err
 		}
 		if ctx.Err() != nil {
@@ -205,11 +212,13 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		b := &BenchCluster{Nodes: 5, Flags: flags, NodeCPUs: o.NodeCPUs}
 		o.Log("e1b: election %v, sync storage %v", v.t, v.sync)
 		if err := b.Up(ctx); err != nil {
-			return rows, errors.Join(err, b.Down())
+			o.tearDown("e1b", b.Down)
+			return rows, err
 		}
 		adm, err := dialAdmin(b.addrs())
 		if err != nil {
-			return rows, errors.Join(err, b.Down())
+			o.tearDown("e1b", b.Down)
+			return rows, err
 		}
 		lctx, stopLoad := context.WithCancel(ctx)
 		loadDone := make(chan error, 1)
@@ -273,15 +282,15 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		stopLoad()
 		loadErr := <-loadDone
 		adm.close()
-		downErr := b.Down()
+		o.tearDown("e1b", b.Down)
 		if err := ctx.Err(); err != nil {
-			return rows, errors.Join(err, downErr)
+			return rows, err
 		}
 		if generatorDied {
-			return rows, errors.Join(fmt.Errorf("the load generator stopped before the faults were over: %w", cmp.Or(loadErr, errors.New("it exited without an error"))), downErr)
+			return rows, fmt.Errorf("the load generator stopped before the faults were over: %w", cmp.Or(loadErr, errors.New("it exited without an error")))
 		}
 		rows = append(rows, row)
-		if err := errors.Join(downErr, SaveJSON(o.Out, "e1b.json", rows)); err != nil {
+		if err := SaveJSON(o.Out, "e1b.json", rows); err != nil {
 			return rows, err
 		}
 	}

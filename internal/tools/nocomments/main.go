@@ -182,7 +182,7 @@ func run(args []string) int {
 	flags := flag.NewFlagSet("nocomments", flag.ContinueOnError)
 	checkOnly := flags.Bool("check", false, "report comments in the files given instead of stripping a directory of Go files")
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: nocomments <dir> | nocomments -check <file>...")
+		_, _ = fmt.Fprintln(flags.Output(), "usage: nocomments <dir> | nocomments -check <file>...")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {

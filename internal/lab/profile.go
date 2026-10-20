@@ -51,7 +51,7 @@ func profileURL(node int, path string) string {
 	return fmt.Sprintf("http://127.0.0.1:316%d/debug/pprof/%s", node, path)
 }
 
-func fetchProfile(ctx context.Context, url, file string) (err error) {
+func fetchProfile(ctx context.Context, url, file string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -60,7 +60,7 @@ func fetchProfile(ctx context.Context, url, file string) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, resp.Body.Close()) }()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s: %s", url, resp.Status)
 	}
@@ -153,11 +153,15 @@ func collect(ctx context.Context, o ProfileOptions, p *ProfilePhase, seconds int
 	return nil
 }
 
-func Profile(ctx context.Context, o ProfileOptions) (rep ProfileReport, err error) {
-	rep = ProfileReport{Nodes: o.Nodes, Flags: o.Flags, GenFlags: o.GenFlags}
+func Profile(ctx context.Context, o ProfileOptions) (ProfileReport, error) {
+	rep := ProfileReport{Nodes: o.Nodes, Flags: o.Flags, GenFlags: o.GenFlags}
 	b := &BenchCluster{Nodes: o.Nodes, Flags: o.Flags, NodeCPUs: o.NodeCPUs, Profiles: true}
 	o.Log("starting %d nodes", o.Nodes)
-	defer func() { err = errors.Join(err, b.Down()) }()
+	defer func() {
+		if err := b.Down(); err != nil {
+			o.Log("tearing down: %v", err)
+		}
+	}()
 	if err := b.Up(ctx); err != nil {
 		return rep, err
 	}

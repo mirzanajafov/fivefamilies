@@ -218,29 +218,32 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		if sp.etcd {
 			ec := &EtcdCluster{Nodes: sp.nodes, NodeCPUs: o.NodeCPUs, Procs: sp.procs}
 			if err := ec.Up(ctx); err != nil {
-				return curves, errors.Join(fmt.Errorf("%s: %w", sp.name, err), ec.Down())
+				o.tearDown(sp.name, ec.Down)
+				return curves, fmt.Errorf("%s: %w", sp.name, err)
 			}
 			gen, quiet, down = ec.Generate, ec.Quiet, ec.Down
 			if sp.leader {
 				l, err := ec.Leader(ctx)
 				if err != nil {
-					return curves, errors.Join(err, ec.Down())
+					o.tearDown(sp.name, ec.Down)
+					return curves, err
 				}
 				c.GenFlags = append([]string{"-only", l}, sp.gen...)
 			}
 		} else {
 			b := &BenchCluster{Nodes: sp.nodes, Flags: sp.node, NodeCPUs: o.NodeCPUs}
 			if err := b.Up(ctx); err != nil {
-				return curves, errors.Join(fmt.Errorf("%s: %w", sp.name, err), b.Down())
+				o.tearDown(sp.name, b.Down)
+				return curves, fmt.Errorf("%s: %w", sp.name, err)
 			}
 			gen, quiet, down = b.Generate, b.Quiet, b.Down
 		}
 		c = sweep(ctx, gen, quiet, c, o.sweep())
 		c.Round = round
-		downErr := down()
+		o.tearDown(sp.name, down)
 		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
-		if err := errors.Join(downErr, SaveJSON(o.Out, "e5.json", curves)); err != nil {
+		if err := SaveJSON(o.Out, "e5.json", curves); err != nil {
 			return curves, err
 		}
 		if ctx.Err() != nil {

@@ -125,13 +125,12 @@ func (s *Supervisor) Kill(d time.Duration) error {
 	if !s.state.Running || s.state.Killed {
 		return errors.New("supervisor: the node is not running")
 	}
+	var contErr error
 	if s.state.Paused {
-		if err := cont(s.cmd.Process); err != nil {
-			return fmt.Errorf("supervisor: continuing the node before killing it: %w", err)
-		}
+		contErr = cont(s.cmd.Process)
 	}
 	if err := s.cmd.Process.Kill(); err != nil {
-		return fmt.Errorf("supervisor: killing the node: %w", err)
+		return fmt.Errorf("supervisor: killing the node: %w", errors.Join(err, contErr))
 	}
 	s.ours = true
 	s.state.Killed, s.state.Paused = true, false
@@ -167,13 +166,12 @@ func (s *Supervisor) Stop(sig os.Signal) error {
 	if s.cmd == nil || !s.state.Running {
 		return nil
 	}
+	var contErr error
 	if s.state.Paused {
-		if err := cont(s.cmd.Process); err != nil && !errors.Is(err, os.ErrProcessDone) {
-			return fmt.Errorf("supervisor: continuing the node before stopping it: %w", err)
-		}
+		contErr = cont(s.cmd.Process)
 	}
 	if err := s.cmd.Process.Signal(sig); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return fmt.Errorf("supervisor: stopping the node: %w", err)
+		return fmt.Errorf("supervisor: stopping the node: %w", errors.Join(err, contErr))
 	}
 	return nil
 }

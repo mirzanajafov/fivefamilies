@@ -21,24 +21,25 @@ import (
 )
 
 type Options struct {
-	Seed         uint64          `json:"seed"`
-	Duration     time.Duration   `json:"duration_ns"`
-	Settle       time.Duration   `json:"settle_ns"`
-	Workers      int             `json:"workers"`
-	Keys         int             `json:"keys"`
-	Read         client.ReadMode `json:"read"`
-	Faults       []FaultKind     `json:"faults"`
-	FaultMean    time.Duration   `json:"fault_mean_ns"`
-	Bug          string          `json:"bug,omitempty"`
-	Election     string          `json:"election"`
-	Heartbeat    string          `json:"heartbeat"`
-	Lease        string          `json:"lease"`
-	OpTimeout    time.Duration   `json:"op_timeout_ns"`
-	CheckTimeout time.Duration   `json:"check_timeout_ns"`
-	Out          string          `json:"-"`
-	Keep         bool            `json:"-"`
-	Project      string          `json:"-"`
-	File         string          `json:"-"`
+	Seed         uint64                           `json:"seed"`
+	Duration     time.Duration                    `json:"duration_ns"`
+	Settle       time.Duration                    `json:"settle_ns"`
+	Workers      int                              `json:"workers"`
+	Keys         int                              `json:"keys"`
+	Read         client.ReadMode                  `json:"read"`
+	Faults       []FaultKind                      `json:"faults"`
+	FaultMean    time.Duration                    `json:"fault_mean_ns"`
+	Bug          string                           `json:"bug,omitempty"`
+	Election     string                           `json:"election"`
+	Heartbeat    string                           `json:"heartbeat"`
+	Lease        string                           `json:"lease"`
+	OpTimeout    time.Duration                    `json:"op_timeout_ns"`
+	CheckTimeout time.Duration                    `json:"check_timeout_ns"`
+	Out          string                           `json:"-"`
+	Keep         bool                             `json:"-"`
+	Project      string                           `json:"-"`
+	File         string                           `json:"-"`
+	Log          func(format string, args ...any) `json:"-"`
 }
 
 type LeaderChange struct {
@@ -138,8 +139,8 @@ func agreedOn(sts []*pb.StatusResponse) int {
 	return l
 }
 
-func Run(ctx context.Context, opts Options) (rep Report, err error) {
-	rep = Report{Options: opts, Started: time.Now()}
+func Run(ctx context.Context, opts Options) (Report, error) {
+	rep := Report{Options: opts, Started: time.Now()}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{
 		"FF_BUG=" + opts.Bug, "FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease,
@@ -148,7 +149,11 @@ func Run(ctx context.Context, opts Options) (rep Report, err error) {
 		return rep, err
 	}
 	if !opts.Keep {
-		defer func() { err = errors.Join(err, d.Down(context.Background())) }()
+		defer func() {
+			if err := d.Down(context.Background()); err != nil {
+				opts.Log("tearing down the cluster: %v", err)
+			}
+		}()
 	}
 	var addrs []string
 	for i := 1; i <= d.Nodes; i++ {

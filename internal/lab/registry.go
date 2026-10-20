@@ -15,13 +15,14 @@ import (
 )
 
 type RegistryOptions struct {
-	Election  string        `json:"election"`
-	Heartbeat string        `json:"heartbeat"`
-	TTL       time.Duration `json:"ttl_ns"`
-	Trials    int           `json:"trials"`
-	Seed      uint64        `json:"seed"`
-	Project   string        `json:"-"`
-	File      string        `json:"-"`
+	Election  string                           `json:"election"`
+	Heartbeat string                           `json:"heartbeat"`
+	TTL       time.Duration                    `json:"ttl_ns"`
+	Trials    int                              `json:"trials"`
+	Seed      uint64                           `json:"seed"`
+	Project   string                           `json:"-"`
+	File      string                           `json:"-"`
+	Log       func(format string, args ...any) `json:"-"`
 }
 
 type RegistryTrial struct {
@@ -114,14 +115,18 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 	return res, err
 }
 
-func runRegistry(ctx context.Context, opts RegistryOptions) (res RegistryResult, err error) {
-	res = RegistryResult{Options: opts, Variants: map[string]RegistryVariant{}}
+func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, error) {
+	res := RegistryResult{Options: opts, Variants: map[string]RegistryVariant{}}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{"FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=0s", "FF_BUG="}
 	if err := d.Up(ctx, env); err != nil {
 		return res, err
 	}
-	defer func() { err = errors.Join(err, d.Down(context.Background())) }()
+	defer func() {
+		if err := d.Down(context.Background()); err != nil {
+			opts.Log("tearing down the cluster: %v", err)
+		}
+	}()
 	var addrs, inside []string
 	for i := 1; i <= d.Nodes; i++ {
 		addrs = append(addrs, fmt.Sprintf("127.0.0.1:315%d", i))
@@ -190,12 +195,12 @@ func runRegistry(ctx context.Context, opts RegistryOptions) (res RegistryResult,
 				}
 			}
 		}
-		if _, err := d.cmd(context.Background(), nil, "rm", "-f", name); err != nil {
-			runErr = errors.Join(runErr, err)
+		if _, err := d.cmd(context.Background(), nil, "rm", "-f", name); err != nil && tr.Err == "" {
+			tr.Err = err.Error()
 		}
 		if tr.Leader > 0 {
-			if err := d.Start(context.Background(), tr.Leader); err != nil {
-				runErr = errors.Join(runErr, err)
+			if err := d.Start(context.Background(), tr.Leader); err != nil && tr.Err == "" {
+				tr.Err = err.Error()
 			}
 		}
 		if runErr != nil {

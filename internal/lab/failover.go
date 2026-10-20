@@ -14,17 +14,18 @@ import (
 )
 
 type FailoverOptions struct {
-	Election  string        `json:"election"`
-	Heartbeat string        `json:"heartbeat"`
-	Lease     string        `json:"lease"`
-	Trials    int           `json:"trials"`
-	Rate      int           `json:"rate"`
-	Timeout   time.Duration `json:"request_timeout_ns"`
-	Cold      bool          `json:"cold_connections"`
-	Before    time.Duration `json:"before_ns"`
-	After     time.Duration `json:"after_ns"`
-	Project   string        `json:"-"`
-	File      string        `json:"-"`
+	Election  string                           `json:"election"`
+	Heartbeat string                           `json:"heartbeat"`
+	Lease     string                           `json:"lease"`
+	Trials    int                              `json:"trials"`
+	Rate      int                              `json:"rate"`
+	Timeout   time.Duration                    `json:"request_timeout_ns"`
+	Cold      bool                             `json:"cold_connections"`
+	Before    time.Duration                    `json:"before_ns"`
+	After     time.Duration                    `json:"after_ns"`
+	Project   string                           `json:"-"`
+	File      string                           `json:"-"`
+	Log       func(format string, args ...any) `json:"-"`
 }
 
 type sample struct {
@@ -112,14 +113,18 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 	return res, err
 }
 
-func runFailover(ctx context.Context, opts FailoverOptions) (res FailoverResult, err error) {
-	res = FailoverResult{Options: opts}
+func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, error) {
+	res := FailoverResult{Options: opts}
 	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{"FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease, "FF_BUG="}
 	if err := d.Up(ctx, env); err != nil {
 		return res, err
 	}
-	defer func() { err = errors.Join(err, d.Down(context.Background())) }()
+	defer func() {
+		if err := d.Down(context.Background()); err != nil {
+			opts.Log("tearing down the cluster: %v", err)
+		}
+	}()
 	var addrs []string
 	for i := 1; i <= d.Nodes; i++ {
 		addrs = append(addrs, fmt.Sprintf("127.0.0.1:315%d", i))

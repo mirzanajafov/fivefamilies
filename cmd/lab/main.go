@@ -17,7 +17,23 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
-type usageError struct{ error }
+type usageError struct {
+	error
+	shown bool
+}
+
+func (e usageError) Unwrap() error { return e.error }
+
+func parse(fs *flag.FlagSet, args []string) error {
+	if err := fs.Parse(args); err != nil {
+		return usageError{error: err, shown: true}
+	}
+	return nil
+}
+
+func logf(format string, args ...any) {
+	fmt.Printf("%s "+format+"\n", append([]any{time.Now().Format("15:04:05")}, args...)...)
+}
 
 var errProblems = errors.New("the run found problems")
 
@@ -42,7 +58,7 @@ func checkRun(read client.ReadMode, planted raft.Bug, election, heartbeat, lease
 }
 
 func failover(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("failover", flag.ExitOnError)
+	fs := flag.NewFlagSet("failover", flag.ContinueOnError)
 	elections := fs.String("election", "150ms,300ms,600ms,1s", "election timeouts to sweep; the heartbeat is a third of each")
 	trials := fs.Int("trials", 10, "leader kills per election timeout")
 	rate := fs.Int("rate", 200, "writes per second from the generator")
@@ -52,14 +68,14 @@ func failover(ctx context.Context, args []string) error {
 	out := fs.String("out", filepath.Join("bench", "results", "e1", time.Now().UTC().Format("20060102-150405")), "results directory")
 	build := fs.Bool("build", false, "build the lab image first")
 	cold := fs.Bool("cold", false, "keep the generator's write connections to followers cold until the leader dies")
-	if err := fs.Parse(args); err != nil {
-		return usageError{err}
+	if err := parse(fs, args); err != nil {
+		return err
 	}
 	var timeouts []time.Duration
 	for e := range strings.SplitSeq(*elections, ",") {
 		el, err := time.ParseDuration(e)
 		if err != nil {
-			return usageError{fmt.Errorf("-election: %w", err)}
+			return usageError{error: fmt.Errorf("-election: %w", err)}
 		}
 		timeouts = append(timeouts, el)
 	}
@@ -71,7 +87,7 @@ func failover(ctx context.Context, args []string) error {
 	for _, el := range timeouts {
 		res, err := lab.Failover(ctx, lab.FailoverOptions{
 			Election: el.String(), Heartbeat: (el / 3).String(), Lease: "0s", Trials: *trials, Rate: *rate,
-			Timeout: *timeout, Before: *before, After: *after, Cold: *cold, Project: "fflab", File: filepath.Join("lab", "compose.yml"),
+			Timeout: *timeout, Before: *before, After: *after, Cold: *cold, Project: "fflab", File: filepath.Join("lab", "compose.yml"), Log: logf,
 		}, *out)
 		if err != nil {
 			return err
@@ -90,7 +106,7 @@ func failover(ctx context.Context, args []string) error {
 }
 
 func registry(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("registry", flag.ExitOnError)
+	fs := flag.NewFlagSet("registry", flag.ContinueOnError)
 	election := fs.String("election", "1s", "election timeout")
 	heartbeat := fs.String("heartbeat", "100ms", "heartbeat interval")
 	ttl := fs.Duration("ttl", 2*time.Second, "the instance's lease TTL")
@@ -98,8 +114,8 @@ func registry(ctx context.Context, args []string) error {
 	seed := fs.Uint64("seed", 1, "seed for the time each instance is held before the kill")
 	out := fs.String("out", filepath.Join("bench", "results", "registry", time.Now().UTC().Format("20060102-150405")), "results directory")
 	build := fs.Bool("build", false, "build the lab image first")
-	if err := fs.Parse(args); err != nil {
-		return usageError{err}
+	if err := parse(fs, args); err != nil {
+		return err
 	}
 	if *build {
 		if err := buildImage(ctx); err != nil {
@@ -108,7 +124,7 @@ func registry(ctx context.Context, args []string) error {
 	}
 	res, err := lab.Registry(ctx, lab.RegistryOptions{
 		Election: *election, Heartbeat: *heartbeat, TTL: *ttl, Trials: *trials, Seed: *seed,
-		Project: "fflab", File: filepath.Join("lab", "compose.yml"),
+		Project: "fflab", File: filepath.Join("lab", "compose.yml"), Log: logf,
 	}, *out)
 	if err != nil {
 		return err
@@ -123,7 +139,7 @@ func registry(ctx context.Context, args []string) error {
 }
 
 func profile(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("profile", flag.ExitOnError)
+	fs := flag.NewFlagSet("profile", flag.ContinueOnError)
 	nodes := fs.Int("nodes", 5, "cluster size")
 	rate := fs.Float64("rate", 4000, "operations per second while profiling")
 	seconds := fs.Int("seconds", 20, "length of each CPU profile")
@@ -136,8 +152,8 @@ func profile(ctx context.Context, args []string) error {
 	nodeCPUs := fs.String("node-cpus", "4,5,6,7,8,9,10", "one cpuset per node, comma separated")
 	genCPUs := fs.String("gen-cpus", "12-15", "the generator's cpuset")
 	build := fs.Bool("build", false, "build the lab image first")
-	if err := fs.Parse(args); err != nil {
-		return usageError{err}
+	if err := parse(fs, args); err != nil {
+		return err
 	}
 	if *build {
 		if err := buildImage(ctx); err != nil {
@@ -148,10 +164,7 @@ func profile(ctx context.Context, args []string) error {
 	o := lab.ProfileOptions{
 		Nodes: *nodes, Flags: strings.Split(*nodeFlags, ","), GenFlags: strings.Split(*genFlags, ","),
 		Rate: *rate, Seconds: *seconds, Trace: *trace, Overload: *overload, OverloadFor: *overloadFor,
-		NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Out: out,
-		Log: func(format string, args ...any) {
-			fmt.Printf("%s "+format+"\n", append([]any{time.Now().Format("15:04:05")}, args...)...)
-		},
+		NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Out: out, Log: logf,
 	}
 	rep, err := lab.Profile(ctx, o)
 	for _, p := range rep.Phases {
@@ -206,7 +219,7 @@ func profile(ctx context.Context, args []string) error {
 }
 
 func bench(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("bench", flag.ExitOnError)
+	fs := flag.NewFlagSet("bench", flag.ContinueOnError)
 	experiments := fs.String("experiment", "e1b,e2,e3,e4,e5", "experiments to run, comma separated")
 	label := fs.String("label", time.Now().Format("20060102")+"-laptop", "results go to bench/results/<experiment>/<label>")
 	nodeCPUs := fs.String("node-cpus", "4,5,6,7,8,9,10", "one cpuset per node, comma separated")
@@ -215,8 +228,8 @@ func bench(ctx context.Context, args []string) error {
 	only := fs.String("only", "", "run only the curves with these names, separated by semicolons")
 	repeat := fs.Int("repeat", 1, "run every curve this many times, interleaved and rotated")
 	build := fs.Bool("build", false, "build the lab image first")
-	if err := fs.Parse(args); err != nil {
-		return usageError{err}
+	if err := parse(fs, args); err != nil {
+		return err
 	}
 	if *build {
 		if err := buildImage(ctx); err != nil {
@@ -227,9 +240,6 @@ func bench(ctx context.Context, args []string) error {
 				return err
 			}
 		}
-	}
-	logf := func(format string, args ...any) {
-		fmt.Printf("%s "+format+"\n", append([]any{time.Now().Format("15:04:05")}, args...)...)
 	}
 	for e := range strings.SplitSeq(*experiments, ",") {
 		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Repeat: *repeat, Log: logf}
@@ -283,7 +293,7 @@ func buildImage(ctx context.Context) error {
 }
 
 func runLab(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("lab", flag.ExitOnError)
+	fs := flag.NewFlagSet("lab", flag.ContinueOnError)
 	seed := fs.Uint64("seed", uint64(time.Now().UnixNano()), "fault schedule and workload seed")
 	duration := fs.Duration("duration", time.Minute, "time with faults")
 	settle := fs.Duration("settle", 5*time.Second, "time after the heal before the workload stops")
@@ -312,17 +322,17 @@ func runLab(ctx context.Context, args []string) error {
 	out := fs.String("out", "", "results directory (default bench/results/lab/<time>)")
 	keep := fs.Bool("keep", false, "leave the cluster running afterwards")
 	build := fs.Bool("build", false, "build the lab images first")
-	if err := fs.Parse(args); err != nil {
-		return usageError{err}
+	if err := parse(fs, args); err != nil {
+		return err
 	}
 	if err := checkRun(read, planted, *election, *heartbeat, *lease); err != nil {
-		return usageError{err}
+		return usageError{error: err}
 	}
 	opts := lab.Options{
 		Seed: *seed, Duration: *duration, Settle: *settle, Workers: *workers, Keys: *keys, Read: read, Faults: faults,
 		FaultMean: *mean, Bug: bug, Election: *election, Heartbeat: *heartbeat, Lease: *lease,
 		OpTimeout: *opTimeout, CheckTimeout: *checkTimeout, Out: *out, Keep: *keep,
-		Project: "fflab", File: filepath.Join("lab", "compose.yml"),
+		Project: "fflab", File: filepath.Join("lab", "compose.yml"), Log: logf,
 	}
 	if opts.Out == "" {
 		opts.Out = filepath.Join("bench", "results", "lab", time.Now().UTC().Format("20060102-150405"))
@@ -365,13 +375,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	err := run(ctx, args)
 	stop()
-	if err == nil {
-		return
-	}
-	fmt.Fprintln(os.Stderr, err)
 	var usage usageError
-	if errors.As(err, &usage) {
+	switch {
+	case err == nil, errors.Is(err, flag.ErrHelp):
+	case errors.As(err, &usage):
+		if !usage.shown {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		os.Exit(2)
+	default:
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	os.Exit(1)
 }

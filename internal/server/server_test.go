@@ -105,7 +105,7 @@ func (c *testCluster) startOn(id raft.NodeID, ln net.Listener) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &running{srv: srv, grpc: g, cancel: cancel, done: make(chan struct{})}
 	go func() {
-		if err := g.Serve(ln); err != nil {
+		if err := g.Serve(ln); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			c.t.Error(err)
 		}
 	}()

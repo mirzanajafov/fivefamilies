@@ -82,7 +82,7 @@ func newHarness(t *testing.T, n int, tweak func(*Config)) *harness {
 		g := grpc.NewServer()
 		srv.Register(g)
 		go func() {
-			if err := g.Serve(ln); err != nil {
+			if err := g.Serve(ln); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 				t.Error(err)
 			}
 		}()
