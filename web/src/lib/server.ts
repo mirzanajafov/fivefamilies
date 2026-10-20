@@ -10,7 +10,7 @@ export async function adminToken(): Promise<string | undefined> {
 
 type ControllerInit = RequestInit & { admin?: boolean; req?: Request }
 
-export async function toController(path: string, init: ControllerInit = {}): Promise<Response> {
+async function toController(path: string, init: ControllerInit): Promise<Response> {
   const headers = new Headers(init.headers)
   if (init.admin) {
     const token = await adminToken()
@@ -23,13 +23,18 @@ export async function toController(path: string, init: ControllerInit = {}): Pro
 }
 
 export async function forward(path: string, init: ControllerInit = {}): Promise<Response> {
+  let res: Response
   try {
-    const res = await toController(path, init)
+    res = await toController(path, init)
+  } catch {
+    return Response.json({ error: 'the controller is unreachable' }, { status: 502 })
+  }
+  try {
     return new Response(await res.text(), {
       status: res.status,
       headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'application/json' },
     })
   } catch {
-    return Response.json({ error: 'the controller is unreachable' }, { status: 502 })
+    return Response.json({ error: 'the controller stopped in the middle of its answer' }, { status: 502 })
   }
 }

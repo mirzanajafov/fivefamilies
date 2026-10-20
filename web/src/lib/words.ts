@@ -53,7 +53,7 @@ export function describe(e: Event): string {
   const who = e.node ? family(e.node) : 'The Commission'
   switch (e.kind) {
     case 'succession':
-      return e.term === undefined ? `${who} leads` : `${who} leads reign ${e.term}`
+      return `${who} leads reign ${e.term}`
     case 'down':
       return `${who} went silent`
     case 'up':
@@ -67,7 +67,6 @@ export function describe(e: Event): string {
     case 'violation':
       return `A broken word: ${e.text}`
   }
-  return e.text
 }
 
 export function outcome(f: Fault): string {
