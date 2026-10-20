@@ -144,7 +144,7 @@ func (c *testCluster) leader(timeout time.Duration) raft.NodeID {
 		var term uint64
 		for id, r := range c.running {
 			st := r.srv.Status()
-			if st.GetState() == "leader" && st.GetTerm() >= term {
+			if st.GetRole() == pb.Role_ROLE_LEADER && st.GetTerm() >= term {
 				leader, term = id, st.GetTerm()
 			}
 		}
@@ -395,5 +395,32 @@ func TestAFatalErrorEndsRunAndCallsStopWaitingForTheLoop(t *testing.T) {
 	}
 	if _, _, err := srv.StateHash(ctx); !errors.Is(err, ErrStopped) {
 		t.Fatalf("a hash from a stopped node: %v", err)
+	}
+}
+
+func TestCallsShapedByThePreviousBuildStillWork(t *testing.T) {
+	c := newTestCluster(t, 1, func(cfg *Config) { cfg.Chaos = true })
+	leader := c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := grpc.NewClient(c.nodes[leader], grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if st := c.status(leader); st.GetState() != "leader" || st.GetRole() != pb.Role_ROLE_LEADER {
+		t.Fatalf("status says %q and %v, want both to name the leader", st.GetState(), st.GetRole())
+	}
+	session, err := pb.NewKVClient(conn).Register(ctx, &pb.RegisterRequest{})
+	if err != nil || session.GetClient() == 0 {
+		t.Fatalf("registering a session the old way: %v %v", session, err)
+	}
+	if _, err := pb.NewKVClient(conn).Get(ctx, &pb.GetRequest{Key: "k"}); err != nil {
+		t.Fatalf("a read without a mode, which was ReadIndex: %v", err)
+	}
+	for _, action := range []string{"isolate", "heal"} {
+		if _, err := c.admin(leader).Chaos(ctx, &pb.ChaosRequest{Action: action, DurationMs: 50}); err != nil {
+			t.Fatalf("chaos %q named the old way: %v", action, err)
+		}
 	}
 }

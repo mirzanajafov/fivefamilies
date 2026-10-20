@@ -14,9 +14,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	grpcstatus "google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
@@ -177,7 +175,7 @@ func status(ctx context.Context, addrs []string) {
 			continue
 		}
 		fmt.Printf("%s: node %d %s term %d leader %d commit %d applied %d log %d..%d snapshot %d hash %x@%d voters %v learners %v\n",
-			addr, st.GetId(), st.GetState(), st.GetTerm(), st.GetLeader(), st.GetCommit(), st.GetApplied(),
+			addr, st.GetId(), client.RoleName(st.GetRole()), st.GetTerm(), st.GetLeader(), st.GetCommit(), st.GetApplied(),
 			st.GetFirstIndex(), st.GetLastIndex(), st.GetSnapshotIndex(), st.GetStateHash(), st.GetHashIndex(), st.GetVoters(), st.GetLearners())
 	}
 }
@@ -196,7 +194,7 @@ func onLeader(addrs []string, call func(pb.AdminClient) error) {
 			return
 		}
 		last = fmt.Errorf("%s: %w", addr, err)
-		if s, ok := grpcstatus.FromError(err); !ok || s.Code() != codes.Unavailable || s.Message() != "not the leader" {
+		if client.Reason(err) != pb.ErrorReason_ERROR_REASON_NOT_LEADER {
 			break
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -21,6 +22,17 @@ const (
 	HeaderLeader     = "ff-leader"
 	HeaderLeaderAddr = "ff-leader-addr"
 )
+
+var errorDomain = string(pb.File_fivefamilies_v1_errors_proto.Package())
+
+func reasoned(code codes.Code, reason pb.ErrorReason, msg string) error {
+	st := status.New(code, msg)
+	detailed, err := st.WithDetails(&errdetails.ErrorInfo{Reason: reason.String(), Domain: errorDomain})
+	if err != nil {
+		return st.Err()
+	}
+	return detailed.Err()
+}
 
 type kvService struct {
 	pb.UnimplementedKVServer
@@ -40,7 +52,7 @@ func fail(ctx context.Context, s *Server, err error) error {
 				s.log.Warn("setting the leader hint", "err", err)
 			}
 		}
-		return status.Error(codes.Unavailable, "not the leader")
+		return reasoned(codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER, "not the leader")
 	case errors.Is(err, node.ErrLost), errors.Is(err, node.ErrNotReady), errors.Is(err, raft.ErrNotLeader),
 		errors.Is(err, raft.ErrTransferring), errors.Is(err, raft.ErrConfNotReady):
 		return status.Error(codes.Unavailable, err.Error())
@@ -63,13 +75,13 @@ func outcome(res kv.Result) error {
 	case kv.OK:
 		return nil
 	case kv.ErrSessionExpired:
-		return status.Error(codes.FailedPrecondition, "session expired")
+		return reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_SESSION_EXPIRED, "session expired")
 	case kv.ErrStaleSequence:
-		return status.Error(codes.FailedPrecondition, "stale sequence number")
+		return reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_STALE_SEQUENCE, "stale sequence number")
 	case kv.ErrLeaseNotFound:
 		return status.Error(codes.NotFound, "lease not found")
 	case kv.ErrTooManyLeases:
-		return status.Error(codes.FailedPrecondition, "too many leases")
+		return reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES, "too many leases")
 	}
 	return status.Error(codes.InvalidArgument, res.Code.String())
 }
@@ -89,12 +101,20 @@ func toKV(kvp kv.KeyValue) *pb.KeyValue {
 	return &pb.KeyValue{Key: kvp.Key, Value: kvp.Value, CreateRev: kvp.CreateRev, ModRev: kvp.ModRev, Version: kvp.Version, Lease: kvp.Lease}
 }
 
-func (k *kvService) Register(ctx context.Context, _ *pb.RegisterRequest) (*pb.RegisterResponse, error) {
+func (k *kvService) OpenSession(ctx context.Context, _ *pb.OpenSessionRequest) (*pb.OpenSessionResponse, error) {
 	res, err := k.submit(ctx, kv.Command{Op: kv.OpRegister})
 	if err != nil {
 		return nil, err
 	}
-	return &pb.RegisterResponse{Client: res.Client}, nil
+	return &pb.OpenSessionResponse{Client: res.Client}, nil
+}
+
+func (k *kvService) Register(ctx context.Context, _ *pb.RegisterRequest) (*pb.RegisterResponse, error) {
+	res, err := k.OpenSession(ctx, &pb.OpenSessionRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return &pb.RegisterResponse{Client: res.GetClient()}, nil
 }
 
 func (k *kvService) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
@@ -220,7 +240,7 @@ func (a *adminService) Backup(_ *pb.BackupRequest, stream pb.Admin_BackupServer)
 	}
 	const chunk = 1 << 20
 	for off := 0; off == 0 || off < len(f.Data); off += chunk {
-		msg := &pb.BackupChunk{Data: f.Data[off:min(off+chunk, len(f.Data))]}
+		msg := &pb.BackupResponse{Data: f.Data[off:min(off+chunk, len(f.Data))]}
 		if off == 0 {
 			msg.Rev, msg.Hash, msg.Size = f.Rev, f.Hash, uint64(len(f.Data))
 		}
@@ -233,11 +253,22 @@ func (a *adminService) Backup(_ *pb.BackupRequest, stream pb.Admin_BackupServer)
 
 const maxChaos = time.Minute
 
+var chaosActions = map[string]pb.ChaosAction{
+	"stall-disk": pb.ChaosAction_CHAOS_ACTION_STALL_DISK,
+	"pause":      pb.ChaosAction_CHAOS_ACTION_PAUSE,
+	"isolate":    pb.ChaosAction_CHAOS_ACTION_ISOLATE,
+	"heal":       pb.ChaosAction_CHAOS_ACTION_HEAL,
+}
+
 func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.ChaosResponse, error) {
 	if !a.s.cfg.Chaos {
 		return nil, status.Error(codes.PermissionDenied, "chaos is off on this node")
 	}
-	if req.GetAction() == "heal" {
+	kind := req.GetKind()
+	if kind == pb.ChaosAction_CHAOS_ACTION_UNSPECIFIED {
+		kind = chaosActions[req.GetAction()]
+	}
+	if kind == pb.ChaosAction_CHAOS_ACTION_HEAL {
 		a.s.heal()
 		return &pb.ChaosResponse{}, nil
 	}
@@ -245,10 +276,10 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 	if d <= 0 || d > maxChaos {
 		return nil, status.Errorf(codes.InvalidArgument, "chaos lasts between 1 ms and %v", maxChaos)
 	}
-	switch req.GetAction() {
-	case "stall-disk":
+	switch kind {
+	case pb.ChaosAction_CHAOS_ACTION_STALL_DISK:
 		a.s.stalled.set(d)
-	case "pause":
+	case pb.ChaosAction_CHAOS_ACTION_PAUSE:
 		a.s.paused.set(d)
 		select {
 		case a.s.calls <- func() { a.s.paused.wait(a.s.quit) }:
@@ -257,10 +288,10 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 		case <-a.s.stopped:
 			return nil, fail(ctx, a.s, ErrStopped)
 		}
-	case "isolate":
+	case pb.ChaosAction_CHAOS_ACTION_ISOLATE:
 		a.s.isolated.set(d)
 	default:
-		return nil, status.Errorf(codes.InvalidArgument, "unknown chaos action %q", req.GetAction())
+		return nil, status.Errorf(codes.InvalidArgument, "unknown chaos action %v %q", req.GetKind(), req.GetAction())
 	}
 	return &pb.ChaosResponse{}, nil
 }

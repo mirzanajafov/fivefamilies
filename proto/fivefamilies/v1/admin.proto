@@ -8,9 +8,17 @@ message StatusRequest {
   bool hash = 1;
 }
 
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_FOLLOWER = 1;
+  ROLE_PRECANDIDATE = 2;
+  ROLE_CANDIDATE = 3;
+  ROLE_LEADER = 4;
+}
+
 message StatusResponse {
   uint64 id = 1;
-  string state = 2;
+  string state = 2 [deprecated = true];
   uint64 term = 3;
   uint64 leader = 4;
   uint64 commit = 5;
@@ -31,18 +39,28 @@ message StatusResponse {
   uint64 reads = 20;
   uint64 writes = 21;
   uint64 elections = 22;
+  Role role = 23;
+}
+
+enum ChaosAction {
+  CHAOS_ACTION_UNSPECIFIED = 0;
+  CHAOS_ACTION_STALL_DISK = 1;
+  CHAOS_ACTION_PAUSE = 2;
+  CHAOS_ACTION_ISOLATE = 3;
+  CHAOS_ACTION_HEAL = 4;
 }
 
 message ChaosRequest {
-  string action = 1;
+  string action = 1 [deprecated = true];
   uint64 duration_ms = 2;
+  ChaosAction kind = 3;
 }
 
 message ChaosResponse {}
 
 message BackupRequest {}
 
-message BackupChunk {
+message BackupResponse {
   uint64 rev = 1;
   uint64 hash = 2;
   uint64 size = 3;
@@ -81,5 +99,5 @@ service Admin {
   rpc ChangeMembers(ChangeMembersRequest) returns (ChangeMembersResponse);
   rpc TransferLeadership(TransferLeadershipRequest) returns (TransferLeadershipResponse);
   rpc Chaos(ChaosRequest) returns (ChaosResponse);
-  rpc Backup(BackupRequest) returns (stream BackupChunk);
+  rpc Backup(BackupRequest) returns (stream BackupResponse);
 }

@@ -68,7 +68,7 @@ func TestMembersChangeAndLeadershipMovesOverTheWire(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if st := c.status(4); len(st.GetVoters()) != 3 || st.GetState() != "follower" || st.GetTerm() != 0 {
+	if st := c.status(4); len(st.GetVoters()) != 3 || st.GetRole() != pb.Role_ROLE_FOLLOWER || st.GetTerm() != 0 {
 		t.Fatalf("the spare node should wait quietly: %v", st)
 	}
 	resp := c.change(ctx, pb.MemberChange_MEMBER_CHANGE_ADD_LEARNER, 4)

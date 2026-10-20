@@ -10,6 +10,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	KV_OpenSession_FullMethodName    = "/fivefamilies.v1.KV/OpenSession"
 	KV_Register_FullMethodName       = "/fivefamilies.v1.KV/Register"
 	KV_Get_FullMethodName            = "/fivefamilies.v1.KV/Get"
 	KV_Range_FullMethodName          = "/fivefamilies.v1.KV/Range"
@@ -19,6 +20,8 @@ const (
 )
 
 type KVClient interface {
+	OpenSession(ctx context.Context, in *OpenSessionRequest, opts ...grpc.CallOption) (*OpenSessionResponse, error)
+
 	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error)
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	Range(ctx context.Context, in *RangeRequest, opts ...grpc.CallOption) (*RangeResponse, error)
@@ -33,6 +36,16 @@ type kVClient struct {
 
 func NewKVClient(cc grpc.ClientConnInterface) KVClient {
 	return &kVClient{cc}
+}
+
+func (c *kVClient) OpenSession(ctx context.Context, in *OpenSessionRequest, opts ...grpc.CallOption) (*OpenSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OpenSessionResponse)
+	err := c.cc.Invoke(ctx, KV_OpenSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *kVClient) Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error) {
@@ -96,6 +109,8 @@ func (c *kVClient) CompareAndSwap(ctx context.Context, in *CompareAndSwapRequest
 }
 
 type KVServer interface {
+	OpenSession(context.Context, *OpenSessionRequest) (*OpenSessionResponse, error)
+
 	Register(context.Context, *RegisterRequest) (*RegisterResponse, error)
 	Get(context.Context, *GetRequest) (*GetResponse, error)
 	Range(context.Context, *RangeRequest) (*RangeResponse, error)
@@ -107,6 +122,9 @@ type KVServer interface {
 
 type UnimplementedKVServer struct{}
 
+func (UnimplementedKVServer) OpenSession(context.Context, *OpenSessionRequest) (*OpenSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method OpenSession not implemented")
+}
 func (UnimplementedKVServer) Register(context.Context, *RegisterRequest) (*RegisterResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Register not implemented")
 }
@@ -138,6 +156,24 @@ func RegisterKVServer(s grpc.ServiceRegistrar, srv KVServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&KV_ServiceDesc, srv)
+}
+
+func _KV_OpenSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KVServer).OpenSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KV_OpenSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KVServer).OpenSession(ctx, req.(*OpenSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _KV_Register_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -252,6 +288,10 @@ var KV_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "fivefamilies.v1.KV",
 	HandlerType: (*KVServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "OpenSession",
+			Handler:    _KV_OpenSession_Handler,
+		},
 		{
 			MethodName: "Register",
 			Handler:    _KV_Register_Handler,

@@ -17,21 +17,24 @@ const (
 type ReadMode int32
 
 const (
-	ReadMode_READ_MODE_INDEX ReadMode = 0
-	ReadMode_READ_MODE_LEASE ReadMode = 1
-	ReadMode_READ_MODE_LOG   ReadMode = 2
+	ReadMode_READ_MODE_UNSPECIFIED ReadMode = 0
+	ReadMode_READ_MODE_LEASE       ReadMode = 1
+	ReadMode_READ_MODE_LOG         ReadMode = 2
+	ReadMode_READ_MODE_INDEX       ReadMode = 3
 )
 
 var (
 	ReadMode_name = map[int32]string{
-		0: "READ_MODE_INDEX",
+		0: "READ_MODE_UNSPECIFIED",
 		1: "READ_MODE_LEASE",
 		2: "READ_MODE_LOG",
+		3: "READ_MODE_INDEX",
 	}
 	ReadMode_value = map[string]int32{
-		"READ_MODE_INDEX": 0,
-		"READ_MODE_LEASE": 1,
-		"READ_MODE_LOG":   2,
+		"READ_MODE_UNSPECIFIED": 0,
+		"READ_MODE_LEASE":       1,
+		"READ_MODE_LOG":         2,
+		"READ_MODE_INDEX":       3,
 	}
 )
 
@@ -144,6 +147,84 @@ func (x *KeyValue) GetLease() uint64 {
 	return 0
 }
 
+type OpenSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OpenSessionRequest) Reset() {
+	*x = OpenSessionRequest{}
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OpenSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OpenSessionRequest) ProtoMessage() {}
+
+func (x *OpenSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*OpenSessionRequest) Descriptor() ([]byte, []int) {
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{1}
+}
+
+type OpenSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Client        uint64                 `protobuf:"varint,1,opt,name=client,proto3" json:"client,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OpenSessionResponse) Reset() {
+	*x = OpenSessionResponse{}
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OpenSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OpenSessionResponse) ProtoMessage() {}
+
+func (x *OpenSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*OpenSessionResponse) Descriptor() ([]byte, []int) {
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *OpenSessionResponse) GetClient() uint64 {
+	if x != nil {
+		return x.Client
+	}
+	return 0
+}
+
 type RegisterRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -152,7 +233,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[1]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -164,7 +245,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[1]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -176,7 +257,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 }
 
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{1}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{3}
 }
 
 type RegisterResponse struct {
@@ -188,7 +269,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[2]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -200,7 +281,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[2]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -212,7 +293,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{2}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RegisterResponse) GetClient() uint64 {
@@ -232,7 +313,7 @@ type GetRequest struct {
 
 func (x *GetRequest) Reset() {
 	*x = GetRequest{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[3]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -244,7 +325,7 @@ func (x *GetRequest) String() string {
 func (*GetRequest) ProtoMessage() {}
 
 func (x *GetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[3]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -256,7 +337,7 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 }
 
 func (*GetRequest) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{3}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetRequest) GetKey() string {
@@ -270,7 +351,7 @@ func (x *GetRequest) GetMode() ReadMode {
 	if x != nil {
 		return x.Mode
 	}
-	return ReadMode_READ_MODE_INDEX
+	return ReadMode_READ_MODE_UNSPECIFIED
 }
 
 type GetResponse struct {
@@ -284,7 +365,7 @@ type GetResponse struct {
 
 func (x *GetResponse) Reset() {
 	*x = GetResponse{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[4]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -296,7 +377,7 @@ func (x *GetResponse) String() string {
 func (*GetResponse) ProtoMessage() {}
 
 func (x *GetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[4]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -308,7 +389,7 @@ func (x *GetResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (*GetResponse) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{4}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetResponse) GetFound() bool {
@@ -342,7 +423,7 @@ type RangeRequest struct {
 
 func (x *RangeRequest) Reset() {
 	*x = RangeRequest{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[5]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -354,7 +435,7 @@ func (x *RangeRequest) String() string {
 func (*RangeRequest) ProtoMessage() {}
 
 func (x *RangeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[5]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -366,7 +447,7 @@ func (x *RangeRequest) ProtoReflect() protoreflect.Message {
 }
 
 func (*RangeRequest) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{5}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RangeRequest) GetPrefix() string {
@@ -393,7 +474,7 @@ type RangeResponse struct {
 
 func (x *RangeResponse) Reset() {
 	*x = RangeResponse{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[6]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -405,7 +486,7 @@ func (x *RangeResponse) String() string {
 func (*RangeResponse) ProtoMessage() {}
 
 func (x *RangeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[6]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -417,7 +498,7 @@ func (x *RangeResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (*RangeResponse) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{6}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RangeResponse) GetKvs() []*KeyValue {
@@ -447,7 +528,7 @@ type PutRequest struct {
 
 func (x *PutRequest) Reset() {
 	*x = PutRequest{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[7]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -459,7 +540,7 @@ func (x *PutRequest) String() string {
 func (*PutRequest) ProtoMessage() {}
 
 func (x *PutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[7]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -471,7 +552,7 @@ func (x *PutRequest) ProtoReflect() protoreflect.Message {
 }
 
 func (*PutRequest) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{7}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PutRequest) GetClient() uint64 {
@@ -520,7 +601,7 @@ type PutResponse struct {
 
 func (x *PutResponse) Reset() {
 	*x = PutResponse{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[8]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -532,7 +613,7 @@ func (x *PutResponse) String() string {
 func (*PutResponse) ProtoMessage() {}
 
 func (x *PutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[8]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -544,7 +625,7 @@ func (x *PutResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (*PutResponse) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{8}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PutResponse) GetRev() uint64 {
@@ -579,7 +660,7 @@ type DeleteRequest struct {
 
 func (x *DeleteRequest) Reset() {
 	*x = DeleteRequest{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[9]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -591,7 +672,7 @@ func (x *DeleteRequest) String() string {
 func (*DeleteRequest) ProtoMessage() {}
 
 func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[9]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -603,7 +684,7 @@ func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
 }
 
 func (*DeleteRequest) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{9}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DeleteRequest) GetClient() uint64 {
@@ -637,7 +718,7 @@ type DeleteResponse struct {
 
 func (x *DeleteResponse) Reset() {
 	*x = DeleteResponse{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[10]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -649,7 +730,7 @@ func (x *DeleteResponse) String() string {
 func (*DeleteResponse) ProtoMessage() {}
 
 func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[10]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +742,7 @@ func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{10}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeleteResponse) GetRev() uint64 {
@@ -693,7 +774,7 @@ type CompareAndSwapRequest struct {
 
 func (x *CompareAndSwapRequest) Reset() {
 	*x = CompareAndSwapRequest{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[11]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -705,7 +786,7 @@ func (x *CompareAndSwapRequest) String() string {
 func (*CompareAndSwapRequest) ProtoMessage() {}
 
 func (x *CompareAndSwapRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[11]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -717,7 +798,7 @@ func (x *CompareAndSwapRequest) ProtoReflect() protoreflect.Message {
 }
 
 func (*CompareAndSwapRequest) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{11}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CompareAndSwapRequest) GetClient() uint64 {
@@ -823,7 +904,7 @@ type CompareAndSwapResponse struct {
 
 func (x *CompareAndSwapResponse) Reset() {
 	*x = CompareAndSwapResponse{}
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[12]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +916,7 @@ func (x *CompareAndSwapResponse) String() string {
 func (*CompareAndSwapResponse) ProtoMessage() {}
 
 func (x *CompareAndSwapResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fivefamilies_v1_kv_proto_msgTypes[12]
+	mi := &file_fivefamilies_v1_kv_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -847,7 +928,7 @@ func (x *CompareAndSwapResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (*CompareAndSwapResponse) Descriptor() ([]byte, []int) {
-	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{12}
+	return file_fivefamilies_v1_kv_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CompareAndSwapResponse) GetRev() uint64 {
@@ -890,7 +971,10 @@ const file_fivefamilies_v1_kv_proto_rawDesc = "" +
 	"create_rev\x18\x03 \x01(\x04R\tcreateRev\x12\x17\n" +
 	"\amod_rev\x18\x04 \x01(\x04R\x06modRev\x12\x18\n" +
 	"\aversion\x18\x05 \x01(\x04R\aversion\x12\x14\n" +
-	"\x05lease\x18\x06 \x01(\x04R\x05lease\"\x11\n" +
+	"\x05lease\x18\x06 \x01(\x04R\x05lease\"\x14\n" +
+	"\x12OpenSessionRequest\"-\n" +
+	"\x13OpenSessionResponse\x12\x16\n" +
+	"\x06client\x18\x01 \x01(\x04R\x06client\"\x11\n" +
 	"\x0fRegisterRequest\"*\n" +
 	"\x10RegisterResponse\x12\x16\n" +
 	"\x06client\x18\x01 \x01(\x04R\x06client\"M\n" +
@@ -940,13 +1024,15 @@ const file_fivefamilies_v1_kv_proto_rawDesc = "" +
 	"\x03rev\x18\x01 \x01(\x04R\x03rev\x12\x18\n" +
 	"\aswapped\x18\x02 \x01(\bR\aswapped\x12\x14\n" +
 	"\x05found\x18\x03 \x01(\bR\x05found\x123\n" +
-	"\acurrent\x18\x04 \x01(\v2\x19.fivefamilies.v1.KeyValueR\acurrent*G\n" +
-	"\bReadMode\x12\x13\n" +
-	"\x0fREAD_MODE_INDEX\x10\x00\x12\x13\n" +
+	"\acurrent\x18\x04 \x01(\v2\x19.fivefamilies.v1.KeyValueR\acurrent*b\n" +
+	"\bReadMode\x12\x19\n" +
+	"\x15READ_MODE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fREAD_MODE_LEASE\x10\x01\x12\x11\n" +
-	"\rREAD_MODE_LOG\x10\x022\xcf\x03\n" +
-	"\x02KV\x12O\n" +
-	"\bRegister\x12 .fivefamilies.v1.RegisterRequest\x1a!.fivefamilies.v1.RegisterResponse\x12@\n" +
+	"\rREAD_MODE_LOG\x10\x02\x12\x13\n" +
+	"\x0fREAD_MODE_INDEX\x10\x032\xae\x04\n" +
+	"\x02KV\x12X\n" +
+	"\vOpenSession\x12#.fivefamilies.v1.OpenSessionRequest\x1a$.fivefamilies.v1.OpenSessionResponse\x12T\n" +
+	"\bRegister\x12 .fivefamilies.v1.RegisterRequest\x1a!.fivefamilies.v1.RegisterResponse\"\x03\x88\x02\x01\x12@\n" +
 	"\x03Get\x12\x1b.fivefamilies.v1.GetRequest\x1a\x1c.fivefamilies.v1.GetResponse\x12F\n" +
 	"\x05Range\x12\x1d.fivefamilies.v1.RangeRequest\x1a\x1e.fivefamilies.v1.RangeResponse\x12@\n" +
 	"\x03Put\x12\x1b.fivefamilies.v1.PutRequest\x1a\x1c.fivefamilies.v1.PutResponse\x12I\n" +
@@ -966,10 +1052,12 @@ func file_fivefamilies_v1_kv_proto_rawDescGZIP() []byte {
 }
 
 var file_fivefamilies_v1_kv_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_fivefamilies_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_fivefamilies_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_fivefamilies_v1_kv_proto_goTypes = []any{
 	(ReadMode)(0),
 	(*KeyValue)(nil),
+	(*OpenSessionRequest)(nil),
+	(*OpenSessionResponse)(nil),
 	(*RegisterRequest)(nil),
 	(*RegisterResponse)(nil),
 	(*GetRequest)(nil),
@@ -995,13 +1083,15 @@ var file_fivefamilies_v1_kv_proto_depIdxs = []int32{
 	8,
 	10,
 	12,
+	14,
 	3,
 	5,
 	7,
 	9,
 	11,
 	13,
-	11,
+	15,
+	12,
 	5,
 	5,
 	5,
@@ -1013,7 +1103,7 @@ func file_fivefamilies_v1_kv_proto_init() {
 	if File_fivefamilies_v1_kv_proto != nil {
 		return
 	}
-	file_fivefamilies_v1_kv_proto_msgTypes[11].OneofWrappers = []any{
+	file_fivefamilies_v1_kv_proto_msgTypes[13].OneofWrappers = []any{
 		(*CompareAndSwapRequest_ValueIs)(nil),
 		(*CompareAndSwapRequest_Missing)(nil),
 		(*CompareAndSwapRequest_ModRev)(nil),
@@ -1024,7 +1114,7 @@ func file_fivefamilies_v1_kv_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fivefamilies_v1_kv_proto_rawDesc), len(file_fivefamilies_v1_kv_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

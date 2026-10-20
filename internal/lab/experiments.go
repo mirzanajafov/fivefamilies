@@ -187,6 +187,11 @@ func agreedLeader(ctx context.Context, adm *cluster) (int, error) {
 	return leader, nil
 }
 
+var chaosKinds = map[string]pb.ChaosAction{
+	"stall-disk": pb.ChaosAction_CHAOS_ACTION_STALL_DISK,
+	"pause":      pb.ChaosAction_CHAOS_ACTION_PAUSE,
+}
+
 func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 	timeouts := []time.Duration{150 * time.Millisecond, 300 * time.Millisecond, 600 * time.Millisecond, time.Second}
 	injections := 5
@@ -258,7 +263,7 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 				}
 				before := maxElections(adm.statuses(lctx, time.Second))
 				cctx, cancel := context.WithTimeout(lctx, 5*time.Second)
-				_, err = adm.admin(n).Chaos(cctx, &pb.ChaosRequest{Action: f.kind, DurationMs: uint64(f.d / time.Millisecond)})
+				_, err = adm.admin(n).Chaos(cctx, &pb.ChaosRequest{Kind: chaosKinds[f.kind], DurationMs: uint64(f.d / time.Millisecond)})
 				cancel()
 				if err != nil {
 					o.Log("chaos on %d: %v", n, err)

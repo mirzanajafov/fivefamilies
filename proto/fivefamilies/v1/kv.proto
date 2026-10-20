@@ -5,9 +5,10 @@ package fivefamilies.v1;
 option go_package = "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1";
 
 enum ReadMode {
-  READ_MODE_INDEX = 0;
+  READ_MODE_UNSPECIFIED = 0;
   READ_MODE_LEASE = 1;
   READ_MODE_LOG = 2;
+  READ_MODE_INDEX = 3;
 }
 
 message KeyValue {
@@ -17,6 +18,12 @@ message KeyValue {
   uint64 mod_rev = 4;
   uint64 version = 5;
   uint64 lease = 6;
+}
+
+message OpenSessionRequest {}
+
+message OpenSessionResponse {
+  uint64 client = 1;
 }
 
 message RegisterRequest {}
@@ -92,7 +99,10 @@ message CompareAndSwapResponse {
 }
 
 service KV {
-  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  rpc Register(RegisterRequest) returns (RegisterResponse) {
+    option deprecated = true;
+  }
   rpc Get(GetRequest) returns (GetResponse);
   rpc Range(RangeRequest) returns (RangeResponse);
   rpc Put(PutRequest) returns (PutResponse);

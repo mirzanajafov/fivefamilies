@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import type { Snapshot } from '@/lib/types'
 import { actionNames, family, faultLabels, numeral, realness } from '@/lib/words'
 
-const actions = ['kill', 'pause', 'isolate', 'slow-disk'] as const
+const actions = ['kill', 'pause', 'isolate', 'stall-disk'] as const
 
 export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boolean }) {
   const [node, setNode] = useState(1)

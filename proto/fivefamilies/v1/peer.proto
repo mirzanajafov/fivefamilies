@@ -4,10 +4,32 @@ package fivefamilies.v1;
 
 option go_package = "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1";
 
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  MESSAGE_TYPE_APP = 1;
+  MESSAGE_TYPE_APP_RESP = 2;
+  MESSAGE_TYPE_HEARTBEAT = 3;
+  MESSAGE_TYPE_HEARTBEAT_RESP = 4;
+  MESSAGE_TYPE_PRE_VOTE = 5;
+  MESSAGE_TYPE_PRE_VOTE_RESP = 6;
+  MESSAGE_TYPE_VOTE = 7;
+  MESSAGE_TYPE_VOTE_RESP = 8;
+  reserved 9;
+  MESSAGE_TYPE_SNAP = 10;
+  MESSAGE_TYPE_READ_INDEX = 11;
+  MESSAGE_TYPE_READ_INDEX_RESP = 12;
+  MESSAGE_TYPE_TIMEOUT_NOW = 13;
+}
+
+enum EntryType {
+  ENTRY_TYPE_NORMAL = 0;
+  ENTRY_TYPE_CONFIG = 1;
+}
+
 message Entry {
   uint64 term = 1;
   uint64 index = 2;
-  uint32 type = 3;
+  EntryType type = 3;
   bytes data = 4;
 }
 
@@ -19,7 +41,7 @@ message SnapshotMeta {
 }
 
 message RaftMessage {
-  uint32 type = 1;
+  MessageType type = 1;
   uint64 from = 2;
   uint64 to = 3;
   uint64 term = 4;
@@ -33,18 +55,20 @@ message RaftMessage {
   SnapshotMeta snapshot = 12;
 }
 
-message Batch {
+message SendRequest {
   repeated RaftMessage messages = 1;
 }
 
-message SnapshotChunk {
+message SendResponse {}
+
+message InstallSnapshotRequest {
   RaftMessage message = 1;
   bytes data = 2;
 }
 
-message Ack {}
+message InstallSnapshotResponse {}
 
 service Peer {
-  rpc Send(stream Batch) returns (Ack);
-  rpc InstallSnapshot(stream SnapshotChunk) returns (Ack);
+  rpc Send(stream SendRequest) returns (SendResponse);
+  rpc InstallSnapshot(stream InstallSnapshotRequest) returns (InstallSnapshotResponse);
 }

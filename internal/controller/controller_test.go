@@ -214,20 +214,20 @@ func TestVisitorsGetBoundedChaos(t *testing.T) {
 		t.Fatalf("a second fault while one runs: %d", code)
 	}
 	h.waitFor("the fault to close", 10*time.Second, func(s Snapshot) bool { return s.Fault == nil && s.Last != nil })
-	if code, body := h.chaos(`{"action":"slow-disk","node":3,"seconds":1}`, "1.1.1.1", false); code != http.StatusOK {
+	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "1.1.1.1", false); code != http.StatusOK {
 		t.Fatalf("the second fault from one address: %d %s", code, body)
 	}
 	h.waitFor("the fault to close", 10*time.Second, func(s Snapshot) bool { return s.Fault == nil && s.Last.ID == 2 })
-	if code, _ := h.chaos(`{"action":"slow-disk","node":3,"seconds":1}`, "9.9.9.9, 1.1.1.1", false); code != http.StatusTooManyRequests {
+	if code, _ := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "9.9.9.9, 1.1.1.1", false); code != http.StatusTooManyRequests {
 		t.Fatalf("a third fault from the same address behind the proxy: %d", code)
 	}
 	h.c.mu.Lock()
 	h.c.last.Ends = time.Now()
 	h.c.mu.Unlock()
-	if code, body := h.chaos(`{"action":"slow-disk","node":3,"seconds":1}`, "3.3.3.3", false); code != http.StatusTooManyRequests || !strings.Contains(body, "settling, so try again in 1 s") {
+	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "3.3.3.3", false); code != http.StatusTooManyRequests || !strings.Contains(body, "settling, so try again in 1 s") {
 		t.Fatalf("a fault right after the last one ended: %d %s", code, body)
 	}
-	if code, body := h.chaos(`{"action":"slow-disk","node":3,"seconds":30}`, "1.1.1.1", true); code != http.StatusOK {
+	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":30}`, "1.1.1.1", true); code != http.StatusOK {
 		t.Fatalf("the admin is not limited: %d %s", code, body)
 	}
 }

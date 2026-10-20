@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -18,6 +19,28 @@ import (
 )
 
 const headerLeaderAddr = "ff-leader-addr"
+
+var errorDomain = string(pb.File_fivefamilies_v1_errors_proto.Package())
+
+var roleNames = map[pb.Role]string{
+	pb.Role_ROLE_FOLLOWER:     "follower",
+	pb.Role_ROLE_PRECANDIDATE: "precandidate",
+	pb.Role_ROLE_CANDIDATE:    "candidate",
+	pb.Role_ROLE_LEADER:       "leader",
+}
+
+func RoleName(r pb.Role) string {
+	return roleNames[r]
+}
+
+func Reason(err error) pb.ErrorReason {
+	for _, d := range status.Convert(err).Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok && info.GetDomain() == errorDomain {
+			return pb.ErrorReason(pb.ErrorReason_value[info.GetReason()])
+		}
+	}
+	return pb.ErrorReason_ERROR_REASON_UNSPECIFIED
+}
 
 type ReadMode int
 
@@ -223,8 +246,8 @@ func write[T any](ctx context.Context, c *Client, call func(ctx context.Context,
 	}
 	defer func() { <-c.writing }()
 	if c.session == 0 {
-		res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.RegisterResponse, error) {
-			return pb.NewKVClient(cc).Register(ctx, &pb.RegisterRequest{}, opts...)
+		res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.OpenSessionResponse, error) {
+			return pb.NewKVClient(cc).OpenSession(ctx, &pb.OpenSessionRequest{}, opts...)
 		})
 		if err != nil {
 			return zero, err
@@ -236,7 +259,7 @@ func write[T any](ctx context.Context, c *Client, call func(ctx context.Context,
 	out, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (T, error) {
 		return call(ctx, cc, session, seq, opts...)
 	})
-	if status.Code(err) == codes.FailedPrecondition && status.Convert(err).Message() == "session expired" {
+	if Reason(err) == pb.ErrorReason_ERROR_REASON_SESSION_EXPIRED {
 		c.session = 0
 		return zero, ErrSessionExpired
 	}

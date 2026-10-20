@@ -4,6 +4,10 @@ import (
 	"reflect"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
+
+	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
@@ -23,5 +27,22 @@ func TestConversionRoundTrip(t *testing.T) {
 		if got, err := fromProto(toProto(m)); err != nil || !reflect.DeepEqual(got, m) {
 			t.Fatalf("round trip changed %v into %v: %v", m, got, err)
 		}
+	}
+}
+
+func TestAnAppendFromThePreviousBuildStillDecodes(t *testing.T) {
+	varint := func(b []byte, field protowire.Number, v uint64) []byte {
+		return protowire.AppendVarint(protowire.AppendTag(b, field, protowire.VarintType), v)
+	}
+	entry := varint(varint(varint(nil, 1, 3), 2, 5), 3, uint64(raft.EntryConfig))
+	b := varint(varint(varint(varint(varint(nil, 1, uint64(raft.MsgApp)), 2, 2), 3, 1), 4, 3), 6, 4)
+	b = protowire.AppendBytes(protowire.AppendTag(b, 7, protowire.BytesType), entry)
+	var m pb.RaftMessage
+	if err := proto.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	want := raft.Message{Type: raft.MsgApp, From: 2, To: 1, Term: 3, Index: 4, Entries: []raft.Entry{{Term: 3, Index: 5, Type: raft.EntryConfig}}}
+	if got, err := fromProto(&m); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("an append written as raw numbers decoded as %v: %v", got, err)
 	}
 }

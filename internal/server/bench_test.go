@@ -227,11 +227,11 @@ func TestARequestWhoseClientGaveUpIsNotProposed(t *testing.T) {
 	}
 }
 
-func chaos(t *testing.T, c *testCluster, id raft.NodeID, action string, d time.Duration) {
+func chaos(t *testing.T, c *testCluster, id raft.NodeID, action pb.ChaosAction, d time.Duration) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := c.admin(id).Chaos(ctx, &pb.ChaosRequest{Action: action, DurationMs: uint64(d / time.Millisecond)}); err != nil {
+	if _, err := c.admin(id).Chaos(ctx, &pb.ChaosRequest{Kind: action, DurationMs: uint64(d / time.Millisecond)}); err != nil {
 		t.Fatalf("%s on %d: %v", action, id, err)
 	}
 }
@@ -248,7 +248,7 @@ func TestADiskStallOnTheLeaderCausesAnElectionOnlyWithSynchronousStorage(t *test
 			defer cl.Close()
 			putMany(t, c, 5, 1)
 			before := c.status(leader).GetElections()
-			chaos(t, c, leader, "stall-disk", 800*time.Millisecond)
+			chaos(t, c, leader, pb.ChaosAction_CHAOS_ACTION_STALL_DISK, 800*time.Millisecond)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			start := time.Now()
@@ -279,21 +279,21 @@ func TestChaosIsBoundedAndOffByDefault(t *testing.T) {
 	c2.leader(5 * time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := c.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "pause", DurationMs: 100}); err == nil {
+	if _, err := c.admin(1).Chaos(ctx, &pb.ChaosRequest{Kind: pb.ChaosAction_CHAOS_ACTION_PAUSE, DurationMs: 100}); err == nil {
 		t.Fatal("chaos ran on a node started without it")
 	}
-	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "pause", DurationMs: uint64(2 * time.Minute / time.Millisecond)}); status.Code(err) != codes.InvalidArgument {
+	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Kind: pb.ChaosAction_CHAOS_ACTION_PAUSE, DurationMs: uint64(2 * time.Minute / time.Millisecond)}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("a two-minute pause got %v", err)
 	}
-	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: "crash", DurationMs: 1}); status.Code(err) != codes.InvalidArgument {
+	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Kind: pb.ChaosAction(42), DurationMs: 1}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("an unknown action got %v", err)
 	}
 	old := c2.leader(time.Second)
-	chaos(t, c2, old, "isolate", 2*time.Second)
+	chaos(t, c2, old, pb.ChaosAction_CHAOS_ACTION_ISOLATE, 2*time.Second)
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		for id, r := range c2.running {
-			if st := r.srv.Status(); id != old && st.GetState() == "leader" {
+			if st := r.srv.Status(); id != old && st.GetRole() == pb.Role_ROLE_LEADER {
 				return
 			}
 		}
@@ -305,13 +305,13 @@ func TestChaosIsBoundedAndOffByDefault(t *testing.T) {
 func TestHealClearsAnIsolationEarly(t *testing.T) {
 	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
 	old := c.leader(5 * time.Second)
-	chaos(t, c, old, "isolate", time.Minute)
+	chaos(t, c, old, pb.ChaosAction_CHAOS_ACTION_ISOLATE, time.Minute)
 	if c.running[old].srv.isolated.Allow(old, old%3+1) {
 		t.Fatal("isolate did not block")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := c.admin(old).Chaos(ctx, &pb.ChaosRequest{Action: "heal"}); err != nil {
+	if _, err := c.admin(old).Chaos(ctx, &pb.ChaosRequest{Kind: pb.ChaosAction_CHAOS_ACTION_HEAL}); err != nil {
 		t.Fatal(err)
 	}
 	if !c.running[old].srv.isolated.Allow(old, old%3+1) {
@@ -323,22 +323,22 @@ func TestEachIsolationOrHealReplacesTheOneBefore(t *testing.T) {
 	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
 	c.leader(5 * time.Second)
 	isolated := func() bool { return !c.running[1].srv.isolated.Allow(1, 2) }
-	chaos(t, c, 1, "isolate", 500*time.Millisecond)
-	chaos(t, c, 1, "isolate", time.Minute)
+	chaos(t, c, 1, pb.ChaosAction_CHAOS_ACTION_ISOLATE, 500*time.Millisecond)
+	chaos(t, c, 1, pb.ChaosAction_CHAOS_ACTION_ISOLATE, time.Minute)
 	time.Sleep(800 * time.Millisecond)
 	if !isolated() {
 		t.Fatal("the first isolation ended the second")
 	}
-	chaos(t, c, 1, "heal", 0)
-	chaos(t, c, 1, "isolate", 500*time.Millisecond)
-	chaos(t, c, 1, "heal", 0)
-	chaos(t, c, 1, "isolate", time.Minute)
+	chaos(t, c, 1, pb.ChaosAction_CHAOS_ACTION_HEAL, 0)
+	chaos(t, c, 1, pb.ChaosAction_CHAOS_ACTION_ISOLATE, 500*time.Millisecond)
+	chaos(t, c, 1, pb.ChaosAction_CHAOS_ACTION_HEAL, 0)
+	chaos(t, c, 1, pb.ChaosAction_CHAOS_ACTION_ISOLATE, time.Minute)
 	time.Sleep(800 * time.Millisecond)
 	if !isolated() {
 		t.Fatal("an isolation from before a heal ended the one after it")
 	}
-	chaos(t, c, 1, "heal", 0)
-	chaos(t, c, 1, "isolate", 200*time.Millisecond)
+	chaos(t, c, 1, pb.ChaosAction_CHAOS_ACTION_HEAL, 0)
+	chaos(t, c, 1, pb.ChaosAction_CHAOS_ACTION_ISOLATE, 200*time.Millisecond)
 	time.Sleep(400 * time.Millisecond)
 	if isolated() {
 		t.Fatal("an isolation outlived its duration")
@@ -374,8 +374,8 @@ func TestAHealEndsAStallAndAPauseThatHaveAlreadyBegun(t *testing.T) {
 	defer cl.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	chaos(t, c, follower, "pause", time.Minute)
-	chaos(t, c, leader, "stall-disk", time.Minute)
+	chaos(t, c, follower, pb.ChaosAction_CHAOS_ACTION_PAUSE, time.Minute)
+	chaos(t, c, leader, pb.ChaosAction_CHAOS_ACTION_STALL_DISK, time.Minute)
 	written := make(chan error, 1)
 	go func() {
 		_, err := cl.Put(ctx, "k", []byte("v"))
@@ -390,8 +390,8 @@ func TestAHealEndsAStallAndAPauseThatHaveAlreadyBegun(t *testing.T) {
 	if c.running[follower].srv.paused.remaining() <= 0 {
 		t.Fatal("the follower is not paused")
 	}
-	chaos(t, c, leader, "heal", 0)
-	chaos(t, c, follower, "heal", 0)
+	chaos(t, c, leader, pb.ChaosAction_CHAOS_ACTION_HEAL, 0)
+	chaos(t, c, follower, pb.ChaosAction_CHAOS_ACTION_HEAL, 0)
 	select {
 	case err := <-written:
 		if err != nil {
@@ -414,8 +414,8 @@ func TestALaterPauseReplacesAnEarlierOne(t *testing.T) {
 	defer cl.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	chaos(t, c, follower, "pause", time.Minute)
-	chaos(t, c, follower, "pause", 200*time.Millisecond)
+	chaos(t, c, follower, pb.ChaosAction_CHAOS_ACTION_PAUSE, time.Minute)
+	chaos(t, c, follower, pb.ChaosAction_CHAOS_ACTION_PAUSE, 200*time.Millisecond)
 	if r := c.running[follower].srv.paused.remaining(); r <= 0 || r > 200*time.Millisecond {
 		t.Fatalf("the later pause left %v of pausing", r)
 	}
