@@ -8,6 +8,41 @@ export async function adminToken(): Promise<string | undefined> {
   return (await cookies()).get(ADMIN_COOKIE)?.value
 }
 
+const maxBody = 1024
+
+export async function readBody(req: Pick<Request, 'headers' | 'body'>): Promise<string | Response> {
+  const tooLarge = Response.json({ error: 'request too large' }, { status: 413 })
+  if (Number(req.headers.get('content-length')) > maxBody) return tooLarge
+  if (!req.body) return ''
+  const reader = req.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) return Buffer.concat(chunks).toString('utf8')
+      size += value.length
+      if (size > maxBody) {
+        await reader.cancel()
+        return tooLarge
+      }
+      chunks.push(value)
+    }
+  } catch {
+    return Response.json({ error: 'the request body was cut off' }, { status: 400 })
+  }
+}
+
+export function tokenIn(body: string): string | undefined {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return undefined
+  }
+  return typeof parsed === 'object' && parsed !== null && 'token' in parsed && typeof parsed.token === 'string' ? parsed.token : undefined
+}
+
 type ControllerInit = RequestInit & { admin?: boolean; req?: Request }
 
 async function toController(path: string, init: ControllerInit): Promise<Response> {
