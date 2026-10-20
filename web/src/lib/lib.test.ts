@@ -4,7 +4,20 @@ import { describe, family, outcome, role } from './words'
 import type { Fault, NodeView } from './types'
 
 const node = (over: Partial<NodeView>): NodeView => ({
-  id: 1, up: true, state: 'follower', term: 3, leader: 2, commit: 10, applied: 10, last: 10, first: 1, snapshot: 0, voter: true, learner: false, msgs_per_s: 0, ...over,
+  id: 1,
+  up: true,
+  state: 'follower',
+  term: 3,
+  leader: 2,
+  commit: 10,
+  applied: 10,
+  last: 10,
+  first: 1,
+  snapshot: 0,
+  voter: true,
+  learner: false,
+  msgs_per_s: 0,
+  ...over,
 })
 
 suite('words', () => {
@@ -24,7 +37,16 @@ suite('words', () => {
   })
   it('sums up a failover with both numbers', () => {
     const f: Fault = {
-      id: 1, action: 'kill', node: 3, duration_ns: 3e9, started: '', ends: '', by: 'visitor', on_leader: true, old_leader: 3, old_term: 6,
+      id: 1,
+      action: 'kill',
+      node: 3,
+      duration_ns: 3e9,
+      started: '',
+      ends: '',
+      by: 'visitor',
+      on_leader: true,
+      old_leader: 3,
+      old_term: 6,
       failover: { election_ns: 1.28e9, client_gap_ns: 1.81e9, new_leader: 4 },
     }
     expect(outcome(f)).toBe('Family III was killed. Family IV took over after 1280 ms, and clients waited 1810 ms between two acknowledged writes.')

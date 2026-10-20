@@ -13,7 +13,7 @@ export function useLive(): Live {
     let closed = false
     const open = () => {
       source = new EventSource('/api/stream')
-      source.onmessage = (e) => setLive({ snapshot: JSON.parse(e.data) as Snapshot, connected: true })
+      source.onmessage = (e: MessageEvent<string>) => setLive({ snapshot: JSON.parse(e.data) as Snapshot, connected: true })
       source.onerror = () => {
         source?.close()
         setLive((l) => ({ ...l, connected: false }))
