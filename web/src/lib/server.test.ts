@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { forward } from './server'
+import { forward, readBody } from './server'
 
 vi.mock('server-only', () => ({}))
 vi.mock('next/headers', () => ({ cookies: () => Promise.resolve({ get: () => ({ value: 'admin-token' }) }) }))
@@ -47,4 +47,19 @@ it('answers 502 when the controller body breaks off', async () => {
   const res = await forward('/api/chaos')
   expect(res.status).toBe(502)
   expect(await res.json()).toEqual({ error: 'the controller stopped in the middle of its answer' })
+})
+
+it('reads a body within the limit', async () => {
+  expect(await readBody(new Request('http://localhost/api/chaos', { method: 'POST', body: '{"action":"kill"}' }), 1024)).toBe('{"action":"kill"}')
+})
+
+it('refuses a body whose declared length is over the limit without reading it', async () => {
+  const req = new Request('http://localhost/api/chaos', { method: 'POST', body: 'x', headers: { 'content-length': '5000' } })
+  expect(await readBody(req, 1024)).toBeUndefined()
+  expect(req.bodyUsed).toBe(false)
+})
+
+it('stops reading a body without a declared length once it passes the limit', async () => {
+  const req = new Request('http://localhost/api/chaos', { method: 'POST', body: new Blob([new Uint8Array(4096)]) })
+  expect(await readBody(req, 1024)).toBeUndefined()
 })

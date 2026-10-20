@@ -8,6 +8,24 @@ export async function adminToken(): Promise<string | undefined> {
   return (await cookies()).get(ADMIN_COOKIE)?.value
 }
 
+export async function readBody(req: Request, limit: number): Promise<string | undefined> {
+  if (Number(req.headers.get('content-length')) > limit) return undefined
+  if (!req.body) return ''
+  const reader = req.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) return new TextDecoder().decode(Buffer.concat(chunks))
+    size += value.length
+    if (size > limit) {
+      await reader.cancel()
+      return undefined
+    }
+    chunks.push(value)
+  }
+}
+
 type ControllerInit = RequestInit & { admin?: boolean; req?: Request }
 
 async function toController(path: string, init: ControllerInit): Promise<Response> {
