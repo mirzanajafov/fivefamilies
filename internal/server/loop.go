@@ -129,14 +129,8 @@ func (s *Server) call(ctx context.Context, refuse bool, f func(done node.Done)) 
 		default:
 			return kv.Result{}, raft.ErrBusy
 		}
-	} else {
-		select {
-		case s.calls <- call:
-		case <-ctx.Done():
-			return kv.Result{}, ctx.Err()
-		case <-s.stopped:
-			return kv.Result{}, ErrStopped
-		}
+	} else if err := s.enqueue(ctx, call); err != nil {
+		return kv.Result{}, err
 	}
 	select {
 	case r := <-ch:
@@ -145,6 +139,17 @@ func (s *Server) call(ctx context.Context, refuse bool, f func(done node.Done)) 
 		return delivered(ch, ctx.Err())
 	case <-s.stopped:
 		return delivered(ch, ErrStopped)
+	}
+}
+
+func (s *Server) enqueue(ctx context.Context, f func()) error {
+	select {
+	case s.calls <- f:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.stopped:
+		return ErrStopped
 	}
 }
 

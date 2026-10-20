@@ -35,7 +35,7 @@ type Server struct {
 	jobs      chan diskJob
 	written   chan uint64
 	stopped   chan struct{}
-	quit      chan struct{}
+	quit      <-chan struct{}
 	diskDone  chan struct{}
 	stop      context.CancelFunc
 	failMu    sync.Mutex
@@ -73,7 +73,6 @@ func New(cfg Config) (*Server, error) {
 		jobs:     make(chan diskJob, 4096),
 		written:  make(chan uint64, 1024),
 		stopped:  make(chan struct{}),
-		quit:     make(chan struct{}),
 		diskDone: make(chan struct{}),
 		log:      cfg.Logger.With("node", cfg.ID),
 	}
@@ -142,7 +141,7 @@ func (s *Server) Register(g *grpc.Server) {
 func (s *Server) Run(ctx context.Context) error {
 	ctx, s.stop = context.WithCancel(ctx)
 	defer s.stop()
-	context.AfterFunc(ctx, func() { close(s.quit) })
+	s.quit = ctx.Done()
 	var wg sync.WaitGroup
 	s.tr.Start(ctx)
 	wg.Go(func() { s.writer(ctx) })

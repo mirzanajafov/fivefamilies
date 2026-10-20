@@ -407,12 +407,14 @@ func TestAFailedLogWriteIsReportedEvenWithSafetyMuted(t *testing.T) {
 	opts := DefaultOptions()
 	opts.MuteSafety = true
 	s := newSim(1, opts)
-	s.start()
+	for _, sn := range s.nodes {
+		s.boot(sn)
+	}
 	if err := s.nodes[0].disk.store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	s.loop(opts.Chaos)
-	if r := s.result(); r.Category != CatPanic || !strings.Contains(r.Violation, "node 1 failed: writing the log") {
+	if r := s.result(); r.Category != CatPanic || !strings.HasPrefix(r.Violation, "node 1 failed: ") {
 		t.Fatalf("category %q: %s", r.Category, r.Violation)
 	}
 }

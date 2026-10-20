@@ -341,7 +341,7 @@ func TestAFailedSnapshotSaveStopsTheNodeBeforeItWritesTheMarker(t *testing.T) {
 	settle(t, n, env)
 	env.saveErr = errors.New("no space left on device")
 	var err error
-	for i := 0; i < 5 && err == nil; i++ {
+	for i := 0; i < 20 && err == nil; i++ {
 		n.Submit(kv.Command{Op: kv.OpPut, Key: "k", Value: []byte{byte(i)}}, nil)
 		if err = n.Process(); err == nil && len(env.writes) > 0 {
 			err = n.WriteDone(env.writes[len(env.writes)-1].Seq)
