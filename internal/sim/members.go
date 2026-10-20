@@ -100,8 +100,7 @@ func (s *Sim) changeMembers(sn *simNode) {
 			s.stats.ConfCommitted++
 		}
 	})
-	sn.n.Process()
-	s.observe(sn)
+	s.process(sn)
 }
 
 func (s *Sim) transferFault() {
@@ -116,8 +115,7 @@ func (s *Sim) transferFault() {
 			if err := l.n.TransferLeadership(to); err != nil {
 				s.tracef("members: node %d refused the transfer: %v", l.id, err)
 			}
-			l.n.Process()
-			s.observe(l)
+			s.process(l)
 		}
 	}
 	s.after(exponential(s.mrng, s.ms.transferMean), s.transferFault)

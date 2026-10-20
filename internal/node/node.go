@@ -20,7 +20,7 @@ type Write struct {
 type Env interface {
 	Send(m raft.Message)
 	Write(w Write)
-	SaveSnapshot(s raft.Snapshot)
+	SaveSnapshot(s raft.Snapshot) error
 	Compacted(s raft.Snapshot)
 }
 
@@ -349,7 +349,7 @@ func (n *Node) Waiting() int {
 	return len(n.waiters)
 }
 
-func (n *Node) WriteDone(seq uint64) {
+func (n *Node) WriteDone(seq uint64) error {
 	for len(n.pending) > 0 && n.pending[0].seq <= seq {
 		pw := n.pending[0]
 		n.pending = n.pending[1:]
@@ -363,11 +363,12 @@ func (n *Node) WriteDone(seq uint64) {
 		if pw.compact != nil {
 			n.taking = false
 			if err := n.r.Compact(*pw.compact, n.cfg.Retain); err != nil {
-				panic(fmt.Sprintf("node: compacting to %d: %v", pw.compact.Index, err))
+				return fmt.Errorf("node: compacting to %d: %w", pw.compact.Index, err)
 			}
 			n.env.Compacted(*pw.compact)
 		}
 	}
+	return nil
 }
 
 func (n *Node) PendingWrites() int {
@@ -381,13 +382,15 @@ func (n *Node) write(w Write, after []raft.Message, compact *raft.Snapshot) {
 	n.env.Write(w)
 }
 
-func (n *Node) Process() {
+func (n *Node) Process() error {
 	for n.r.HasReady() {
 		rd := n.r.Ready()
 		if s := rd.Snapshot; s != nil {
-			n.env.SaveSnapshot(*s)
+			if err := n.env.SaveSnapshot(*s); err != nil {
+				return err
+			}
 			if err := n.sm.Restore(s.Index, s.Data); err != nil {
-				panic(fmt.Sprintf("node: restoring snapshot %d: %v", s.Index, err))
+				return fmt.Errorf("node: restoring snapshot %d: %w", s.Index, err)
 			}
 			n.lastSnap = s.Index
 			n.loseWaitersUpTo(s.Index)
@@ -440,11 +443,14 @@ func (n *Node) Process() {
 			}
 		}
 		n.serveReads()
-		n.maybeSnapshot()
+		if err := n.maybeSnapshot(); err != nil {
+			return err
+		}
 	}
 	if term := n.r.Term(); len(n.reads) > 0 {
 		n.expireReads(func(w readWaiter) bool { return w.term != term })
 	}
+	return nil
 }
 
 func (n *Node) loseWaitersUpTo(index uint64) {
@@ -462,18 +468,21 @@ func (n *Node) loseWaitersUpTo(index uint64) {
 	}
 }
 
-func (n *Node) maybeSnapshot() {
+func (n *Node) maybeSnapshot() error {
 	applied := n.r.Applied()
 	if n.cfg.SnapshotEvery == 0 || n.taking || applied < n.lastSnap+n.cfg.SnapshotEvery {
-		return
+		return nil
 	}
 	term, ok := n.r.LogTerm(applied)
 	if !ok {
-		return
+		return nil
 	}
 	s := raft.Snapshot{Index: applied, Term: term, Data: n.sm.Snapshot(), Conf: n.r.ConfAt(applied)}
-	n.env.SaveSnapshot(s)
+	if err := n.env.SaveSnapshot(s); err != nil {
+		return err
+	}
 	n.lastSnap = applied
 	n.taking = true
 	n.write(Write{Batch: wal.Batch{HardState: n.r.HardState(), Snapshot: &s}, Sync: true}, nil, &s)
+	return nil
 }

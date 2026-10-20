@@ -109,7 +109,7 @@ func blockLoop(t *testing.T, ctx context.Context, srv *Server) func() {
 	t.Helper()
 	blocked, release := make(chan struct{}), make(chan struct{})
 	failed := make(chan error, 1)
-	go func() { failed <- srv.inLoop(ctx, func() { close(blocked); <-release }) }()
+	go func() { failed <- srv.onLoop(ctx, func() { close(blocked); <-release }) }()
 	select {
 	case <-blocked:
 	case err := <-failed:
@@ -219,7 +219,7 @@ func TestARequestWhoseClientGaveUpIsNotProposed(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 	release()
-	if err := srv.inLoop(ctx, func() {}); err != nil {
+	if err := srv.onLoop(ctx, func() {}); err != nil {
 		t.Fatal(err)
 	}
 	if after := c.status(l).GetLastIndex(); after != before {

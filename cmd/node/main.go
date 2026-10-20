@@ -200,7 +200,6 @@ func main() {
 	g := grpc.NewServer(transport.ServerOptions()...)
 	srv.Register(g)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	go func() {
 		if err := g.Serve(ln); err != nil {
 			logger.Error("serving", "err", err)
@@ -213,7 +212,13 @@ func main() {
 		go serveProfiles(*profile, logger)
 	}
 	logger.Info("node started", "id", *id, "addr", addr, "nodes", len(nodes), "election", *election, "lease", *lease)
-	srv.Run(ctx)
+	if err := srv.Run(ctx); err != nil {
+		stop()
+		g.Stop()
+		logger.Error("fatal", "err", err)
+		os.Exit(70)
+	}
 	g.GracefulStop()
+	stop()
 	logger.Info("node stopped")
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,6 +18,24 @@ const watchBuffer = 256
 type watchService struct {
 	pb.UnimplementedWatchServer
 	s *Server
+}
+
+func (s *Server) leaderless() bool {
+	return s.node.LeaderlessTicks() > uint64(2*s.cfg.ElectionTick)
+}
+
+func (s *Server) tendWatches() {
+	if s.sm.Hub.Len() == 0 {
+		return
+	}
+	if s.leaderless() {
+		s.sm.Hub.EndAll()
+		return
+	}
+	if time.Since(s.lastWatch) >= s.cfg.WatchProgress {
+		s.lastWatch = time.Now()
+		s.sm.Hub.Progress()
+	}
 }
 
 func toEvent(ev kv.Event) *pb.WatchEvent {
@@ -44,12 +63,12 @@ func (w *watchService) Watch(req *pb.WatchRequest, stream pb.Watch_WatchServer) 
 	var id uint64
 	var err error
 	stale := false
-	if lerr := w.s.inLoop(ctx, func() {
+	if lerr := w.s.onLoop(ctx, func() {
 		if stale = w.s.leaderless(); !stale {
 			id, err = w.s.sm.Hub.Watch(req.GetKey(), req.GetPrefix(), req.GetStartRev(), send)
 		}
 	}); lerr != nil {
-		return status.FromContextError(lerr).Err()
+		return fail(ctx, w.s, lerr)
 	}
 	if stale {
 		return status.Error(codes.Unavailable, "this node has no leader; watch another node")
@@ -85,7 +104,7 @@ func (w *watchService) Watch(req *pb.WatchRequest, stream pb.Watch_WatchServer) 
 		case <-ctx.Done():
 			return nil
 		case <-w.s.stopped:
-			return status.Error(codes.Unavailable, "the node is stopping")
+			return fail(ctx, w.s, ErrStopped)
 		}
 	}
 }

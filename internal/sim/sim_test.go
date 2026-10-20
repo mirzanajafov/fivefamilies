@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -145,13 +146,6 @@ func TestSeveralEventsBeforeOneReady(t *testing.T) {
 		t.Error("batching changed nothing in seed 1")
 	}
 }
-
-type nopEnv struct{}
-
-func (nopEnv) Send(raft.Message)          {}
-func (nopEnv) Write(node.Write)           {}
-func (nopEnv) SaveSnapshot(raft.Snapshot) {}
-func (nopEnv) Compacted(raft.Snapshot)    {}
 
 func soloLeader(t *testing.T, id raft.NodeID, st raft.Restore, data ...string) *raft.Raft {
 	t.Helper()
@@ -377,8 +371,6 @@ func TestCheckerCatchesACommitThatIsNotDurableOnAQuorum(t *testing.T) {
 	}
 }
 
-var _ node.Env = nopEnv{}
-
 func TestHistoryMarksUnfinishedWritesIndeterminateAndDropsUnfinishedReads(t *testing.T) {
 	s := &Sim{history: []opRecord{
 		{client: 0, call: 1, ret: 2, done: true, in: check.Input{Kind: check.Put, Key: "k", Value: "a"}, out: check.Output{Ok: true}},
@@ -408,6 +400,22 @@ func TestCheckerCatchesALeaderLeadingTheSameTermAfterARestart(t *testing.T) {
 	c.observe(0, soloLeader(t, 1, raft.Restore{}))
 	if !c.failed() {
 		t.Fatal("one node leading term 1 in two incarnations went unnoticed")
+	}
+}
+
+func TestAFailedLogWriteIsReportedEvenWithSafetyMuted(t *testing.T) {
+	opts := DefaultOptions()
+	opts.MuteSafety = true
+	s := newSim(1, opts)
+	for _, sn := range s.nodes {
+		s.boot(sn)
+	}
+	if err := s.nodes[0].disk.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s.loop(opts.Chaos)
+	if r := s.result(); r.Category != CatPanic || !strings.HasPrefix(r.Violation, "node 1 failed: ") {
+		t.Fatalf("category %q: %s", r.Category, r.Violation)
 	}
 }
 

@@ -75,7 +75,7 @@ func newHarness(t *testing.T, n int, tweak func(*Config)) *harness {
 	var wg sync.WaitGroup
 	for id, ln := range lns {
 		srv, err := server.New(server.Config{ID: id, Nodes: addrs, DataDir: filepath.Join(t.TempDir(), fmt.Sprint(id)), Tick: 5 * time.Millisecond,
-			HeartbeatTick: 4, ElectionTick: 30, Chaos: true, Logger: logger, Fatal: func(err error) { t.Errorf("node %d: %v", id, err) }})
+			HeartbeatTick: 4, ElectionTick: 30, Chaos: true, Logger: logger})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +86,11 @@ func newHarness(t *testing.T, n int, tweak func(*Config)) *harness {
 				t.Error(err)
 			}
 		}()
-		wg.Go(func() { srv.Run(ctx) })
+		wg.Go(func() {
+			if err := srv.Run(ctx); err != nil {
+				t.Errorf("node %d: %v", id, err)
+			}
+		})
 		t.Cleanup(g.Stop)
 	}
 	h := &harness{t: t, nodes: nodes}
