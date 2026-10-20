@@ -9,6 +9,3 @@ lint:
   ignore_only:
     ENUM_ZERO_VALUE_SUFFIX:
       - proto/fivefamilies/v1/peer.proto
-breaking:
-  use:
-    - WIRE
