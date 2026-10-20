@@ -151,6 +151,30 @@ func (n *Node) settle(env *recEnv) {
 	}
 }
 
+func TestAdvanceCarriesWhatIsLeftOfATickIntoTheNextCall(t *testing.T) {
+	n, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	tick := n.cfg.Tick
+	n.Advance(tick * 3 / 2)
+	n.Advance(tick * 2 / 5)
+	if got := n.LeaderlessTicks(); got != 1 {
+		t.Fatalf("%d ticks after 1.9 ticks of time", got)
+	}
+	n.Advance(tick / 10)
+	if got := n.LeaderlessTicks(); got != 2 {
+		t.Fatalf("%d ticks after 2 ticks of time", got)
+	}
+}
+
+func TestAdvanceDropsTicksPastTheCatchUpCap(t *testing.T) {
+	n, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	tick := n.cfg.Tick
+	n.Advance((maxCatchUp+50)*tick + tick/2)
+	n.Advance(tick / 2)
+	if got := n.LeaderlessTicks(); got != maxCatchUp+1 {
+		t.Fatalf("%d ticks, want the cap of %d and one more from the carried half tick", got, maxCatchUp)
+	}
+}
+
 func TestSubmitOnAFollowerReturnsTheLeaderHint(t *testing.T) {
 	n, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
 	n.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 3, To: 2, Term: 4})
@@ -195,7 +219,7 @@ func TestWritingBeforeSendingHoldsBackOnlyTheAppends(t *testing.T) {
 	n.settle(env)
 	env.sent = nil
 	n.Submit(kv.Command{Op: kv.OpPut, Key: "k"}, nil)
-	n.Tick()
+	n.Advance(n.cfg.Tick)
 	n.Process()
 	kinds := func() (apps, beats int) {
 		for _, m := range env.sent {
@@ -381,7 +405,7 @@ func TestAForwardedReadExpires(t *testing.T) {
 	}
 	for range readExpiry + 32 {
 		n.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 1, To: 2, Term: 1})
-		n.Tick()
+		n.Advance(n.cfg.Tick)
 		n.Process()
 	}
 	if !errors.Is(gotErr, ErrNotReady) {

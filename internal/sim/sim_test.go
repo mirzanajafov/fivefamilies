@@ -15,6 +15,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/check"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/wal"
 )
 
 func seedCount(t *testing.T, def int) int {
@@ -322,8 +323,8 @@ func TestDiskCatchesForgottenVotesAndTerms(t *testing.T) {
 	for _, tc := range cases {
 		c := newChecker(1)
 		d := newDisk(0, nil)
-		d.applyDurable(node.Write{HardState: tc.before}, c, 0)
-		d.applyDurable(node.Write{HardState: tc.after}, c, 0)
+		d.applyDurable(node.Write{Batch: wal.Batch{HardState: tc.before}}, c, 0)
+		d.applyDurable(node.Write{Batch: wal.Batch{HardState: tc.after}}, c, 0)
 		if !c.failed() {
 			t.Errorf("%s went unnoticed", tc.name)
 		}
@@ -342,7 +343,7 @@ func committedOnDisks(t *testing.T, holders, total int) (*checker, []*disk) {
 	for i := range total {
 		d := newDisk(0, nil)
 		if i < holders {
-			d.applyDurable(node.Write{Entries: []raft.Entry{{Term: 1, Index: 1}, {Term: 1, Index: 2, Data: []byte("a")}}}, c, i)
+			d.applyDurable(node.Write{Batch: wal.Batch{Entries: []raft.Entry{{Term: 1, Index: 1}, {Term: 1, Index: 2, Data: []byte("a")}}}}, c, i)
 		}
 		disks = append(disks, d)
 	}
@@ -352,7 +353,7 @@ func committedOnDisks(t *testing.T, holders, total int) (*checker, []*disk) {
 
 func TestDiskCatchesACommittedEntryFallingBelowAQuorum(t *testing.T) {
 	c, disks := committedOnDisks(t, 2, 3)
-	disks[0].applyDurable(node.Write{Entries: []raft.Entry{{Term: 2, Index: 2}}}, c, 0)
+	disks[0].applyDurable(node.Write{Batch: wal.Batch{Entries: []raft.Entry{{Term: 2, Index: 2}}}}, c, 0)
 	if !c.failed() {
 		t.Fatal("a committed entry left on one disk of three went unnoticed")
 	}
@@ -360,7 +361,7 @@ func TestDiskCatchesACommittedEntryFallingBelowAQuorum(t *testing.T) {
 
 func TestDiskAllowsALaggingNodeToOverwriteACommittedEntry(t *testing.T) {
 	c, disks := committedOnDisks(t, 3, 3)
-	disks[0].applyDurable(node.Write{Entries: []raft.Entry{{Term: 2, Index: 2}}}, c, 0)
+	disks[0].applyDurable(node.Write{Batch: wal.Batch{Entries: []raft.Entry{{Term: 2, Index: 2}}}}, c, 0)
 	if c.failed() {
 		t.Fatalf("two of three disks still hold the entry: %s", c.failure)
 	}
@@ -426,14 +427,14 @@ func TestRecoveryMustBeTheSyncedStatePlusAPrefixOfWhatWasInFlight(t *testing.T) 
 	if _, _, err := d.open(c, 0); err != nil {
 		t.Fatal(err)
 	}
-	synced := node.Write{Seq: 1, HardState: raft.HardState{Term: 1}, Entries: []raft.Entry{{Term: 1, Index: 1}, {Term: 1, Index: 2}}, Sync: true}
+	synced := node.Write{Seq: 1, Batch: wal.Batch{HardState: raft.HardState{Term: 1}, Entries: []raft.Entry{{Term: 1, Index: 1}, {Term: 1, Index: 2}}}, Sync: true}
 	if err := d.submit(synced); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.sync(c, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.submit(node.Write{Seq: 2, HardState: raft.HardState{Term: 2}, Entries: []raft.Entry{{Term: 2, Index: 3}}, Sync: true}); err != nil {
+	if err := d.submit(node.Write{Seq: 2, Batch: wal.Batch{HardState: raft.HardState{Term: 2}, Entries: []raft.Entry{{Term: 2, Index: 3}}}, Sync: true}); err != nil {
 		t.Fatal(err)
 	}
 	d.crash(rand.New(rand.NewPCG(5, 5)))

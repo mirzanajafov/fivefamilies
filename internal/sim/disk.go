@@ -7,7 +7,7 @@ import (
 
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
-	"github.com/mirzanajafov/fivefamilies/internal/snap"
+	"github.com/mirzanajafov/fivefamilies/internal/storage"
 	"github.com/mirzanajafov/fivefamilies/internal/vfs"
 	"github.com/mirzanajafov/fivefamilies/internal/wal"
 )
@@ -41,17 +41,19 @@ func (d durableState) entry(index uint64) (raft.Entry, bool) {
 }
 
 type disk struct {
-	fs       *vfs.Mem
-	log      *wal.Log
-	segBytes int64
-	salt     func() uint64
-	durable  durableState
-	written  []node.Write
-	queue    []node.Write
-	inflight []node.Write
-	syncing  bool
-	covers   int
-	slow     float64
+	fs         *vfs.Mem
+	store      *storage.Disk
+	segBytes   int64
+	salt       func() uint64
+	durable    durableState
+	written    []node.Write
+	queue      []node.Write
+	compacts   []raft.Snapshot
+	compacting []raft.Snapshot
+	inflight   []node.Write
+	syncing    bool
+	covers     int
+	slow       float64
 }
 
 func newDisk(segBytes int64, salt func() uint64) *disk {
@@ -59,25 +61,15 @@ func newDisk(segBytes int64, salt func() uint64) *disk {
 }
 
 func (d *disk) open(chk *checker, idx int) (raft.Restore, wal.Recovery, error) {
-	if err := snap.RemoveUnfinished(d.fs); err != nil {
-		return raft.Restore{}, wal.Recovery{}, err
-	}
-	l, st, rec, err := wal.Open(d.fs, wal.Options{SegmentBytes: d.segBytes, Salt: d.salt})
+	store, st, rec, err := storage.Open(d.fs, wal.Options{SegmentBytes: d.segBytes, Salt: d.salt})
 	if err != nil {
 		return st, rec, err
-	}
-	if st.Snapshot != nil {
-		sn, err := snap.Load(d.fs, st.Snapshot.Index, st.Snapshot.Term)
-		if err != nil {
-			return st, rec, err
-		}
-		st.Snapshot = &sn
 	}
 	if !recoveredPrefix(d.durable, d.inflight, st) {
 		chk.safetyf("durability: node %d recovered %d entries after snapshot %v in term %d, which is not its synced state (%d entries after %d, term %d) plus a prefix of the %d writes in flight",
 			idx+1, len(st.Entries), st.Snapshot != nil, st.HardState.Term, len(d.durable.ents), d.durable.offset(), d.durable.hs.Term, len(d.inflight))
 	}
-	d.log = l
+	d.store = store
 	recovered := durableState{hs: st.HardState, ents: slices.Clone(st.Entries)}
 	if st.Snapshot != nil {
 		recovered.snap = &raft.Snapshot{Index: st.Snapshot.Index, Term: st.Snapshot.Term}
@@ -88,11 +80,7 @@ func (d *disk) open(chk *checker, idx int) (raft.Restore, wal.Recovery, error) {
 }
 
 func (d *disk) submit(w node.Write) error {
-	b := wal.Batch{HardState: w.HardState, Entries: w.Entries, Reset: w.Reset}
-	if w.Snapshot != nil {
-		b.Snapshot = &raft.Snapshot{Index: w.Snapshot.Index, Term: w.Snapshot.Term}
-	}
-	if err := d.log.WriteBatch(b); err != nil {
+	if err := d.store.Write(w.Batch); err != nil {
 		return err
 	}
 	d.written = append(d.written, w)
@@ -101,7 +89,7 @@ func (d *disk) submit(w node.Write) error {
 }
 
 func (d *disk) sync(chk *checker, idx int) error {
-	if err := d.log.Sync(); err != nil {
+	if err := d.store.Sync(); err != nil {
 		return err
 	}
 	n := min(d.covers, len(d.written))
@@ -119,7 +107,7 @@ func (d *disk) sync(chk *checker, idx int) error {
 func (d *disk) crash(rng *rand.Rand) {
 	d.fs.Crash(rng)
 	d.inflight = d.written
-	d.written, d.queue, d.syncing, d.covers, d.log = nil, nil, false, 0, nil
+	d.written, d.queue, d.compacts, d.compacting, d.syncing, d.covers, d.store = nil, nil, nil, nil, false, 0, nil
 }
 
 func applyWrite(st *durableState, w node.Write, each func()) bool {

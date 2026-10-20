@@ -14,7 +14,6 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
-	"github.com/mirzanajafov/fivefamilies/internal/snap"
 )
 
 type Options struct {
@@ -419,7 +418,7 @@ func (s *Sim) dispatch(e event) {
 		if sn.n == nil || sn.paused || e.gen != sn.tickGen {
 			return
 		}
-		sn.n.Tick()
+		sn.n.Advance(s.opts.Tick)
 		s.scheduleTick(sn, s.tickInterval(sn))
 	case evDeliver:
 		if sn.n == nil {
@@ -445,12 +444,16 @@ func (s *Sim) dispatch(e event) {
 		}
 		if sn.disk.covers > 0 {
 			if err := sn.disk.sync(s.chk, sn.idx); err != nil {
-				s.chk.safetyf("node %d could not sync its log: %v", sn.id, err)
+				s.chk.safetyf("node %d: %v", sn.id, err)
 				return
 			}
 		}
-		sn.disk.syncing = false
 		sn.n.WriteDone(e.wseq)
+		compacting := sn.disk.compacting
+		sn.disk.compacting, sn.disk.syncing = nil, false
+		for _, c := range compacting {
+			s.compact(sn, c)
+		}
 		s.startSync(sn)
 	case evRequest:
 		if sn.n == nil {
@@ -549,7 +552,7 @@ func (s *Sim) write(sn *simNode, w node.Write) {
 		}
 	}
 	if err := sn.disk.submit(w); err != nil {
-		s.chk.safetyf("node %d could not write its log: %v", sn.id, err)
+		s.chk.safetyf("node %d: %v", sn.id, err)
 		return
 	}
 	if !sn.disk.syncing {
@@ -559,11 +562,12 @@ func (s *Sim) write(sn *simNode, w node.Write) {
 
 func (s *Sim) startSync(sn *simNode) {
 	d := sn.disk
-	if len(d.queue) == 0 {
+	if len(d.queue) == 0 && len(d.compacts) == 0 {
 		return
 	}
 	batch := d.queue
 	d.queue = nil
+	d.compacting, d.compacts = d.compacts, nil
 	d.syncing = true
 	need := false
 	for _, w := range batch {
@@ -576,7 +580,11 @@ func (s *Sim) startSync(sn *simNode) {
 		lat = time.Duration(float64(s.sw.diskBase) * d.slow * (0.5 + s.rng.ExpFloat64()/2))
 	}
 	s.stats.Writes += len(batch)
-	s.schedule(event{kind: evWriteDone, node: sn.idx, gen: sn.incarnation, wseq: batch[len(batch)-1].Seq}, lat)
+	var last uint64
+	if len(batch) > 0 {
+		last = batch[len(batch)-1].Seq
+	}
+	s.schedule(event{kind: evWriteDone, node: sn.idx, gen: sn.incarnation, wseq: last}, lat)
 }
 
 func (s *Sim) buggify(from *simNode, m raft.Message) {
@@ -623,18 +631,19 @@ func (s *Sim) buggify(from *simNode, m raft.Message) {
 }
 
 func (s *Sim) saveSnapshot(sn *simNode, snapshot raft.Snapshot) {
-	if err := snap.Save(sn.disk.fs, snapshot); err != nil {
-		s.chk.safetyf("node %d could not save snapshot %d: %v", sn.id, snapshot.Index, err)
+	if err := sn.disk.store.SaveSnapshot(snapshot); err != nil {
+		s.chk.safetyf("node %d: %v", sn.id, err)
 	}
 }
 
 func (s *Sim) compacted(sn *simNode, snapshot raft.Snapshot) {
-	n, err := sn.disk.log.Compact(snapshot.Index)
-	if err == nil {
-		err = snap.RemoveBelow(sn.disk.fs, snapshot.Index)
-	}
+	sn.disk.compacts = append(sn.disk.compacts, snapshot)
+}
+
+func (s *Sim) compact(sn *simNode, snapshot raft.Snapshot) {
+	n, err := sn.disk.store.Compact(snapshot.Index)
 	if err != nil {
-		s.chk.safetyf("node %d could not compact to %d: %v", sn.id, snapshot.Index, err)
+		s.chk.safetyf("node %d: %v", sn.id, err)
 		return
 	}
 	s.stats.Compactions += n
@@ -668,10 +677,8 @@ func (s *Sim) pause(sn *simNode) {
 func (s *Sim) resume(sn *simNode) {
 	s.tracef("fault: resume node %d", sn.id)
 	sn.paused = false
-	if missed := int((s.now - sn.pausedAt) / s.tickInterval(sn)); missed > 0 && sn.n != nil && !s.opts.NoCatchUp {
-		for range min(missed, 10000) {
-			sn.n.Tick()
-		}
+	if missed := int64((s.now - sn.pausedAt) / s.tickInterval(sn)); missed > 0 && sn.n != nil && !s.opts.NoCatchUp {
+		sn.n.Advance(time.Duration(missed) * s.opts.Tick)
 		sn.n.Process()
 		s.observe(sn)
 	}
