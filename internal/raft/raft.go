@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 )
 
 var (
@@ -36,7 +38,7 @@ type Config struct {
 	MaxPending    uint64
 	LeaseTicks    int
 	Rand          Source
-	Bugs          Bug
+	Bugs          planted.Bug
 }
 
 func (c *Config) validate() error {
@@ -122,7 +124,7 @@ func New(cfg Config, st Restore) (*Raft, error) {
 	if err != nil {
 		return nil, err
 	}
-	l.skipPrevTerm = cfg.Bugs.Has(BugPrevTerm)
+	l.skipPrevTerm = cfg.Bugs.Has(planted.PrevTerm)
 	if st.HardState.Term < l.lastTerm() {
 		return nil, fmt.Errorf("raft: restored term %d is lower than the last entry's term %d", st.HardState.Term, l.lastTerm())
 	}
@@ -167,10 +169,6 @@ func (r *Raft) LastIndex() uint64  { return r.log.lastIndex() }
 
 func (r *Raft) LeaderFresh() bool {
 	return r.state == StateLeader || (r.lead != None && r.electionElapsed < r.cfg.ElectionTick)
-}
-
-func (r *Raft) Planted(b Bug) bool {
-	return r.cfg.Bugs.Has(b)
 }
 
 func (r *Raft) HardState() HardState {
@@ -243,7 +241,7 @@ func (r *Raft) ProposeConfChange(cc ConfChange) (uint64, error) {
 		return 0, fmt.Errorf("%w: the leader cannot remove itself, transfer leadership first", ErrBadConfChange)
 	case r.transferee != None:
 		return 0, ErrTransferring
-	case !r.committedInTerm() && !r.cfg.Bugs.Has(BugEarlyConf):
+	case !r.committedInTerm() && !r.cfg.Bugs.Has(planted.EarlyConf):
 		return 0, ErrConfNotReady
 	case r.pendingConf():
 		return 0, ErrConfPending
@@ -310,7 +308,7 @@ func (r *Raft) Step(m Message) {
 			r.becomeFollower(m.Term, None)
 		}
 	case m.Term < r.term:
-		if r.cfg.Bugs.Has(BugStaleTerm) && m.Type == MsgApp && r.state == StateFollower {
+		if r.cfg.Bugs.Has(planted.StaleTerm) && m.Type == MsgApp && r.state == StateFollower {
 			r.handleAppend(m)
 			return
 		}
@@ -353,7 +351,7 @@ func (r *Raft) HasReady() bool {
 }
 
 func (r *Raft) Ready() Ready {
-	if r.cfg.Bugs.Has(BugNoFsync) && r.log.stabled < r.log.lastIndex() {
+	if r.cfg.Bugs.Has(planted.NoFsync) && r.log.stabled < r.log.lastIndex() {
 		r.log.stabled = r.log.lastIndex()
 		if r.state == StateLeader && r.maybeCommit() {
 			r.pendingBcast = true
@@ -417,7 +415,7 @@ func (r *Raft) send(m Message) {
 
 func (r *Raft) sendAfterPersist(m Message) {
 	m.From = r.id
-	if r.cfg.Bugs.Has(BugNoFsync) {
+	if r.cfg.Bugs.Has(planted.NoFsync) {
 		r.msgs = append(r.msgs, m)
 		return
 	}
@@ -514,7 +512,7 @@ func (r *Raft) campaign(pre bool, ctx uint64) {
 		}
 		r.send(Message{Type: typ, To: id, Term: term, Index: r.log.lastIndex(), LogTerm: r.log.lastTerm(), Context: ctx})
 	}
-	if pre || r.cfg.Bugs.Has(BugNoFsync) {
+	if pre || r.cfg.Bugs.Has(planted.NoFsync) {
 		r.recordVote(r.id, true)
 	} else {
 		r.sendAfterPersist(Message{Type: MsgVoteResp, To: r.id, Term: r.term})
@@ -611,7 +609,7 @@ func (r *Raft) handleVoteRequest(m Message) {
 	canVote := r.vote == m.From ||
 		(r.vote == None && r.lead == None) ||
 		(m.Type == MsgPreVote && m.Term > r.term)
-	if !canVote || (!r.log.isUpToDate(m.Index, m.LogTerm) && !r.cfg.Bugs.Has(BugAnyVote)) {
+	if !canVote || (!r.log.isUpToDate(m.Index, m.LogTerm) && !r.cfg.Bugs.Has(planted.AnyVote)) {
 		r.send(Message{Type: resp, To: m.From, Term: r.term, Reject: true})
 		return
 	}
@@ -829,7 +827,7 @@ func (r *Raft) maybeCommit() bool {
 	if n <= r.log.committed {
 		return false
 	}
-	if t, _ := r.log.term(n); t != r.term && !r.cfg.Bugs.Has(BugFigure8) {
+	if t, _ := r.log.term(n); t != r.term && !r.cfg.Bugs.Has(planted.Figure8) {
 		return false
 	}
 	r.log.commitTo(n)

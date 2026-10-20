@@ -10,7 +10,8 @@ import (
 )
 
 func TestCoreStaysDeterministic(t *testing.T) {
-	allowed := map[string]bool{"cmp": true, "encoding/binary": true, "errors": true, "fmt": true, "slices": true, "strings": true}
+	allowed := map[string]bool{"cmp": true, "encoding/binary": true, "errors": true, "fmt": true, "slices": true, "strings": true,
+		"github.com/mirzanajafov/fivefamilies/internal/planted": true}
 	files, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)

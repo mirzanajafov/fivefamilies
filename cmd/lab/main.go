@@ -14,7 +14,7 @@ import (
 
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/lab"
-	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 )
 
 type usageError struct {
@@ -37,7 +37,7 @@ func logf(format string, args ...any) {
 
 var errProblems = errors.New("the run found problems")
 
-func checkRun(read client.ReadMode, planted raft.Bug, election, heartbeat, lease string) error {
+func checkRun(read client.ReadMode, bugs planted.Bug, election, heartbeat, lease string) error {
 	for _, d := range []string{election, heartbeat} {
 		if _, err := time.ParseDuration(d); err != nil {
 			return err
@@ -49,9 +49,9 @@ func checkRun(read client.ReadMode, planted raft.Bug, election, heartbeat, lease
 		return err
 	case read == client.ReadLease && leaseLen <= 0:
 		return errors.New("-read lease needs a -lease longer than zero")
-	case planted.Has(raft.BugWatchGap | raft.BugWatchKeep | raft.BugLocalKeepAlive):
+	case bugs.Has(planted.WatchGap | planted.WatchKeep | planted.LocalKeepAlive):
 		return errors.New("-bug: the lab runs no watchers or lease holders, so watch and lease bugs are never exercised")
-	case planted.Has(raft.BugFollowerRead) && read == client.ReadLog:
+	case bugs.Has(planted.FollowerRead) && read == client.ReadLog:
 		return errors.New("-bug followerread is never exercised when every read goes through the log")
 	}
 	return nil
@@ -308,10 +308,10 @@ func runLab(ctx context.Context, args []string) error {
 	})
 	mean := fs.Duration("fault-every", 3*time.Second, "mean gap between faults")
 	var bug string
-	var planted raft.Bug
+	var bugs planted.Bug
 	fs.Func("bug", "planted bug for every node", func(s string) (err error) {
 		bug = s
-		planted, err = raft.ParseBugs(s)
+		bugs, err = planted.Parse(s)
 		return err
 	})
 	election := fs.String("election", "1s", "election timeout")
@@ -325,7 +325,7 @@ func runLab(ctx context.Context, args []string) error {
 	if err := parse(fs, args); err != nil {
 		return err
 	}
-	if err := checkRun(read, planted, *election, *heartbeat, *lease); err != nil {
+	if err := checkRun(read, bugs, *election, *heartbeat, *lease); err != nil {
 		return usageError{error: err}
 	}
 	opts := lab.Options{

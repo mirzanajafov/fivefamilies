@@ -1,6 +1,10 @@
 package raft
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
+)
 
 const roundRing = 64
 
@@ -26,7 +30,7 @@ func (r *Raft) handleReadIndex(from NodeID, ctx uint64, lease bool) {
 		switch {
 		case from != r.id || r.lead == None:
 			r.answerRead(from, ctx, 0, false)
-		case r.cfg.Bugs.Has(BugFollowerRead):
+		case r.cfg.Bugs.Has(planted.FollowerRead):
 			r.answerRead(from, ctx, r.log.committed, true)
 		default:
 			r.send(Message{Type: MsgReadIndex, To: r.lead, Term: r.term, Context: ctx})

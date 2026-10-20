@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
@@ -14,7 +15,7 @@ type Machine struct {
 	pending     []kv.Event
 }
 
-func NewMachine(maxSessions, history int, bugs raft.Bug) *Machine {
+func NewMachine(maxSessions, history int, bugs planted.Bug) *Machine {
 	m := &Machine{Store: kv.NewStore(maxSessions), Hub: New(history, 0, bugs), maxSessions: maxSessions}
 	m.Store.Observe(m.collect)
 	return m

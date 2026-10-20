@@ -115,7 +115,7 @@ func (s *Server) start(st raft.Restore) error {
 		return err
 	}
 	s.raft = r
-	s.node = node.New(r, s, s.sm, node.Config{SnapshotEvery: cfg.SnapshotEvery, Retain: cfg.Retain, Tick: cfg.Tick, WriteBeforeSend: cfg.WriteBeforeSend})
+	s.node = node.New(r, s, s.sm, node.Config{SnapshotEvery: cfg.SnapshotEvery, Retain: cfg.Retain, Tick: cfg.Tick, WriteBeforeSend: cfg.WriteBeforeSend, Bugs: cfg.Bugs})
 	tr, err := transport.New(cfg.ID, cfg.Nodes, s.deliver, &s.isolated, s.log)
 	if err != nil {
 		return err

@@ -15,7 +15,7 @@ import (
 	"github.com/anishathalye/porcupine"
 
 	"github.com/mirzanajafov/fivefamilies/internal/check"
-	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/sim"
 )
 
@@ -42,9 +42,9 @@ func main() {
 	})
 	skew := flag.Float64("clock-skew", 0, "make one node's clock run this much faster (0.5 = 50%), to break the lease assumption")
 	checkTimeout := flag.Duration("check-timeout", 0, "time limit for one linearizability check")
-	var planted raft.Bug
-	flag.Func("bug", "planted bugs to switch on, comma separated: "+list(raft.AllBugs()), func(s string) (err error) {
-		planted, err = raft.ParseBugs(s)
+	var bugs planted.Bug
+	flag.Func("bug", "planted bugs to switch on, comma separated: "+list(planted.All()), func(s string) (err error) {
+		bugs, err = planted.Parse(s)
 		return err
 	})
 	mute := flag.Bool("mute-safety", false, "record protocol invariant violations without stopping, to see what the other checks catch")
@@ -77,7 +77,7 @@ func main() {
 	if *checkTimeout > 0 {
 		opts.CheckTimeout = *checkTimeout
 	}
-	opts.Bugs = planted
+	opts.Bugs = bugs
 	opts.MuteSafety = *mute
 	if err := opts.Validate(catch); err != nil {
 		fmt.Fprintln(os.Stderr, "-catch or -bug can never fire:", err)

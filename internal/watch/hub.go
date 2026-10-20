@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
-	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 )
 
 type Batch struct {
@@ -52,10 +52,10 @@ type Hub struct {
 	rev      uint64
 	watchers map[uint64]*watcher
 	nextID   uint64
-	bugs     raft.Bug
+	bugs     planted.Bug
 }
 
-func New(size int, rev uint64, bugs raft.Bug) *Hub {
+func New(size int, rev uint64, bugs planted.Bug) *Hub {
 	if size <= 0 {
 		size = 10000
 	}
@@ -137,7 +137,7 @@ func (h *Hub) Watch(key string, prefix bool, from uint64, send func(Batch) bool)
 	first := Batch{Rev: max(h.rev, from-1)}
 	for _, e := range h.ring {
 		if e.rev >= from && w.matches(e.ev) {
-			if e.rev == from && h.bugs.Has(raft.BugWatchGap) {
+			if e.rev == from && h.bugs.Has(planted.WatchGap) {
 				continue
 			}
 			first.Events = append(first.Events, e.ev)
@@ -180,7 +180,7 @@ func (h *Hub) Reset(rev uint64) {
 	h.ring = nil
 	h.rev = rev
 	h.start = rev + 1
-	if h.bugs.Has(raft.BugWatchKeep) {
+	if h.bugs.Has(planted.WatchKeep) {
 		for _, w := range h.watchers {
 			w.next = max(w.next, rev+1)
 		}

@@ -1,6 +1,10 @@
 package raft
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
+)
 
 func (c *cluster) pastBootGuard() {
 	for _, r := range c.nodes {
@@ -146,7 +150,7 @@ func TestLeaseNeedsCheckQuorum(t *testing.T) {
 }
 
 func TestPlantedFollowerReadAnswersLocally(t *testing.T) {
-	c := newCluster(t, 3, func(cfg *Config) { cfg.Bugs = BugFollowerRead })
+	c := newCluster(t, 3, func(cfg *Config) { cfg.Bugs = planted.FollowerRead })
 	c.elect(1)
 	c.node(2).ReadIndex(4, false)
 	rd := c.node(2).Ready()

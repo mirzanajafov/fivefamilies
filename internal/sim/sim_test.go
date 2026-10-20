@@ -14,6 +14,7 @@ import (
 
 	"github.com/mirzanajafov/fivefamilies/internal/check"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/wal"
 )
@@ -205,7 +206,7 @@ func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
 
 func TestACheckOrBugThatCanNeverFireIsRefused(t *testing.T) {
 	full := DefaultOptions()
-	for _, b := range raft.AllBugs() {
+	for _, b := range planted.All() {
 		full.Bugs |= b
 	}
 	for _, c := range Categories() {
@@ -215,23 +216,23 @@ func TestACheckOrBugThatCanNeverFireIsRefused(t *testing.T) {
 	}
 	for _, reads := range []ReadMode{ReadIndex, ReadLease, ReadFollower} {
 		o := DefaultOptions()
-		o.Bugs, o.Reads = raft.BugFollowerRead, reads
+		o.Bugs, o.Reads = planted.FollowerRead, reads
 		if err := o.Validate(""); err != nil {
 			t.Errorf("followerread with %s reads: %v", reads, err)
 		}
 	}
 	for name, c := range map[string]struct {
 		off   func(*Options)
-		bug   raft.Bug
+		bug   planted.Bug
 		catch Category
 	}{
 		"lease check without lease holders":       {func(o *Options) { o.Leases = false }, 0, CatLease},
-		"localkeepalive without lease holders":    {func(o *Options) { o.Leases = false }, raft.BugLocalKeepAlive, ""},
+		"localkeepalive without lease holders":    {func(o *Options) { o.Leases = false }, planted.LocalKeepAlive, ""},
 		"watch check without watchers":            {func(o *Options) { o.Watches = false }, 0, CatWatch},
-		"watchgap without watchers":               {func(o *Options) { o.Watches = false }, raft.BugWatchGap, ""},
-		"watchkeep without watchers":              {func(o *Options) { o.Watches = false }, raft.BugWatchKeep, ""},
-		"earlyconf without membership changes":    {func(o *Options) { o.Membership = false }, raft.BugEarlyConf, ""},
-		"followerread with reads through the log": {func(o *Options) { o.Reads = ReadLog }, raft.BugFollowerRead, ""},
+		"watchgap without watchers":               {func(o *Options) { o.Watches = false }, planted.WatchGap, ""},
+		"watchkeep without watchers":              {func(o *Options) { o.Watches = false }, planted.WatchKeep, ""},
+		"earlyconf without membership changes":    {func(o *Options) { o.Membership = false }, planted.EarlyConf, ""},
+		"followerread with reads through the log": {func(o *Options) { o.Reads = ReadLog }, planted.FollowerRead, ""},
 	} {
 		o := DefaultOptions()
 		c.off(&o)
