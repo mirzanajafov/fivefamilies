@@ -8,7 +8,7 @@ export async function POST(req: Request) {
     return Response.json({ error: 'request too large' }, { status: 413 })
   }
   try {
-    return relay(await toController('/api/chaos', { method: 'POST', body, admin: true, req, headers: { 'Content-Type': 'application/json' } }))
+    return await relay(await toController('/api/chaos', { method: 'POST', body, admin: true, req, headers: { 'Content-Type': 'application/json' } }))
   } catch {
     return unreachable()
   }

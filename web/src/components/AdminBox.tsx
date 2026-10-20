@@ -13,7 +13,7 @@ export function AdminBox() {
       .catch(() => setAdmin(false))
   }, [])
 
-  async function login(e: React.FormEvent) {
+  async function login(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(undefined)
     const res = await fetch('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
@@ -37,12 +37,12 @@ export function AdminBox() {
       {admin ? (
         <div className="grid gap-3 text-sm">
           <p>The limits are lifted in this browser: faults up to a minute, no cooldown, and a button to heal everything.</p>
-          <button type="button" onClick={logout} className="justify-self-start rounded-lg border border-[var(--line)] px-4 py-2">
+          <button type="button" onClick={() => void logout()} className="justify-self-start rounded-lg border border-[var(--line)] px-4 py-2">
             Sign out
           </button>
         </div>
       ) : (
-        <form onSubmit={login} className="grid gap-3 text-sm">
+        <form onSubmit={(e) => void login(e)} className="grid gap-3 text-sm">
           <p className="muted">The admin token lifts the visitor limits. It stays in an httpOnly cookie on this site and is never readable by the page.</p>
           <input
             type="password"

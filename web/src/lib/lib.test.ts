@@ -33,6 +33,7 @@ suite('words', () => {
   })
   it('tells a succession and a fault in its own words', () => {
     expect(describe({ at: '', kind: 'succession', node: 3, term: 7, text: 'node 3 leads term 7' })).toBe('Family III leads reign 7')
+    expect(describe({ at: '', kind: 'succession', node: 3, text: 'node 3 leads' })).toBe('Family III leads')
     expect(describe({ at: '', kind: 'fault', node: 2, text: 'kill on node 2 for 3s (visitor)' })).toBe('Chaos: kill on Family II for 3s (visitor)')
   })
   it('sums up a failover with both numbers', () => {

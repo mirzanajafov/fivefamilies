@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    return relay(await toController('/api/snapshot'))
+    return await relay(await toController('/api/snapshot'))
   } catch {
     return unreachable()
   }

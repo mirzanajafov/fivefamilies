@@ -53,7 +53,7 @@ export function describe(e: Event): string {
   const who = e.node ? family(e.node) : 'The Commission'
   switch (e.kind) {
     case 'succession':
-      return `${who} leads reign ${e.term}`
+      return e.term === undefined ? `${who} leads` : `${who} leads reign ${e.term}`
     case 'down':
       return `${who} went silent`
     case 'up':
@@ -73,7 +73,7 @@ export function describe(e: Event): string {
 export function outcome(f: Fault): string {
   const what = `${family(f.node)} was ${faultLabels[f.action] ?? f.action}`
   if (!f.on_leader) return `${what}. It was not the Don, so nobody had to wait.`
-  if (!f.failover || !f.failover.new_leader) return `${what}. The Don kept the seat.`
+  if (!f.failover?.new_leader) return `${what}. The Don kept the seat.`
   const ms = (ns: number) => `${(ns / 1e6).toFixed(0)} ms`
   return `${what}. ${family(f.failover.new_leader)} took over after ${ms(f.failover.election_ns)}, and clients waited ${ms(f.failover.client_gap_ns)} between two acknowledged writes.`
 }
