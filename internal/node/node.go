@@ -8,19 +8,13 @@ import (
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/wal"
 )
 
 type Write struct {
-	Seq       uint64
-	HardState raft.HardState
-	Snapshot  *raft.Snapshot
-	Reset     bool
-	Entries   []raft.Entry
-	Sync      bool
-}
-
-func (w Write) Empty() bool {
-	return w.HardState.IsEmpty() && w.Snapshot == nil && len(w.Entries) == 0
+	wal.Batch
+	Seq  uint64
+	Sync bool
 }
 
 type Env interface {
@@ -51,7 +45,10 @@ var (
 	ErrNotReady = errors.New("node: the read could not be confirmed, try again")
 )
 
-const readExpiry = 64
+const (
+	readExpiry = 64
+	maxCatchUp = 100_000
+)
 
 type NotLeaderError struct {
 	Leader raft.NodeID
@@ -104,6 +101,7 @@ type Node struct {
 	lastSnap uint64
 	taking   bool
 	ticks    uint64
+	carry    time.Duration
 	nextCtx  uint64
 	reads    map[uint64]readWaiter
 	ready    []confirmedRead
@@ -129,7 +127,16 @@ func (n *Node) Raft() *raft.Raft {
 	return n.r
 }
 
-func (n *Node) Tick() {
+func (n *Node) Advance(elapsed time.Duration) {
+	n.carry += elapsed
+	due := int64(n.carry / n.cfg.Tick)
+	n.carry %= n.cfg.Tick
+	for range min(due, maxCatchUp) {
+		n.tick()
+	}
+}
+
+func (n *Node) tick() {
 	n.ticks++
 	n.r.Tick()
 	if n.r.LeaderFresh() {
@@ -398,7 +405,7 @@ func (n *Node) Process() {
 			after = append(after, rd.AfterPersist...)
 		}
 		if rd.NeedsWrite() || len(after) > 0 {
-			n.write(Write{HardState: rd.HardState, Snapshot: rd.Snapshot, Reset: rd.Snapshot != nil, Entries: rd.Entries, Sync: rd.MustSync}, after, rd.Snapshot)
+			n.write(Write{Batch: wal.Batch{HardState: rd.HardState, Snapshot: rd.Snapshot, Reset: rd.Snapshot != nil, Entries: rd.Entries}, Sync: rd.MustSync}, after, rd.Snapshot)
 		}
 		for _, m := range now {
 			n.env.Send(m)
@@ -468,5 +475,5 @@ func (n *Node) maybeSnapshot() {
 	n.env.SaveSnapshot(s)
 	n.lastSnap = applied
 	n.taking = true
-	n.write(Write{HardState: n.r.HardState(), Snapshot: &s, Sync: true}, nil, &s)
+	n.write(Write{Batch: wal.Batch{HardState: n.r.HardState(), Snapshot: &s}, Sync: true}, nil, &s)
 }

@@ -481,6 +481,32 @@ func TestASnapshotRecordWithoutTheHardStateIsRefused(t *testing.T) {
 	}
 }
 
+func TestCompactingKeepsTheLastSyncedMarkerWhileANewerOneIsUnsynced(t *testing.T) {
+	for seed := range uint64(500) {
+		fs := vfs.NewMem()
+		l, _, _ := open(t, fs, 1)
+		mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 1, 3), true)
+		if err := l.WriteBatch(Batch{HardState: raft.HardState{Term: 1, Commit: 3}, Snapshot: snapAt(3, 1)}); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, l, raft.HardState{}, entries(1, 4, 5), true)
+		if err := l.WriteBatch(Batch{HardState: raft.HardState{Term: 1, Commit: 5}, Snapshot: snapAt(5, 1)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := l.Compact(3); err != nil {
+			t.Fatal(err)
+		}
+		fs.Crash(rand.New(rand.NewPCG(seed, 3)))
+		_, st, _, err := Open(fs, Options{SegmentBytes: 1, Salt: saltSource(seed)})
+		if err != nil {
+			t.Fatalf("seed %d: %v", seed, err)
+		}
+		if st.Snapshot == nil || st.Snapshot.Index < 3 || st.Snapshot.Index+uint64(len(st.Entries)) != 5 {
+			t.Fatalf("seed %d: restored snapshot %+v and %d entries", seed, st.Snapshot, len(st.Entries))
+		}
+	}
+}
+
 func TestACompactionOutsideTheLogIsCorruption(t *testing.T) {
 	fs := vfs.NewMem()
 	l, _, _ := open(t, fs, 0)
@@ -592,10 +618,10 @@ func TestCrashesWithSnapshotsAndCompaction(t *testing.T) {
 					synced.apply(p, func(model) {})
 				}
 				pending = nil
-				if synced.snap != nil && rng.IntN(2) == 0 {
-					if _, err := l.Compact(synced.snap.Index); err != nil {
-						t.Fatal(err)
-					}
+			}
+			if synced.snap != nil && rng.IntN(2) == 0 {
+				if _, err := l.Compact(synced.snap.Index); err != nil {
+					t.Fatal(err)
 				}
 			}
 		}

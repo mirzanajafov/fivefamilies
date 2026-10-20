@@ -19,7 +19,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
-	"github.com/mirzanajafov/fivefamilies/internal/snap"
+	"github.com/mirzanajafov/fivefamilies/internal/storage"
 	"github.com/mirzanajafov/fivefamilies/internal/transport"
 	"github.com/mirzanajafov/fivefamilies/internal/vfs"
 	"github.com/mirzanajafov/fivefamilies/internal/wal"
@@ -122,8 +122,7 @@ type diskJob struct {
 
 type Server struct {
 	cfg       Config
-	fs        vfs.OS
-	wal       *wal.Log
+	disk      *storage.Disk
 	raft      *raft.Raft
 	node      *node.Node
 	sm        *watch.Machine
@@ -163,7 +162,6 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{
 		cfg:     cfg,
-		fs:      vfs.OS{Dir: cfg.DataDir},
 		inbound: make(chan raft.Message, 4096),
 		calls:   make(chan func(), 1024),
 		jobs:    make(chan diskJob, 4096),
@@ -172,25 +170,17 @@ func New(cfg Config) (*Server, error) {
 		quit:    make(chan struct{}),
 		log:     cfg.Logger.With("node", cfg.ID),
 	}
-	if err := snap.RemoveUnfinished(s.fs); err != nil {
-		return nil, fmt.Errorf("removing unfinished snapshots: %w", err)
-	}
-	l, st, rec, err := wal.Open(s.fs, wal.Options{SegmentBytes: cfg.SegmentBytes, Salt: randomUint64})
+	disk, st, rec, err := storage.Open(vfs.OS{Dir: cfg.DataDir}, wal.Options{SegmentBytes: cfg.SegmentBytes, Salt: randomUint64})
 	if err != nil {
-		return nil, fmt.Errorf("opening the log: %w", err)
+		return nil, err
 	}
 	if rec.TornBytes > 0 {
 		s.log.Warn("cut a torn tail from the log", "bytes", rec.TornBytes)
 	}
-	s.wal = l
+	s.disk = disk
 	s.sm = watch.NewMachine(cfg.MaxSessions, cfg.WatchHistory, cfg.Bugs)
 	if st.Snapshot != nil {
-		sn, err := snap.Load(s.fs, st.Snapshot.Index, st.Snapshot.Term)
-		if err != nil {
-			return nil, fmt.Errorf("loading snapshot %d: %w", st.Snapshot.Index, err)
-		}
-		st.Snapshot = &sn
-		if err := s.sm.Restore(sn.Index, sn.Data); err != nil {
+		if err := s.sm.Restore(st.Snapshot.Index, st.Snapshot.Data); err != nil {
 			return nil, err
 		}
 	}
@@ -244,7 +234,7 @@ func (s *Server) Run(ctx context.Context) {
 	close(s.stopped)
 	wg.Wait()
 	s.tr.Close()
-	if err := s.wal.Close(); err != nil {
+	if err := s.disk.Close(); err != nil {
 		s.log.Error("closing the log", "err", err)
 	}
 }
@@ -264,14 +254,9 @@ func (s *Server) deliver(m raft.Message) {
 }
 
 func (s *Server) catchUp() {
-	n := int(time.Since(s.lastTick) / s.cfg.Tick)
-	if n <= 0 {
-		return
-	}
-	s.lastTick = s.lastTick.Add(time.Duration(n) * s.cfg.Tick)
-	for range min(n, 100000) {
-		s.node.Tick()
-	}
+	now := time.Now()
+	s.node.Advance(now.Sub(s.lastTick))
+	s.lastTick = now
 }
 
 func (s *Server) loop(ctx context.Context) {
@@ -361,8 +346,8 @@ func (s *Server) Write(w node.Write) {
 }
 
 func (s *Server) SaveSnapshot(sn raft.Snapshot) {
-	if err := snap.Save(s.fs, sn); err != nil {
-		s.die(fmt.Errorf("saving snapshot %d: %w", sn.Index, err))
+	if err := s.disk.SaveSnapshot(sn); err != nil {
+		s.die(err)
 	}
 }
 
@@ -402,24 +387,20 @@ func (s *Server) writer(ctx context.Context) {
 				continue
 			}
 			w := j.write
-			b := wal.Batch{HardState: w.HardState, Entries: w.Entries, Reset: w.Reset}
-			if w.Snapshot != nil {
-				b.Snapshot = &raft.Snapshot{Index: w.Snapshot.Index, Term: w.Snapshot.Term}
-			}
-			parts := []wal.Batch{b}
-			if s.cfg.FsyncMode == FsyncEntry && len(b.Entries) > 1 {
+			parts := []wal.Batch{w.Batch}
+			if s.cfg.FsyncMode == FsyncEntry && len(w.Entries) > 1 {
 				parts = parts[:0]
-				for i, e := range b.Entries {
+				for i, e := range w.Entries {
 					p := wal.Batch{Entries: []raft.Entry{e}}
 					if i == 0 {
-						p.HardState, p.Snapshot, p.Reset = b.HardState, b.Snapshot, b.Reset
+						p.HardState, p.Snapshot, p.Reset = w.HardState, w.Snapshot, w.Reset
 					}
 					parts = append(parts, p)
 				}
 			}
 			for _, p := range parts {
-				if err := s.wal.WriteBatch(p); err != nil {
-					s.die(fmt.Errorf("writing the log: %w", err))
+				if err := s.disk.Write(p); err != nil {
+					s.die(err)
 					return
 				}
 				s.counts.batches.Add(1)
@@ -445,12 +426,8 @@ func (s *Server) writer(ctx context.Context) {
 			}
 		}
 		for _, c := range compacts {
-			if _, err := s.wal.Compact(c.Index); err != nil {
-				s.die(fmt.Errorf("compacting the log to %d: %w", c.Index, err))
-				return
-			}
-			if err := snap.RemoveBelow(s.fs, c.Index); err != nil {
-				s.die(fmt.Errorf("removing snapshots below %d: %w", c.Index, err))
+			if _, err := s.disk.Compact(c.Index); err != nil {
+				s.die(err)
 				return
 			}
 		}
@@ -462,8 +439,8 @@ func (s *Server) sync() bool {
 	if s.cfg.FsyncMode == FsyncOff {
 		return true
 	}
-	if err := s.wal.Sync(); err != nil {
-		s.die(fmt.Errorf("syncing the log: %w", err))
+	if err := s.disk.Sync(); err != nil {
+		s.die(err)
 		return false
 	}
 	s.counts.fsyncs.Add(1)

@@ -51,7 +51,7 @@ type Batch struct {
 	Entries   []raft.Entry
 }
 
-func (b Batch) empty() bool {
+func (b Batch) Empty() bool {
 	return b.HardState.IsEmpty() && b.Snapshot == nil && len(b.Entries) == 0
 }
 
@@ -65,6 +65,7 @@ type Log struct {
 	opts      Options
 	segs      []segment
 	markerSeq uint64
+	syncedSeq uint64
 	f         vfs.File
 	size      int64
 	salt      uint64
@@ -82,6 +83,26 @@ func parseSegmentName(name string) (uint64, bool) {
 	}
 	seq, err := strconv.ParseUint(hex, 16, 64)
 	return seq, err == nil && seq > 0
+}
+
+func Exists(fs vfs.FS) (bool, error) {
+	seqs, err := segments(fs)
+	return len(seqs) > 0, err
+}
+
+func segments(fs vfs.FS) ([]uint64, error) {
+	names, err := fs.List()
+	if err != nil {
+		return nil, err
+	}
+	var seqs []uint64
+	for _, n := range names {
+		if seq, ok := parseSegmentName(n); ok {
+			seqs = append(seqs, seq)
+		}
+	}
+	slices.Sort(seqs)
+	return seqs, nil
 }
 
 func corrupt(format string, args ...any) error {
@@ -161,17 +182,10 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 	}
 	l := &Log{fs: fs, opts: opts}
 	var rec Recovery
-	names, err := fs.List()
+	seqs, err := segments(fs)
 	if err != nil {
 		return nil, raft.Restore{}, rec, err
 	}
-	var seqs []uint64
-	for _, n := range names {
-		if seq, ok := parseSegmentName(n); ok {
-			seqs = append(seqs, seq)
-		}
-	}
-	slices.Sort(seqs)
 	for i := 1; i < len(seqs); i++ {
 		if seqs[i] != seqs[i-1]+1 {
 			return nil, raft.Restore{}, rec, corrupt("segment %d follows segment %d", seqs[i], seqs[i-1])
@@ -275,7 +289,7 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 		}
 		l.f = f
 	}
-	l.markerSeq = r.markerSeq
+	l.markerSeq, l.syncedSeq = r.markerSeq, r.markerSeq
 	hs := r.hs
 	hs.Commit = max(min(hs.Commit, r.last()), r.off)
 	return l, raft.Restore{HardState: hs, Snapshot: r.snap, Entries: r.ents}, rec, nil
@@ -318,7 +332,7 @@ func (l *Log) create(seq uint64) error {
 }
 
 func (l *Log) rotate() error {
-	if err := l.f.Sync(); err != nil {
+	if err := l.Sync(); err != nil {
 		return err
 	}
 	if err := l.f.Close(); err != nil {
@@ -332,7 +346,7 @@ func (l *Log) Write(hs raft.HardState, ents []raft.Entry) error {
 }
 
 func (l *Log) WriteBatch(b Batch) error {
-	if b.empty() {
+	if b.Empty() {
 		return nil
 	}
 	if b.Snapshot != nil && b.HardState.IsEmpty() {
@@ -365,7 +379,11 @@ func (l *Log) WriteBatch(b Batch) error {
 }
 
 func (l *Log) Sync() error {
-	return l.f.Sync()
+	if err := l.f.Sync(); err != nil {
+		return err
+	}
+	l.syncedSeq = l.markerSeq
+	return nil
 }
 
 func (l *Log) Close() error {
@@ -378,7 +396,7 @@ func (l *Log) Segments() int {
 
 func (l *Log) Compact(index uint64) (int, error) {
 	removed := 0
-	for len(l.segs) > 1 && l.segs[0].seq < l.markerSeq && l.segs[0].maxIndex <= index {
+	for len(l.segs) > 1 && l.segs[0].seq < l.syncedSeq && l.segs[0].maxIndex <= index {
 		if err := l.fs.Remove(segmentName(l.segs[0].seq)); err != nil {
 			return removed, err
 		}
