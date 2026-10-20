@@ -85,13 +85,20 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
         <span className="muted text-xs tracking-wide uppercase">
           For {seconds} s <span className="normal-case">(at most {max})</span>
         </span>
-        <input type="range" min={1} max={max} value={Math.min(seconds, max)} onChange={(e) => setSeconds(Number(e.target.value))} className="accent-[var(--gold)]" />
+        <input
+          type="range"
+          min={1}
+          max={max}
+          value={Math.min(seconds, max)}
+          onChange={(e) => setSeconds(Number(e.target.value))}
+          className="accent-[var(--gold)]"
+        />
       </label>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           disabled={blocked}
-          onClick={() => send({ action, node, seconds: Math.min(seconds, max) })}
+          onClick={() => void send({ action, node, seconds: Math.min(seconds, max) })}
           className="rounded-lg bg-[var(--blood)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
         >
           {action === 'kill' ? 'Kill' : action === 'pause' ? 'Freeze' : action === 'isolate' ? 'Cut off' : 'Slow down'} {family(node)}
@@ -99,13 +106,18 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
         <button
           type="button"
           disabled={blocked || !snapshot.leader}
-          onClick={() => send({ action: 'step-down' })}
+          onClick={() => void send({ action: 'step-down' })}
           className="rounded-lg border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-40"
         >
           Ask the Don to step down
         </button>
         {admin && (
-          <button type="button" disabled={busy} onClick={heal} className="rounded-lg border border-[var(--gold)] px-4 py-2 text-sm disabled:opacity-40">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void heal()}
+            className="rounded-lg border border-[var(--gold)] px-4 py-2 text-sm disabled:opacity-40"
+          >
             Heal everything
           </button>
         )}
