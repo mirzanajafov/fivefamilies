@@ -41,17 +41,19 @@ func (d durableState) entry(index uint64) (raft.Entry, bool) {
 }
 
 type disk struct {
-	fs       *vfs.Mem
-	store    *storage.Disk
-	segBytes int64
-	salt     func() uint64
-	durable  durableState
-	written  []node.Write
-	queue    []node.Write
-	inflight []node.Write
-	syncing  bool
-	covers   int
-	slow     float64
+	fs         *vfs.Mem
+	store      *storage.Disk
+	segBytes   int64
+	salt       func() uint64
+	durable    durableState
+	written    []node.Write
+	queue      []node.Write
+	compacts   []raft.Snapshot
+	compacting []raft.Snapshot
+	inflight   []node.Write
+	syncing    bool
+	covers     int
+	slow       float64
 }
 
 func newDisk(segBytes int64, salt func() uint64) *disk {
@@ -105,7 +107,7 @@ func (d *disk) sync(chk *checker, idx int) error {
 func (d *disk) crash(rng *rand.Rand) {
 	d.fs.Crash(rng)
 	d.inflight = d.written
-	d.written, d.queue, d.syncing, d.covers, d.store = nil, nil, false, 0, nil
+	d.written, d.queue, d.compacts, d.compacting, d.syncing, d.covers, d.store = nil, nil, nil, nil, false, 0, nil
 }
 
 func applyWrite(st *durableState, w node.Write, each func()) bool {

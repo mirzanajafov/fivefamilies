@@ -448,8 +448,12 @@ func (s *Sim) dispatch(e event) {
 				return
 			}
 		}
-		sn.disk.syncing = false
 		sn.n.WriteDone(e.wseq)
+		compacting := sn.disk.compacting
+		sn.disk.compacting, sn.disk.syncing = nil, false
+		for _, c := range compacting {
+			s.compact(sn, c)
+		}
 		s.startSync(sn)
 	case evRequest:
 		if sn.n == nil {
@@ -558,11 +562,12 @@ func (s *Sim) write(sn *simNode, w node.Write) {
 
 func (s *Sim) startSync(sn *simNode) {
 	d := sn.disk
-	if len(d.queue) == 0 {
+	if len(d.queue) == 0 && len(d.compacts) == 0 {
 		return
 	}
 	batch := d.queue
 	d.queue = nil
+	d.compacting, d.compacts = d.compacts, nil
 	d.syncing = true
 	need := false
 	for _, w := range batch {
@@ -575,7 +580,11 @@ func (s *Sim) startSync(sn *simNode) {
 		lat = time.Duration(float64(s.sw.diskBase) * d.slow * (0.5 + s.rng.ExpFloat64()/2))
 	}
 	s.stats.Writes += len(batch)
-	s.schedule(event{kind: evWriteDone, node: sn.idx, gen: sn.incarnation, wseq: batch[len(batch)-1].Seq}, lat)
+	var last uint64
+	if len(batch) > 0 {
+		last = batch[len(batch)-1].Seq
+	}
+	s.schedule(event{kind: evWriteDone, node: sn.idx, gen: sn.incarnation, wseq: last}, lat)
 }
 
 func (s *Sim) buggify(from *simNode, m raft.Message) {
@@ -628,6 +637,10 @@ func (s *Sim) saveSnapshot(sn *simNode, snapshot raft.Snapshot) {
 }
 
 func (s *Sim) compacted(sn *simNode, snapshot raft.Snapshot) {
+	sn.disk.compacts = append(sn.disk.compacts, snapshot)
+}
+
+func (s *Sim) compact(sn *simNode, snapshot raft.Snapshot) {
 	n, err := sn.disk.store.Compact(snapshot.Index)
 	if err != nil {
 		s.chk.safetyf("node %d: %v", sn.id, err)
