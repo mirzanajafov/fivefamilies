@@ -8,7 +8,9 @@ export async function adminToken(): Promise<string | undefined> {
   return (await cookies()).get(ADMIN_COOKIE)?.value
 }
 
-export async function toController(path: string, init: RequestInit & { admin?: boolean; req?: Request } = {}): Promise<Response> {
+type ControllerInit = RequestInit & { admin?: boolean; req?: Request }
+
+export async function toController(path: string, init: ControllerInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   if (init.admin) {
     const token = await adminToken()
@@ -20,13 +22,14 @@ export async function toController(path: string, init: RequestInit & { admin?: b
   return fetch(`${CONTROLLER}${path}`, { ...rest, headers, cache: 'no-store' })
 }
 
-export async function relay(res: Response): Promise<Response> {
-  return new Response(await res.text(), {
-    status: res.status,
-    headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'application/json' },
-  })
-}
-
-export function unreachable(): Response {
-  return Response.json({ error: 'the controller is unreachable' }, { status: 502 })
+export async function forward(path: string, init: ControllerInit = {}): Promise<Response> {
+  try {
+    const res = await toController(path, init)
+    return new Response(await res.text(), {
+      status: res.status,
+      headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'application/json' },
+    })
+  } catch {
+    return Response.json({ error: 'the controller is unreachable' }, { status: 502 })
+  }
 }

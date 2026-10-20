@@ -1,11 +1,7 @@
-import { relay, toController, unreachable } from '@/lib/server'
+import { forward } from '@/lib/server'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request) {
-  try {
-    return await relay(await toController('/api/heal', { method: 'POST', admin: true, req }))
-  } catch {
-    return unreachable()
-  }
+  return forward('/api/heal', { method: 'POST', admin: true, req })
 }
