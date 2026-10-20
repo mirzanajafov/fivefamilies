@@ -15,13 +15,14 @@ import (
 )
 
 type RegistryOptions struct {
-	Election  string        `json:"election"`
-	Heartbeat string        `json:"heartbeat"`
-	TTL       time.Duration `json:"ttl_ns"`
-	Trials    int           `json:"trials"`
-	Seed      uint64        `json:"seed"`
-	Project   string        `json:"-"`
-	File      string        `json:"-"`
+	Election  string                           `json:"election"`
+	Heartbeat string                           `json:"heartbeat"`
+	TTL       time.Duration                    `json:"ttl_ns"`
+	Trials    int                              `json:"trials"`
+	Seed      uint64                           `json:"seed"`
+	Project   string                           `json:"-"`
+	File      string                           `json:"-"`
+	Log       func(format string, args ...any) `json:"-"`
 }
 
 type RegistryTrial struct {
@@ -121,7 +122,11 @@ func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, err
 	if err := d.Up(ctx, env); err != nil {
 		return res, err
 	}
-	defer d.Down(context.Background())
+	defer func() {
+		if err := d.Down(context.Background()); err != nil {
+			opts.Log("tearing down the cluster: %v", err)
+		}
+	}()
 	var addrs, inside []string
 	for i := 1; i <= d.Nodes; i++ {
 		addrs = append(addrs, fmt.Sprintf("127.0.0.1:315%d", i))
@@ -173,23 +178,30 @@ func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, err
 				tr.Held = time.Duration(rng.Int64N(int64(opts.TTL))) + opts.TTL
 				wait(ctx, time.Until(appeared.Add(tr.Held)))
 				killed := time.Now()
+				var instanceErr, leaderErr error
 				var wg sync.WaitGroup
-				wg.Go(func() { d.cmd(context.Background(), nil, "kill", name) })
+				wg.Go(func() { _, instanceErr = d.cmd(context.Background(), nil, "kill", name) })
 				if variant == "instance+leader" {
 					tr.Leader = leader
-					wg.Go(func() { d.Kill(context.Background(), leader) })
+					wg.Go(func() { leaderErr = d.Kill(context.Background(), leader) })
 				}
 				wg.Wait()
-				if gone, err := sg.await(ctx, tr.Instance, true, 10*opts.TTL+30*time.Second); err != nil {
+				if err := errors.Join(instanceErr, leaderErr); err != nil {
+					tr.Err = err.Error()
+				} else if gone, err := sg.await(ctx, tr.Instance, true, 10*opts.TTL+30*time.Second); err != nil {
 					tr.Err = err.Error()
 				} else {
 					tr.Gone = gone.Sub(killed)
 				}
 			}
 		}
-		d.cmd(context.Background(), nil, "rm", "-f", name)
+		if _, err := d.cmd(context.Background(), nil, "rm", "-f", name); err != nil && tr.Err == "" {
+			tr.Err = err.Error()
+		}
 		if tr.Leader > 0 {
-			d.Start(context.Background(), tr.Leader)
+			if err := d.Start(context.Background(), tr.Leader); err != nil && tr.Err == "" {
+				tr.Err = err.Error()
+			}
 		}
 		if runErr != nil {
 			break

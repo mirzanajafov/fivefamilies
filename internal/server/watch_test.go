@@ -33,7 +33,9 @@ func TestAWatchSurvivesItsNodeStopping(t *testing.T) {
 		if _, err := cl.Put(ctx, "/config/n", []byte(fmt.Sprint(i))); err != nil {
 			t.Fatal(err)
 		}
-		cl.Put(ctx, "/other", []byte(fmt.Sprint(i)))
+		if _, err := cl.Put(ctx, "/other", []byte(fmt.Sprint(i))); err != nil {
+			t.Fatal(err)
+		}
 	}
 	c.stop(1)
 	for i := 10; i < 20; i++ {

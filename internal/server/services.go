@@ -36,7 +36,9 @@ func fail(ctx context.Context, s *Server, err error) error {
 	switch {
 	case errors.As(err, &nl):
 		if nl.Leader != raft.None {
-			grpc.SetHeader(ctx, metadata.Pairs(HeaderLeader, strconv.FormatUint(uint64(nl.Leader), 10), HeaderLeaderAddr, s.cfg.Nodes[nl.Leader]))
+			if err := grpc.SetHeader(ctx, metadata.Pairs(HeaderLeader, strconv.FormatUint(uint64(nl.Leader), 10), HeaderLeaderAddr, s.cfg.Nodes[nl.Leader])); err != nil {
+				s.log.Warn("setting the leader hint", "err", err)
+			}
 		}
 		return status.Error(codes.Unavailable, "not the leader")
 	case errors.Is(err, node.ErrLost), errors.Is(err, node.ErrNotReady), errors.Is(err, raft.ErrNotLeader),

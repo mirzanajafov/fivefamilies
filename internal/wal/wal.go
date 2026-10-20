@@ -289,8 +289,7 @@ func truncateTail(fs vfs.FS, name string, size int64) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return f.Sync()
+	return errors.Join(f.Sync(), f.Close())
 }
 
 func (l *Log) current() *segment {
@@ -308,12 +307,10 @@ func (l *Log) create(seq uint64) error {
 	binary.LittleEndian.PutUint64(hdr[8:], seq)
 	binary.LittleEndian.PutUint64(hdr[16:], salt)
 	if _, err := f.Write(hdr); err != nil {
-		f.Close()
-		return err
+		return errors.Join(err, f.Close())
 	}
 	if err := l.fs.SyncDir(); err != nil {
-		f.Close()
-		return err
+		return errors.Join(err, f.Close())
 	}
 	l.f, l.size, l.salt = f, headerSize, salt
 	l.segs = append(l.segs, segment{seq: seq})

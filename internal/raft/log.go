@@ -1,6 +1,9 @@
 package raft
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 const entryOverhead = 24
 
@@ -118,10 +121,7 @@ func (l *raftLog) append(ents ...Entry) {
 	case after <= l.snapIndex || after > l.lastIndex()+1:
 		panic(fmt.Sprintf("raft: appending at %d outside the log's range [%d, %d]", after, l.firstIndex(), l.lastIndex()+1))
 	default:
-		keep := l.ents[:after-l.snapIndex-1]
-		fresh := make([]Entry, len(keep), len(keep)+len(ents))
-		copy(fresh, keep)
-		l.ents = append(fresh, ents...)
+		l.ents = slices.Concat(l.ents[:after-l.snapIndex-1], ents)
 		l.handed = min(l.handed, after-1)
 		l.stabled = min(l.stabled, after-1)
 	}

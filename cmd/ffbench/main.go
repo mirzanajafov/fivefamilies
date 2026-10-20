@@ -118,7 +118,6 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		defer conn.Close()
 		conn.Connect()
 		t.kv = append(t.kv, pb.NewKVClient(conn))
 		t.admin = append(t.admin, pb.NewAdminClient(conn))

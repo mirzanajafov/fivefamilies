@@ -3,6 +3,7 @@ package lab
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -20,24 +21,25 @@ import (
 )
 
 type Options struct {
-	Seed         uint64          `json:"seed"`
-	Duration     time.Duration   `json:"duration_ns"`
-	Settle       time.Duration   `json:"settle_ns"`
-	Workers      int             `json:"workers"`
-	Keys         int             `json:"keys"`
-	Read         client.ReadMode `json:"read"`
-	Faults       []FaultKind     `json:"faults"`
-	FaultMean    time.Duration   `json:"fault_mean_ns"`
-	Bug          string          `json:"bug,omitempty"`
-	Election     string          `json:"election"`
-	Heartbeat    string          `json:"heartbeat"`
-	Lease        string          `json:"lease"`
-	OpTimeout    time.Duration   `json:"op_timeout_ns"`
-	CheckTimeout time.Duration   `json:"check_timeout_ns"`
-	Out          string          `json:"-"`
-	Keep         bool            `json:"-"`
-	Project      string          `json:"-"`
-	File         string          `json:"-"`
+	Seed         uint64                           `json:"seed"`
+	Duration     time.Duration                    `json:"duration_ns"`
+	Settle       time.Duration                    `json:"settle_ns"`
+	Workers      int                              `json:"workers"`
+	Keys         int                              `json:"keys"`
+	Read         client.ReadMode                  `json:"read"`
+	Faults       []FaultKind                      `json:"faults"`
+	FaultMean    time.Duration                    `json:"fault_mean_ns"`
+	Bug          string                           `json:"bug,omitempty"`
+	Election     string                           `json:"election"`
+	Heartbeat    string                           `json:"heartbeat"`
+	Lease        string                           `json:"lease"`
+	OpTimeout    time.Duration                    `json:"op_timeout_ns"`
+	CheckTimeout time.Duration                    `json:"check_timeout_ns"`
+	Out          string                           `json:"-"`
+	Keep         bool                             `json:"-"`
+	Project      string                           `json:"-"`
+	File         string                           `json:"-"`
+	Log          func(format string, args ...any) `json:"-"`
 }
 
 type LeaderChange struct {
@@ -147,7 +149,11 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		return rep, err
 	}
 	if !opts.Keep {
-		defer d.Down(context.Background())
+		defer func() {
+			if err := d.Down(context.Background()); err != nil {
+				opts.Log("tearing down the cluster: %v", err)
+			}
+		}()
 	}
 	var addrs []string
 	for i := 1; i <= d.Nodes; i++ {
@@ -202,9 +208,13 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	for i := 1; i <= d.Nodes; i++ {
 		if msg, exited := d.Exited(context.Background(), i); exited {
 			rep.Problems = append(rep.Problems, msg)
-			d.Start(context.Background(), i)
+			if err := d.Start(context.Background(), i); err != nil {
+				rep.Problems = append(rep.Problems, fmt.Sprintf("restarting node %d: %v", i, err))
+			}
 		} else if !d.Running(context.Background(), i) {
-			d.Unpause(context.Background(), i)
+			if err := d.Unpause(context.Background(), i); err != nil {
+				rep.Problems = append(rep.Problems, fmt.Sprintf("unpausing node %d: %v", i, err))
+			}
 		}
 	}
 	rep.Faults = nem.log
@@ -273,8 +283,7 @@ func save(dir string, rep Report, w *workload) error {
 	defer w.mu.Unlock()
 	for _, op := range w.ops {
 		if err := enc.Encode(op); err != nil {
-			f.Close()
-			return err
+			return errors.Join(err, f.Close())
 		}
 	}
 	return f.Close()

@@ -296,7 +296,7 @@ func (s *Sim) result() Result {
 
 func (s *Sim) tracef(format string, args ...any) {
 	if s.opts.Trace != nil {
-		fmt.Fprintf(s.opts.Trace, "%12.6fs %s\n", s.now.Seconds(), fmt.Sprintf(format, args...))
+		_, _ = fmt.Fprintf(s.opts.Trace, "%12.6fs %s\n", s.now.Seconds(), fmt.Sprintf(format, args...))
 	}
 }
 

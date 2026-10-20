@@ -19,10 +19,10 @@ func (a *kvApp) Get(key string) kv.Result {
 	v, ok := a.store.Get(key)
 	return kv.Result{Rev: a.store.Rev(), Found: ok, KV: v, Ok: true}
 }
-func (a *kvApp) Snapshot() []byte                        { return a.store.Snapshot() }
-func (a *kvApp) Lease(id uint64) (kv.LeaseInfo, bool)    { return a.store.Lease(id) }
-func (a *kvApp) Leases() []kv.LeaseInfo                  { return a.store.Leases() }
-func (a *kvApp) Restore(index uint64, data []byte) error { return nil }
+func (a *kvApp) Snapshot() []byte                     { return a.store.Snapshot() }
+func (a *kvApp) Lease(id uint64) (kv.LeaseInfo, bool) { return a.store.Lease(id) }
+func (a *kvApp) Leases() []kv.LeaseInfo               { return a.store.Leases() }
+func (a *kvApp) Restore(uint64, []byte) error         { return nil }
 
 func newLeaseNode(t *testing.T, id raft.NodeID, voters []raft.NodeID) (*Node, *recEnv, *kvApp) {
 	t.Helper()
@@ -100,7 +100,7 @@ func TestAKeepAliveMovesTheDeadline(t *testing.T) {
 		t.Fatal("the lease outlived the keepalive's TTL")
 	}
 	var after kv.Result
-	n.KeepAlive(id, func(r kv.Result, err error) { after = r })
+	n.KeepAlive(id, func(r kv.Result, _ error) { after = r })
 	n.settle(env)
 	if after.Code != kv.ErrLeaseNotFound {
 		t.Fatalf("keepalive on an expired lease: %+v", after)

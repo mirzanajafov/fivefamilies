@@ -35,17 +35,22 @@ func main() {
 	}()
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, os.Interrupt)
+	code := 0
 	select {
 	case sig := <-sigs:
-		s.Stop(sig)
+		if err := s.Stop(sig); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		deadline := time.Now().Add(10 * time.Second)
 		for s.State().Running && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 		}
 	case err := <-s.Failed():
 		fmt.Fprintln(os.Stderr, err)
-		srv.Close()
-		os.Exit(1)
+		code = 1
 	}
-	srv.Close()
+	if err := srv.Close(); err != nil {
+		fmt.Fprintln(os.Stderr, "chaos endpoint:", err)
+	}
+	os.Exit(code)
 }

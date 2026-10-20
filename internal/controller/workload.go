@@ -237,7 +237,8 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 		return false
 	}
 	d.mu.Lock()
-	ops, initial, unknown, from := append(d.ops, finalOps...), d.initial, d.unknown || d.inherited, d.from
+	d.ops = append(d.ops, finalOps...)
+	ops, initial, unknown, from := d.ops, d.initial, d.unknown || d.inherited, d.from
 	d.ops, d.initial, d.inherited, d.unknown, d.from = nil, finals, d.unknown, false, time.Now()
 	d.index++
 	index := d.index

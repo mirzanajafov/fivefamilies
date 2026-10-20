@@ -61,6 +61,12 @@ func (o ExperimentOptions) sweep() SweepOptions {
 	return s
 }
 
+func (o ExperimentOptions) tearDown(name string, down func() error) {
+	if err := down(); err != nil {
+		o.Log("%s: tearing down: %v", name, err)
+	}
+}
+
 type curveSpec struct {
 	name  string
 	nodes int
@@ -83,12 +89,12 @@ func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []cu
 		b := &BenchCluster{Nodes: sp.nodes, Flags: sp.node, NodeCPUs: o.NodeCPUs}
 		o.Log("%s, round %d: starting %d nodes", sp.name, round, sp.nodes)
 		if err := b.Up(ctx); err != nil {
-			b.Down()
+			o.tearDown(sp.name, b.Down)
 			return curves, fmt.Errorf("%s: %w", sp.name, err)
 		}
 		c := b.Sweep(ctx, sp.name, o.sweep(), sp.gen)
 		c.Round = round
-		b.Down()
+		o.tearDown(sp.name, b.Down)
 		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
 		if err := SaveJSON(o.Out, file, curves); err != nil {
@@ -206,12 +212,12 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		b := &BenchCluster{Nodes: 5, Flags: flags, NodeCPUs: o.NodeCPUs}
 		o.Log("e1b: election %v, sync storage %v", v.t, v.sync)
 		if err := b.Up(ctx); err != nil {
-			b.Down()
+			o.tearDown("e1b", b.Down)
 			return rows, err
 		}
 		adm, err := dialAdmin(b.addrs())
 		if err != nil {
-			b.Down()
+			o.tearDown("e1b", b.Down)
 			return rows, err
 		}
 		lctx, stopLoad := context.WithCancel(ctx)
@@ -276,7 +282,7 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		stopLoad()
 		loadErr := <-loadDone
 		adm.close()
-		b.Down()
+		o.tearDown("e1b", b.Down)
 		if err := ctx.Err(); err != nil {
 			return rows, err
 		}

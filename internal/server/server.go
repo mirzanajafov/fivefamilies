@@ -244,7 +244,9 @@ func (s *Server) Run(ctx context.Context) {
 	close(s.stopped)
 	wg.Wait()
 	s.tr.Close()
-	s.wal.Close()
+	if err := s.wal.Close(); err != nil {
+		s.log.Error("closing the log", "err", err)
+	}
 }
 
 func (s *Server) die(err error) {

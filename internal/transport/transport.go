@@ -122,7 +122,9 @@ func (t *Transport) runPeer(ctx context.Context, p *peer) {
 			t.log.Debug("peer stream ended", "peer", p.id, "err", err)
 			t.sleep(ctx, &backoff)
 		}
-		stream.CloseAndRecv()
+		if _, err := stream.CloseAndRecv(); err != nil && ctx.Err() == nil {
+			t.log.Debug("closing the peer stream", "peer", p.id, "err", err)
+		}
 	}
 }
 

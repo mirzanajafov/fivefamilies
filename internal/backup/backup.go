@@ -63,7 +63,7 @@ func Decode(r io.Reader) (File, Summary, error) {
 	}
 	f.Data = make([]byte, size)
 	if _, err := io.ReadFull(r, f.Data); err != nil {
-		return File{}, Summary{}, fmt.Errorf("%w: short: %v", ErrCorrupt, err)
+		return File{}, Summary{}, fmt.Errorf("%w: short: %w", ErrCorrupt, err)
 	}
 	if extra, _ := r.Read(make([]byte, 1)); extra != 0 {
 		return File{}, Summary{}, fmt.Errorf("%w: trailing bytes", ErrCorrupt)
@@ -78,7 +78,7 @@ func Decode(r io.Reader) (File, Summary, error) {
 func Check(f File) (Summary, error) {
 	st, err := kv.Restore(f.Data, 0)
 	if err != nil {
-		return Summary{}, fmt.Errorf("%w: %v", ErrCorrupt, err)
+		return Summary{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
 	}
 	if st.Rev() != f.Rev || st.Hash() != f.Hash {
 		return Summary{}, fmt.Errorf("%w: the state is at revision %d with hash %x, the header says %d and %x", ErrCorrupt, st.Rev(), st.Hash(), f.Rev, f.Hash)
@@ -105,6 +105,6 @@ func Load(path string) (File, Summary, error) {
 	if err != nil {
 		return File{}, Summary{}, err
 	}
-	defer in.Close()
-	return Decode(in)
+	f, s, err := Decode(in)
+	return f, s, errors.Join(err, in.Close())
 }
