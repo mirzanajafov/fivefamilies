@@ -50,6 +50,8 @@ func fail(ctx context.Context, s *Server, err error) error {
 		return status.Error(codes.ResourceExhausted, "too many writes waiting to commit; retry later")
 	case errors.Is(err, raft.ErrBadConfChange):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, ErrStopped):
+		return status.Error(codes.Unavailable, err.Error())
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return status.FromContextError(err).Err()
 	}
@@ -184,7 +186,7 @@ func (a *adminService) Status(ctx context.Context, req *pb.StatusRequest) (*pb.S
 	}
 	hash, rev, err := a.s.StateHash(ctx)
 	if err != nil {
-		return nil, status.FromContextError(err).Err()
+		return nil, fail(ctx, a.s, err)
 	}
 	st.StateHash, st.HashIndex = hash, rev
 	return &st, nil
@@ -212,9 +214,9 @@ func (a *adminService) ChangeMembers(ctx context.Context, req *pb.ChangeMembersR
 
 func (a *adminService) Backup(_ *pb.BackupRequest, stream pb.Admin_BackupServer) error {
 	ctx := stream.Context()
-	f, err := a.s.Backup(ctx.Done())
+	f, err := a.s.Backup(ctx)
 	if err != nil {
-		return status.FromContextError(ctx.Err()).Err()
+		return fail(ctx, a.s, err)
 	}
 	const chunk = 1 << 20
 	for off := 0; off == 0 || off < len(f.Data); off += chunk {
@@ -252,6 +254,8 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 		case a.s.calls <- func() { a.s.paused.wait(a.s.quit) }:
 		case <-ctx.Done():
 			return nil, status.FromContextError(ctx.Err()).Err()
+		case <-a.s.stopped:
+			return nil, fail(ctx, a.s, ErrStopped)
 		}
 	case "isolate":
 		a.s.isolated.set(d)

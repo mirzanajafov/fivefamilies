@@ -146,13 +146,6 @@ func TestSeveralEventsBeforeOneReady(t *testing.T) {
 	}
 }
 
-type nopEnv struct{}
-
-func (nopEnv) Send(raft.Message)          {}
-func (nopEnv) Write(node.Write)           {}
-func (nopEnv) SaveSnapshot(raft.Snapshot) {}
-func (nopEnv) Compacted(raft.Snapshot)    {}
-
 func soloLeader(t *testing.T, id raft.NodeID, st raft.Restore, data ...string) *raft.Raft {
 	t.Helper()
 	r, err := raft.New(raft.Config{
@@ -376,8 +369,6 @@ func TestCheckerCatchesACommitThatIsNotDurableOnAQuorum(t *testing.T) {
 		t.Fatal("entries committed with nothing on disk went unnoticed")
 	}
 }
-
-var _ node.Env = nopEnv{}
 
 func TestHistoryMarksUnfinishedWritesIndeterminateAndDropsUnfinishedReads(t *testing.T) {
 	s := &Sim{history: []opRecord{

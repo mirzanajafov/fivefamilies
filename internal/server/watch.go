@@ -44,12 +44,12 @@ func (w *watchService) Watch(req *pb.WatchRequest, stream pb.Watch_WatchServer) 
 	var id uint64
 	var err error
 	stale := false
-	if lerr := w.s.inLoop(ctx, func() {
+	if lerr := w.s.onLoop(ctx, func() {
 		if stale = w.s.leaderless(); !stale {
 			id, err = w.s.sm.Hub.Watch(req.GetKey(), req.GetPrefix(), req.GetStartRev(), send)
 		}
 	}); lerr != nil {
-		return status.FromContextError(lerr).Err()
+		return fail(ctx, w.s, lerr)
 	}
 	if stale {
 		return status.Error(codes.Unavailable, "this node has no leader; watch another node")

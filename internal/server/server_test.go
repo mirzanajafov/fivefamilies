@@ -91,7 +91,6 @@ func (c *testCluster) startOn(id raft.NodeID, ln net.Listener) {
 		HeartbeatTick: 4,
 		ElectionTick:  30,
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Fatal:         func(err error) { c.t.Errorf("node %d: %v", id, err) },
 	}
 	if c.tweak != nil {
 		c.tweak(&cfg)
@@ -110,7 +109,9 @@ func (c *testCluster) startOn(id raft.NodeID, ln net.Listener) {
 		}
 	}()
 	go func() {
-		srv.Run(ctx)
+		if err := srv.Run(ctx); err != nil {
+			c.t.Errorf("node %d: %v", id, err)
+		}
 		close(r.done)
 	}()
 	c.running[id] = r
@@ -365,5 +366,34 @@ func TestARestartedClusterKeepsItsData(t *testing.T) {
 	}
 	if st := c.status(c.leader(time.Second)); st.GetSnapshotIndex() == 0 {
 		t.Fatal("no snapshot was taken")
+	}
+}
+
+func TestAFatalErrorEndsRunAndCallsStopWaitingForTheLoop(t *testing.T) {
+	srv, err := New(Config{ID: 1, Nodes: map[raft.NodeID]string{1: "127.0.0.1:1"}, DataDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ran := make(chan error, 1)
+	go func() { ran <- srv.Run(context.Background()) }()
+	broken := errors.New("the disk is gone")
+	if err := srv.onLoop(context.Background(), func() { srv.die(broken) }); err != nil && !errors.Is(err, ErrStopped) {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-ran:
+		if !errors.Is(err, broken) {
+			t.Fatalf("Run returned %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run went on after a fatal error")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if _, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: "k"}); !errors.Is(err, ErrStopped) {
+		t.Fatalf("a write to a stopped node: %v", err)
+	}
+	if _, _, err := srv.StateHash(ctx); !errors.Is(err, ErrStopped) {
+		t.Fatalf("a hash from a stopped node: %v", err)
 	}
 }

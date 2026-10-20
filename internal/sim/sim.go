@@ -154,10 +154,10 @@ type nodeEnv struct {
 	sn *simNode
 }
 
-func (e nodeEnv) Send(m raft.Message)          { e.s.send(e.sn, m) }
-func (e nodeEnv) Write(w node.Write)           { e.s.write(e.sn, w) }
-func (e nodeEnv) SaveSnapshot(s raft.Snapshot) { e.s.saveSnapshot(e.sn, s) }
-func (e nodeEnv) Compacted(s raft.Snapshot)    { e.s.compacted(e.sn, s) }
+func (e nodeEnv) Send(m raft.Message)                { e.s.send(e.sn, m) }
+func (e nodeEnv) Write(w node.Write)                 { e.s.write(e.sn, w) }
+func (e nodeEnv) SaveSnapshot(s raft.Snapshot) error { return e.sn.disk.store.SaveSnapshot(s) }
+func (e nodeEnv) Compacted(s raft.Snapshot)          { e.s.compacted(e.sn, s) }
 
 type Sim struct {
 	opts     Options
@@ -368,8 +368,7 @@ func (s *Sim) boot(sn *simNode) {
 	}
 	sn.n = node.New(r, nodeEnv{s: s, sn: sn}, sn.sm, node.Config{SnapshotEvery: s.sw.snapEvery, Retain: s.sw.retain, Tick: s.opts.Tick})
 	s.chk.restarted(sn.idx)
-	sn.n.Process()
-	s.observe(sn)
+	s.process(sn)
 	s.scheduleTick(sn, time.Duration(s.rng.Int64N(int64(s.opts.Tick))))
 }
 
@@ -448,7 +447,10 @@ func (s *Sim) dispatch(e event) {
 				return
 			}
 		}
-		sn.n.WriteDone(e.wseq)
+		if err := sn.n.WriteDone(e.wseq); err != nil {
+			s.failed(sn, err)
+			return
+		}
 		compacting := sn.disk.compacting
 		sn.disk.compacting, sn.disk.syncing = nil, false
 		for _, c := range compacting {
@@ -478,8 +480,7 @@ func (s *Sim) dispatch(e event) {
 		s.deferProcess(sn)
 		return
 	}
-	sn.n.Process()
-	s.observe(sn)
+	s.process(sn)
 }
 
 func (s *Sim) deferProcess(sn *simNode) {
@@ -493,9 +494,21 @@ func (s *Sim) deferProcess(sn *simNode) {
 		if sn.n == nil || sn.paused || gen != sn.incarnation {
 			return
 		}
-		sn.n.Process()
-		s.observe(sn)
+		s.process(sn)
 	})
+}
+
+func (s *Sim) process(sn *simNode) {
+	if err := sn.n.Process(); err != nil {
+		s.failed(sn, err)
+		return
+	}
+	s.observe(sn)
+}
+
+func (s *Sim) failed(sn *simNode, err error) {
+	s.chk.safetyf("node %d failed: %v", sn.id, err)
+	s.crash(sn)
 }
 
 func (s *Sim) observe(sn *simNode) {
@@ -624,15 +637,8 @@ func (s *Sim) buggify(from *simNode, m raft.Message) {
 			}
 			s.tracef("buggify: node %d campaigns alongside %d", other.id, from.id)
 			other.n.Raft().Campaign()
-			other.n.Process()
-			s.observe(other)
+			s.process(other)
 		})
-	}
-}
-
-func (s *Sim) saveSnapshot(sn *simNode, snapshot raft.Snapshot) {
-	if err := sn.disk.store.SaveSnapshot(snapshot); err != nil {
-		s.chk.safetyf("node %d: %v", sn.id, err)
 	}
 }
 
@@ -679,8 +685,7 @@ func (s *Sim) resume(sn *simNode) {
 	sn.paused = false
 	if missed := int64((s.now - sn.pausedAt) / s.tickInterval(sn)); missed > 0 && sn.n != nil && !s.opts.NoCatchUp {
 		sn.n.Advance(time.Duration(missed) * s.opts.Tick)
-		sn.n.Process()
-		s.observe(sn)
+		s.process(sn)
 	}
 	backlog := sn.backlog
 	sn.backlog = nil
@@ -717,8 +722,7 @@ func (s *Sim) proposeOnce() {
 	}
 	s.stats.Proposals++
 	sn.n.Submit(kv.Command{Op: kv.OpPut, Key: "load", Value: []byte(fmt.Sprint(s.stats.Proposals))}, nil)
-	sn.n.Process()
-	s.observe(sn)
+	s.process(sn)
 }
 
 func (s *Sim) heal() {

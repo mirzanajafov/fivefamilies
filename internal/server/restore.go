@@ -1,7 +1,7 @@
 package server
 
 import (
-	"fmt"
+	"context"
 	"os"
 	"slices"
 
@@ -31,20 +31,12 @@ func Restore(dataDir string, voters []raft.NodeID, f backup.File) (bool, error) 
 	return true, nil
 }
 
-func (s *Server) Backup(stop <-chan struct{}) (backup.File, error) {
-	type taken struct{ f backup.File }
-	ch := make(chan taken, 1)
-	select {
-	case s.calls <- func() {
-		ch <- taken{backup.File{Rev: s.sm.Store.Rev(), Hash: s.sm.Store.Hash(), Data: s.sm.Store.Snapshot()}}
-	}:
-	case <-stop:
-		return backup.File{}, fmt.Errorf("server: stopping")
+func (s *Server) Backup(ctx context.Context) (backup.File, error) {
+	var f backup.File
+	if err := s.onLoop(ctx, func() {
+		f = backup.File{Rev: s.sm.Store.Rev(), Hash: s.sm.Store.Hash(), Data: s.sm.Store.Snapshot()}
+	}); err != nil {
+		return backup.File{}, err
 	}
-	select {
-	case t := <-ch:
-		return t.f, nil
-	case <-stop:
-		return backup.File{}, fmt.Errorf("server: stopping")
-	}
+	return f, nil
 }
