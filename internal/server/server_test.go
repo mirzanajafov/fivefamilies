@@ -551,7 +551,7 @@ func silentNode(t *testing.T) string {
 			conn, err := ln.Accept()
 			if err != nil {
 				for _, c := range held {
-					c.Close()
+					_ = c.Close()
 				}
 				return
 			}
@@ -559,7 +559,9 @@ func silentNode(t *testing.T) string {
 		}
 	}()
 	t.Cleanup(func() {
-		ln.Close()
+		if err := ln.Close(); err != nil {
+			t.Error(err)
+		}
 		<-done
 	})
 	return ln.Addr().String()
