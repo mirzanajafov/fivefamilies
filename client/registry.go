@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -24,8 +25,8 @@ const (
 )
 
 func checkName(kind, name string) error {
-	if name == "" || strings.Contains(name, "/") || len(name) > maxNameLen {
-		return fmt.Errorf("%w: %s name %q must be non-empty, without a slash and at most %d bytes", ErrInvalid, kind, name, maxNameLen)
+	if name == "" || strings.Contains(name, "/") || len(name) > maxNameLen || !utf8.ValidString(name) {
+		return fmt.Errorf("%w: %s name %q must be non-empty UTF-8, without a slash and at most %d bytes", ErrInvalid, kind, name, maxNameLen)
 	}
 	return nil
 }

@@ -86,6 +86,9 @@ func TestANameLongerThanTheLimitIsRefusedBeforeAnythingIsSent(t *testing.T) {
 	if _, err := c.RegisterOnce(ctx, "dimensions", Instance{Name: long, Addr: "a:1"}, time.Second); !errors.Is(err, ErrInvalid) {
 		t.Errorf("registering a %d-byte instance: %v, want ErrInvalid", len(long), err)
 	}
+	if _, err := c.RegisterOnce(ctx, "dimensions", Instance{Name: "e-\xff", Addr: "a:1"}, time.Second); !errors.Is(err, ErrInvalid) {
+		t.Errorf("registering a name that isn't UTF-8: %v, want ErrInvalid", err)
+	}
 	done, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, _, err := c.Lookup(done, strings.Repeat("n", maxNameLen), 0, time.Second); errors.Is(err, ErrInvalid) {

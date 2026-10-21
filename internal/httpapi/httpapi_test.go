@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -107,7 +108,7 @@ func TestTheHandlersAnswerEveryExampleOfTheContract(t *testing.T) {
 		"a service with no instances":        {"Lookup(billing, 0, 30s)", fake{instances: []client.Instance{}, index: 12}},
 		"the cluster cannot answer in time":  {"Lookup(dimensions, 64, 30s)", fake{err: context.DeadlineExceeded}},
 		"register an instance":               {"RegisterOnce(dimensions, e-7=dim-e:8080 (version=v1), 10s)", fake{lease: client.Lease{ID: 63, TTL: 10 * time.Second}}},
-		"register under a name with a slash": {"RegisterOnce(dimensions, e/7=dim-e:8080 (version=v1), 10s)", fake{err: fmt.Errorf("%w: instance name %q must be non-empty, without a slash and at most 128 bytes", client.ErrInvalid, "e/7")}},
+		"register under a name with a slash": {"RegisterOnce(dimensions, e/7=dim-e:8080 (version=v1), 10s)", fake{err: fmt.Errorf("%w: instance name %q must be non-empty UTF-8, without a slash and at most 128 bytes", client.ErrInvalid, "e/7")}},
 		"renew a lease":                      {"KeepAliveOnce(63)", fake{ttl: 10 * time.Second}},
 		"renew a lease that is gone":         {"KeepAliveOnce(63)", fake{err: client.ErrLeaseNotFound}},
 		"deregister":                         {"Revoke(63)", fake{}},
@@ -333,7 +334,11 @@ func TestStoppingEndsBlockingQueriesAtOnceAndLetsARegistrationFinish(t *testing.
 	}
 	reg := &stoppable{entered: make(chan struct{}, 2), ended: make(chan error, 1)}
 	srv := NewServer(reg, nil)
-	go func() { _ = srv.Serve(ln) }()
+	go func() {
+		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			t.Error(err)
+		}
+	}()
 	type answer struct {
 		method string
 		code   int
