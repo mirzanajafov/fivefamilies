@@ -144,6 +144,9 @@ func (c *Client) Lookup(ctx context.Context, service string, index uint64, wait 
 	if err != nil {
 		return nil, 0, err
 	}
+	if deadline, ok := ctx.Deadline(); ok {
+		wait = min(wait, time.Until(deadline)-c.opts.AttemptTimeout)
+	}
 	if index > 0 {
 		if err := c.waitChange(ctx, prefix, index, wait); err != nil {
 			return nil, 0, err
@@ -242,7 +245,7 @@ func (c *Client) Register(ctx context.Context, service string, inst Instance, tt
 				}
 				select {
 				case <-rctx.Done():
-				case <-time.After(ttl / 3):
+				case <-time.After(l.TTL / 3):
 				}
 			}
 		}

@@ -250,7 +250,8 @@ func TestLookupAnswersOnceItsServiceChanges(t *testing.T) {
 	}
 	registered := time.Now()
 	one := client.Instance{Name: "one", Addr: "10.0.0.1:80", Meta: map[string]string{"version": "v2"}}
-	if _, err := cl.RegisterOnce(ctx, "api", one, time.Minute); err != nil {
+	lease, err := cl.RegisterOnce(ctx, "api", one, time.Minute)
+	if err != nil {
 		t.Fatal(err)
 	}
 	a := <-answers
@@ -270,13 +271,38 @@ func TestLookupAnswersOnceItsServiceChanges(t *testing.T) {
 		t.Fatalf("values that aren't registrations: %v at %d, %v", list, index, err)
 	}
 
+	short, cancelShort := context.WithTimeout(ctx, 2500*time.Millisecond)
+	defer cancelShort()
 	start := time.Now()
+	if list, _, err := cl.Lookup(short, "api", index, time.Minute); err != nil || fmt.Sprint(list) != "[one=10.0.0.1:80 (version=v2)]" {
+		t.Fatalf("a wait longer than its context: %v, %v", list, err)
+	}
+	if waited := time.Since(start); waited > 2500*time.Millisecond {
+		t.Fatalf("a wait longer than its context answered after %v", waited)
+	}
+
+	start = time.Now()
 	same, after, err := cl.Lookup(ctx, "api", index, 300*time.Millisecond)
 	if err != nil || fmt.Sprint(same) != fmt.Sprint(list) || after < index {
 		t.Fatalf("with nothing changed: %v at %d, %v", same, after, err)
 	}
 	if waited := time.Since(start); waited < 300*time.Millisecond {
 		t.Fatalf("answered after %v with nothing changed", waited)
+	}
+
+	gone := make(chan answer, 1)
+	go func() {
+		l, i, err := cl.Lookup(ctx, "api", after, time.Minute)
+		gone <- answer{l, i, err, time.Now()}
+	}()
+	if err := cl.Revoke(ctx, lease.ID); err != nil {
+		t.Fatal(err)
+	}
+	if a := <-gone; a.err != nil || len(a.list) != 0 {
+		t.Fatalf("after the revoke: %v, %v", a.list, a.err)
+	}
+	if _, err := cl.RegisterOnce(ctx, "api", instance("two", ""), time.Minute); err == nil {
+		t.Fatal("an instance without an address was registered")
 	}
 }
 
