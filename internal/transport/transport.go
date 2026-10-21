@@ -60,7 +60,7 @@ func New(id raft.NodeID, addrs map[raft.NodeID]string, deliver func(raft.Message
 		}
 		conn, err := grpc.NewClient(addr,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: 2 * time.Second, Timeout: time.Second, PermitWithoutStream: true}),
+			grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: 10 * time.Second, Timeout: time.Second, PermitWithoutStream: true}),
 		)
 		if err != nil {
 			return nil, err
