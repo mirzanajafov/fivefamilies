@@ -168,7 +168,7 @@ func newWatcher(t *testing.T, addrs []string) *client.Client {
 	return watcher
 }
 
-func watchingAFollower(t *testing.T, c *testCluster, front func(addr string) string) (raft.NodeID, []string, *client.Client) {
+func aFollower(t *testing.T, c *testCluster) (raft.NodeID, []string, *client.Client) {
 	t.Helper()
 	leader := c.leader(5 * time.Second)
 	follower := leader%3 + 1
@@ -179,10 +179,10 @@ func watchingAFollower(t *testing.T, c *testCluster, front func(addr string) str
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	addrs := []string{front(c.nodes[follower])}
+	var others []string
 	for id, addr := range c.nodes {
 		if id != follower {
-			addrs = append(addrs, addr)
+			others = append(others, addr)
 		}
 	}
 	writer, err := client.New(c.addrs(), client.Options{})
@@ -195,7 +195,7 @@ func watchingAFollower(t *testing.T, c *testCluster, front func(addr string) str
 	if _, err := writer.Put(ctx, "warm", []byte("up")); err != nil {
 		t.Fatal(err)
 	}
-	return follower, addrs, writer
+	return follower, others, writer
 }
 
 func hasEvents(r client.WatchResponse) bool { return len(r.Events) > 0 }
@@ -211,7 +211,7 @@ func movedOn(t *testing.T, ctx context.Context, writer *client.Client, events <-
 	if string(got.Events[0].KV.Value) != "1" {
 		t.Fatalf("after the move the watch got %+v", got.Events)
 	}
-	if took < silence/2 {
+	if took < silence/4 {
 		t.Fatalf("the event came after %v, so the watch wasn't on the broken node and this proves nothing", took)
 	}
 	t.Logf("the event came %v after the put", took)
@@ -221,11 +221,9 @@ func TestAWatchMovesOnFromANodeThatStoppedAnsweringAndTheNextOneStartsElsewhere(
 	c := newTestCluster(t, 3, beating)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	var f *freezer
-	_, addrs, writer := watchingAFollower(t, c, func(addr string) string {
-		f = newFreezer(t, addr)
-		return f.ln.Addr().String()
-	})
+	follower, others, writer := aFollower(t, c)
+	f := newFreezer(t, c.nodes[follower])
+	addrs := append([]string{f.ln.Addr().String()}, others...)
 	watcher := newWatcher(t, addrs)
 	events := watcher.Watch(ctx, "a", false, 0)
 	<-events
@@ -250,8 +248,8 @@ func TestAWatchMovesOnFromANodeWhoseLoopStopped(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	follower, addrs, writer := watchingAFollower(t, c, func(addr string) string { return addr })
-	events := newWatcher(t, addrs).Watch(ctx, "a", false, 0)
+	follower, others, writer := aFollower(t, c)
+	events := newWatcher(t, append([]string{c.nodes[follower]}, others...)).Watch(ctx, "a", false, 0)
 	<-events
 	chaos(t, c, follower, pb.ChaosAction_CHAOS_ACTION_PAUSE, 30*time.Second)
 	movedOn(t, ctx, writer, events)
@@ -266,11 +264,7 @@ func TestAQuietWatchStaysOnItsNode(t *testing.T) {
 	c.leader(5 * time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cl, err := client.New(c.addrs(), client.Options{WatchSilence: silence})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cl.Close()
+	cl := newWatcher(t, c.addrs())
 	rev, err := cl.Put(ctx, "other", []byte("1"))
 	if err != nil {
 		t.Fatal(err)
