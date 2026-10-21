@@ -211,35 +211,43 @@ func TestARegistrationOutlivesALeaderAndComesBackAfterItsLeaseIsLost(t *testing.
 	waitRenewals(t, reg, 1)
 }
 
-func TestLookupAnswersOnceItsServiceChanges(t *testing.T) {
+type lookupAnswer struct {
+	list  []client.Instance
+	index uint64
+	err   error
+	at    time.Time
+}
+
+func lookupLater(ctx context.Context, cl *client.Client, index uint64) <-chan lookupAnswer {
+	out := make(chan lookupAnswer, 1)
+	go func() {
+		l, i, err := cl.Lookup(ctx, "api", index, time.Minute)
+		out <- lookupAnswer{l, i, err, time.Now()}
+	}()
+	return out
+}
+
+func registryClient(t *testing.T) (*client.Client, context.Context) {
+	t.Helper()
 	c := newTestCluster(t, 3, nil)
 	c.leader(5 * time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	t.Cleanup(cancel)
 	cl, err := client.New(c.addrs(), client.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
-	if _, _, err := cl.Lookup(ctx, "a/b", 0, time.Second); err == nil {
-		t.Fatal("a service name with a slash was accepted")
-	}
+	t.Cleanup(func() { cl.Close() })
+	return cl, ctx
+}
+
+func TestALookupAnswersOnceItsOwnServiceGainsOrLosesAnInstance(t *testing.T) {
+	cl, ctx := registryClient(t)
 	list, index, err := cl.Lookup(ctx, "api", 0, time.Minute)
 	if err != nil || len(list) != 0 || index == 0 {
 		t.Fatalf("first lookup: %v at %d, %v", list, index, err)
 	}
-
-	type answer struct {
-		list  []client.Instance
-		index uint64
-		err   error
-		at    time.Time
-	}
-	answers := make(chan answer, 1)
-	go func() {
-		l, i, err := cl.Lookup(ctx, "api", index, time.Minute)
-		answers <- answer{l, i, err, time.Now()}
-	}()
+	answers := lookupLater(ctx, cl, index)
 	if _, err := cl.RegisterOnce(ctx, "web", instance("w", "10.0.0.3:80"), time.Minute); err != nil {
 		t.Fatal(err)
 	}
@@ -248,40 +256,47 @@ func TestLookupAnswersOnceItsServiceChanges(t *testing.T) {
 		t.Fatalf("answered for a change to another service: %v", a.list)
 	case <-time.After(300 * time.Millisecond):
 	}
-	registered := time.Now()
+	start := time.Now()
 	one := client.Instance{Name: "one", Addr: "10.0.0.1:80", Meta: map[string]string{"version": "v2"}}
 	lease, err := cl.RegisterOnce(ctx, "api", one, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := <-answers
+	var a lookupAnswer
+	select {
+	case a = <-answers:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no answer within 2 s of the registration")
+	}
 	if a.err != nil || fmt.Sprint(a.list) != "[one=10.0.0.1:80 (version=v2)]" || a.index <= index {
 		t.Fatalf("after the registration: %v at %d, %v", a.list, a.index, a.err)
 	}
-	t.Logf("a blocked lookup answered %v after the registration", a.at.Sub(registered))
+	t.Logf("a blocked lookup answered %v after the registration started (a lease, a put and the wake)", a.at.Sub(start))
 
-	if _, err := cl.Put(ctx, client.RegistryPrefix+"api/raw", []byte("10.0.0.9:80")); err != nil {
+	gone := lookupLater(ctx, cl, a.index)
+	if err := cl.Revoke(ctx, lease.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cl.Put(ctx, client.RegistryPrefix+"api/x/y", []byte(`{"addr":"10.0.0.8:80"}`)); err != nil {
+	select {
+	case a = <-gone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no answer within 2 s of the revoke")
+	}
+	if a.err != nil || len(a.list) != 0 {
+		t.Fatalf("after the revoke: %v, %v", a.list, a.err)
+	}
+}
+
+func TestALookupWithNothingToReportWaitsOutItsWaitOrItsContext(t *testing.T) {
+	cl, ctx := registryClient(t)
+	if _, err := cl.RegisterOnce(ctx, "api", instance("one", "10.0.0.1:80"), time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	list, index, err = cl.Lookup(ctx, "api", a.index, time.Minute)
-	if err != nil || fmt.Sprint(list) != "[one=10.0.0.1:80 (version=v2)]" || index <= a.index {
-		t.Fatalf("values that aren't registrations: %v at %d, %v", list, index, err)
+	list, index, err := cl.Lookup(ctx, "api", 0, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	short, cancelShort := context.WithTimeout(ctx, 2500*time.Millisecond)
-	defer cancelShort()
 	start := time.Now()
-	if list, _, err := cl.Lookup(short, "api", index, time.Minute); err != nil || fmt.Sprint(list) != "[one=10.0.0.1:80 (version=v2)]" {
-		t.Fatalf("a wait longer than its context: %v, %v", list, err)
-	}
-	if waited := time.Since(start); waited > 2500*time.Millisecond {
-		t.Fatalf("a wait longer than its context answered after %v", waited)
-	}
-
-	start = time.Now()
 	same, after, err := cl.Lookup(ctx, "api", index, 300*time.Millisecond)
 	if err != nil || fmt.Sprint(same) != fmt.Sprint(list) || after < index {
 		t.Fatalf("with nothing changed: %v at %d, %v", same, after, err)
@@ -289,20 +304,40 @@ func TestLookupAnswersOnceItsServiceChanges(t *testing.T) {
 	if waited := time.Since(start); waited < 300*time.Millisecond {
 		t.Fatalf("answered after %v with nothing changed", waited)
 	}
-
-	gone := make(chan answer, 1)
-	go func() {
-		l, i, err := cl.Lookup(ctx, "api", after, time.Minute)
-		gone <- answer{l, i, err, time.Now()}
-	}()
-	if err := cl.Revoke(ctx, lease.ID); err != nil {
-		t.Fatal(err)
+	for _, room := range []time.Duration{time.Second, 2500 * time.Millisecond} {
+		short, cancel := context.WithTimeout(ctx, room)
+		start := time.Now()
+		got, _, err := cl.Lookup(short, "api", after, time.Minute)
+		waited := time.Since(start)
+		cancel()
+		if err != nil || fmt.Sprint(got) != fmt.Sprint(list) {
+			t.Fatalf("a wait longer than a %v context: %v, %v", room, got, err)
+		}
+		if waited > room || waited < room/4 {
+			t.Fatalf("a wait longer than a %v context answered after %v", room, waited)
+		}
 	}
-	if a := <-gone; a.err != nil || len(a.list) != 0 {
-		t.Fatalf("after the revoke: %v, %v", a.list, a.err)
+}
+
+func TestOnlyRegistrationsAreListed(t *testing.T) {
+	cl, ctx := registryClient(t)
+	if _, _, err := cl.Lookup(ctx, "a/b", 0, time.Second); err == nil {
+		t.Fatal("a service name with a slash was accepted")
 	}
 	if _, err := cl.RegisterOnce(ctx, "api", instance("two", ""), time.Minute); err == nil {
 		t.Fatal("an instance without an address was registered")
+	}
+	if _, err := cl.RegisterOnce(ctx, "api", instance("one", "10.0.0.1:80"), time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cl.Put(ctx, client.RegistryPrefix+"api/raw", []byte("10.0.0.9:80")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cl.Put(ctx, client.RegistryPrefix+"api/x/y", []byte(`{"addr":"10.0.0.8:80"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if list, _, err := cl.Lookup(ctx, "api", 0, 0); err != nil || fmt.Sprint(list) != "[one=10.0.0.1:80]" {
+		t.Fatalf("values that aren't registrations: %v, %v", list, err)
 	}
 }
 

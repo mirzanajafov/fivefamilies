@@ -145,7 +145,8 @@ func (c *Client) Lookup(ctx context.Context, service string, index uint64, wait 
 		return nil, 0, err
 	}
 	if deadline, ok := ctx.Deadline(); ok {
-		wait = min(wait, time.Until(deadline)-c.opts.AttemptTimeout)
+		room := time.Until(deadline)
+		wait = min(wait, room-min(c.opts.AttemptTimeout, room/2))
 	}
 	if index > 0 {
 		if err := c.waitChange(ctx, prefix, index, wait); err != nil {
