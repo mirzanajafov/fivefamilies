@@ -24,6 +24,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/check"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/server"
+	"github.com/mirzanajafov/fivefamilies/internal/transport"
 )
 
 type fakeSupervisor struct {
@@ -79,7 +80,7 @@ func newHarness(t *testing.T, n int, tweak func(*Config)) *harness {
 		if err != nil {
 			t.Fatal(err)
 		}
-		g := grpc.NewServer()
+		g := grpc.NewServer(transport.ServerOptions()...)
 		srv.Register(g)
 		go func() {
 			if err := g.Serve(ln); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
