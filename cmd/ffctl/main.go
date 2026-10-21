@@ -99,7 +99,7 @@ func main() {
 		}
 		rctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		reg, err := c.Register(ctx, args[1], args[2], args[3], ttl)
+		reg, err := c.Register(ctx, args[1], client.Instance{Name: args[2], Addr: args[3]}, ttl)
 		check(err)
 		fmt.Println("registered with lease", reg.Lease())
 		<-rctx.Done()

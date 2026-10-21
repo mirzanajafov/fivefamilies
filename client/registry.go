@@ -2,8 +2,10 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"maps"
 	"slices"
 	"strings"
@@ -79,28 +81,90 @@ func send[T any](ctx context.Context, out chan<- T, v T) bool {
 type Instance struct {
 	Name string
 	Addr string
+	Meta map[string]string
+}
+
+type record struct {
+	Addr string            `json:"addr"`
+	Meta map[string]string `json:"meta,omitempty"`
+}
+
+func servicePrefix(base, service string) (string, error) {
+	if err := checkName("service", service); err != nil {
+		return "", err
+	}
+	return base + service + "/", nil
+}
+
+func (i Instance) String() string {
+	s := i.Name + "=" + i.Addr
+	if len(i.Meta) == 0 {
+		return s
+	}
+	meta := make([]string, 0, len(i.Meta))
+	for _, k := range slices.Sorted(maps.Keys(i.Meta)) {
+		meta = append(meta, k+"="+i.Meta[k])
+	}
+	return s + " (" + strings.Join(meta, ", ") + ")"
+}
+
+func instances(prefix string, kvs iter.Seq[KeyValue]) []Instance {
+	list := []Instance{}
+	for kv := range kvs {
+		name := strings.TrimPrefix(kv.Key, prefix)
+		var r record
+		if checkName("instance", name) != nil || json.Unmarshal(kv.Value, &r) != nil || r.Addr == "" {
+			continue
+		}
+		list = append(list, Instance{Name: name, Addr: r.Addr, Meta: r.Meta})
+	}
+	slices.SortFunc(list, func(a, b Instance) int { return strings.Compare(a.Name, b.Name) })
+	return list
 }
 
 func (c *Client) Discover(ctx context.Context, service string) (<-chan []Instance, error) {
-	if err := checkName("service", service); err != nil {
+	prefix, err := servicePrefix(RegistryPrefix, service)
+	if err != nil {
 		return nil, err
 	}
-	prefix := RegistryPrefix + service + "/"
 	out := make(chan []Instance, 1)
 	go func() {
 		defer close(out)
 		for view := range c.Mirror(ctx, prefix) {
-			list := make([]Instance, 0, len(view))
-			for k, kv := range view {
-				list = append(list, Instance{Name: strings.TrimPrefix(k, prefix), Addr: string(kv.Value)})
-			}
-			slices.SortFunc(list, func(a, b Instance) int { return strings.Compare(a.Name, b.Name) })
-			if !send(ctx, out, list) {
+			if !send(ctx, out, instances(prefix, maps.Values(view))) {
 				return
 			}
 		}
 	}()
 	return out, nil
+}
+
+func (c *Client) Lookup(ctx context.Context, service string, index uint64, wait time.Duration) ([]Instance, uint64, error) {
+	prefix, err := servicePrefix(RegistryPrefix, service)
+	if err != nil {
+		return nil, 0, err
+	}
+	if index > 0 {
+		if err := c.waitChange(ctx, prefix, index, wait); err != nil {
+			return nil, 0, err
+		}
+	}
+	kvs, rev, err := c.RangeRev(ctx, prefix, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	return instances(prefix, slices.Values(kvs)), rev, nil
+}
+
+func (c *Client) waitChange(ctx context.Context, prefix string, index uint64, wait time.Duration) error {
+	wctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	for r := range c.Watch(wctx, prefix, true, index+1) {
+		if len(r.Events) > 0 {
+			return nil
+		}
+	}
+	return ctx.Err()
 }
 
 type Registration struct {
@@ -123,23 +187,34 @@ func (r *Registration) Renewals() int {
 	return r.renews
 }
 
-func (c *Client) register(ctx context.Context, key, addr string, ttl time.Duration) (Lease, error) {
+func (c *Client) RegisterOnce(ctx context.Context, service string, inst Instance, ttl time.Duration) (Lease, error) {
+	prefix, err := servicePrefix(RegistryPrefix, service)
+	if err != nil {
+		return Lease{}, err
+	}
+	if err := checkName("instance", inst.Name); err != nil {
+		return Lease{}, err
+	}
+	if inst.Addr == "" {
+		return Lease{}, fmt.Errorf("client: instance %q has no address", inst.Name)
+	}
+	value, err := json.Marshal(record{Addr: inst.Addr, Meta: inst.Meta})
+	if err != nil {
+		return Lease{}, err
+	}
 	l, err := c.Grant(ctx, ttl)
 	if err != nil {
 		return Lease{}, err
 	}
-	if _, err := c.Put(ctx, key, []byte(addr), WithLease(l.ID)); err != nil {
+	if _, err := c.Put(ctx, prefix+inst.Name, value, WithLease(l.ID)); err != nil {
 		return Lease{}, err
 	}
 	return l, nil
 }
 
-func (c *Client) Register(ctx context.Context, service, instance, addr string, ttl time.Duration) (*Registration, error) {
-	if err := errors.Join(checkName("service", service), checkName("instance", instance)); err != nil {
-		return nil, err
-	}
-	key := RegistryPrefix + service + "/" + instance
-	l, err := c.register(ctx, key, addr, ttl)
+func (c *Client) Register(ctx context.Context, service string, inst Instance, ttl time.Duration) (*Registration, error) {
+	inst.Meta = maps.Clone(inst.Meta)
+	l, err := c.RegisterOnce(ctx, service, inst, ttl)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +232,7 @@ func (c *Client) Register(ctx context.Context, service, instance, addr string, t
 				}
 			}
 			for rctx.Err() == nil {
-				nl, err := c.register(rctx, key, addr, ttl)
+				nl, err := c.RegisterOnce(rctx, service, inst, ttl)
 				if err == nil {
 					l = nl
 					r.mu.Lock()
@@ -191,10 +266,14 @@ func (r *Registration) Abandon() {
 }
 
 func configKey(service, key string) (string, error) {
-	if err := errors.Join(checkName("service", service), checkName("config key", key)); err != nil {
+	prefix, err := servicePrefix(ConfigPrefix, service)
+	if err != nil {
 		return "", err
 	}
-	return ConfigPrefix + service + "/" + key, nil
+	if err := checkName("config key", key); err != nil {
+		return "", err
+	}
+	return prefix + key, nil
 }
 
 func (c *Client) SetConfig(ctx context.Context, service, key, value string) (uint64, error) {
@@ -215,10 +294,10 @@ func (c *Client) GetConfig(ctx context.Context, service, key string) (string, bo
 }
 
 func (c *Client) WatchConfig(ctx context.Context, service string) (<-chan map[string]string, error) {
-	if err := checkName("service", service); err != nil {
+	prefix, err := servicePrefix(ConfigPrefix, service)
+	if err != nil {
 		return nil, err
 	}
-	prefix := ConfigPrefix + service + "/"
 	out := make(chan map[string]string, 1)
 	go func() {
 		defer close(out)
