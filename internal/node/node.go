@@ -131,9 +131,9 @@ func (n *Node) Raft() *raft.Raft {
 
 func (n *Node) Advance(elapsed time.Duration) {
 	n.carry += elapsed
-	ticks := n.carry / n.cfg.Tick
-	n.carry -= ticks * n.cfg.Tick
-	for range min(ticks, maxCatchUp) {
+	due := int64(n.carry / n.cfg.Tick)
+	n.carry %= n.cfg.Tick
+	for range min(due, maxCatchUp) {
 		n.tick()
 	}
 }

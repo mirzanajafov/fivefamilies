@@ -15,13 +15,13 @@ export type NodeView = {
   fault?: string
 }
 
-export type Event = {
+type EventBase = {
   at: string
-  kind: string
   node?: number
-  term?: number
   text: string
 }
+
+export type Event = (EventBase & { kind: 'succession'; term: number }) | (EventBase & { kind: 'down' | 'up' | 'membership' | 'fault' | 'healed' | 'violation' })
 
 export type Window = {
   index: number

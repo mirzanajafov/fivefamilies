@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
@@ -17,7 +16,7 @@ type diskJob struct {
 func (s *Server) Write(w node.Write) {
 	select {
 	case s.jobs <- diskJob{write: &w}:
-	case <-s.quit:
+	case <-s.diskDone:
 	}
 }
 
@@ -28,11 +27,12 @@ func (s *Server) SaveSnapshot(sn raft.Snapshot) error {
 func (s *Server) Compacted(sn raft.Snapshot) {
 	select {
 	case s.jobs <- diskJob{compact: &sn}:
-	case <-s.quit:
+	case <-s.diskDone:
 	}
 }
 
 func (s *Server) writer(ctx context.Context) {
+	defer close(s.diskDone)
 	for {
 		var first diskJob
 		select {
@@ -40,10 +40,7 @@ func (s *Server) writer(ctx context.Context) {
 			return
 		case first = <-s.jobs:
 		}
-		jobs := s.batch(ctx, first)
-		if ctx.Err() != nil {
-			return
-		}
+		jobs := s.gather(first)
 		last, err := s.persist(jobs)
 		if err != nil {
 			s.die(err)
@@ -68,9 +65,12 @@ func (s *Server) writer(ctx context.Context) {
 	}
 }
 
-func (s *Server) batch(ctx context.Context, first diskJob) []diskJob {
+func (s *Server) gather(first diskJob) []diskJob {
 	jobs := []diskJob{first}
-	for s.cfg.FsyncMode == FsyncGroup && ctx.Err() == nil {
+	if s.cfg.FsyncMode != FsyncGroup {
+		return jobs
+	}
+	for {
 		select {
 		case j := <-s.jobs:
 			jobs = append(jobs, j)
@@ -78,7 +78,6 @@ func (s *Server) batch(ctx context.Context, first diskJob) []diskJob {
 			return jobs
 		}
 	}
-	return jobs
 }
 
 func (s *Server) persist(jobs []diskJob) (uint64, error) {
@@ -91,7 +90,7 @@ func (s *Server) persist(jobs []diskJob) (uint64, error) {
 		}
 		for _, p := range s.parts(w) {
 			if err := s.disk.Write(p); err != nil {
-				return 0, fmt.Errorf("writing the log: %w", err)
+				return 0, err
 			}
 			s.counts.batches.Add(1)
 			s.counts.entries.Add(uint64(len(p.Entries)))
@@ -131,7 +130,7 @@ func (s *Server) sync() error {
 		return nil
 	}
 	if err := s.disk.Sync(); err != nil {
-		return fmt.Errorf("syncing the log: %w", err)
+		return err
 	}
 	s.counts.fsyncs.Add(1)
 	return nil

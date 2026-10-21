@@ -125,8 +125,12 @@ func main() {
 		os.Exit(2)
 	}
 	bugs, err := planted.Parse(*bugList)
-	if err != nil || (bugs != 0 && plantable != "yes") {
-		logger.Error("planted bugs are only available in test builds", "bug", *bugList, "err", err)
+	if err != nil {
+		logger.Error("bad -bug", "err", err)
+		os.Exit(2)
+	}
+	if bugs != 0 && plantable != "yes" {
+		logger.Error("planted bugs are only available in test builds", "bug", *bugList)
 		os.Exit(2)
 	}
 	if *fsync == server.FsyncOff && plantable != "yes" {
@@ -213,13 +217,13 @@ func main() {
 		go serveProfiles(*profile, logger)
 	}
 	logger.Info("node started", "id", *id, "addr", addr, "nodes", len(nodes), "election", *election, "lease", *lease)
-	err = srv.Run(ctx)
-	stop()
-	if err != nil {
+	if err := srv.Run(ctx); err != nil {
+		stop()
 		g.Stop()
 		logger.Error("fatal", "err", err)
 		os.Exit(70)
 	}
 	g.GracefulStop()
+	stop()
 	logger.Info("node stopped")
 }

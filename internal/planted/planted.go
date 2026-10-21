@@ -20,6 +20,8 @@ const (
 	WatchKeep
 )
 
+const Watches = WatchGap | WatchKeep
+
 var known = []struct {
 	bug  Bug
 	name string

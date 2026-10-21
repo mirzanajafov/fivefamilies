@@ -67,13 +67,12 @@ export function describe(e: Event): string {
     case 'violation':
       return `A broken word: ${e.text}`
   }
-  return e.text
 }
 
 export function outcome(f: Fault): string {
   const what = `${family(f.node)} was ${faultLabels[f.action] ?? f.action}`
   if (!f.on_leader) return `${what}. It was not the Don, so nobody had to wait.`
-  if (!f.failover || !f.failover.new_leader) return `${what}. The Don kept the seat.`
+  if (!f.failover?.new_leader) return `${what}. The Don kept the seat.`
   const ms = (ns: number) => `${(ns / 1e6).toFixed(0)} ms`
   return `${what}. ${family(f.failover.new_leader)} took over after ${ms(f.failover.election_ns)}, and clients waited ${ms(f.failover.client_gap_ns)} between two acknowledged writes.`
 }

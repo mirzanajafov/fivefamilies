@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,7 +23,9 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/snap"
+	"github.com/mirzanajafov/fivefamilies/internal/storage"
 	"github.com/mirzanajafov/fivefamilies/internal/vfs"
+	"github.com/mirzanajafov/fivefamilies/internal/wal"
 )
 
 type running struct {
@@ -369,27 +372,69 @@ func TestARestartedClusterKeepsItsData(t *testing.T) {
 	}
 }
 
-func TestAFatalErrorEndsRunAndCallsStopWaitingForTheLoop(t *testing.T) {
-	srv, err := New(Config{ID: 1, Nodes: map[raft.NodeID]string{1: "127.0.0.1:1"}, DataDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+func TestASnapshotThatCannotBeSavedEndsRunWithoutItsLogRecordAndCallsStopWaiting(t *testing.T) {
+	dir := t.TempDir()
+	srv, err := New(Config{ID: 1, Nodes: map[raft.NodeID]string{1: "127.0.0.1:1"}, DataDir: dir, SnapshotEvery: 4, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ran := make(chan error, 1)
-	go func() { ran <- srv.Run(context.Background()) }()
-	broken := errors.New("the disk is gone")
-	if err := srv.onLoop(context.Background(), func() { srv.die(broken) }); err != nil && !errors.Is(err, ErrStopped) {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-ran:
-		if !errors.Is(err, broken) {
-			t.Fatalf("Run returned %v", err)
+	runCtx, stopRun := context.WithCancel(context.Background())
+	var runErr error
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		runErr = srv.Run(runCtx)
+	}()
+	t.Cleanup(func() {
+		stopRun()
+		<-finished
+	})
+	deadline := time.Now().Add(5 * time.Second)
+	for srv.Status().GetState() != "leader" {
+		if time.Now().After(deadline) {
+			t.Fatal("no leader")
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Run went on after a fatal error")
+		time.Sleep(10 * time.Millisecond)
+	}
+	for index := range uint64(8) {
+		if err := os.MkdirAll(filepath.Join(dir, snap.Name(index+1, srv.Status().GetTerm()), "taken"), 0o700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+	var last uint64
+	for i := range 8 {
+		res, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: "k", Value: []byte{byte(i)}})
+		if err != nil {
+			if !errors.Is(err, ErrStopped) {
+				t.Fatalf("a write to a stopping node: %v", err)
+			}
+			break
+		}
+		last = res.Rev
+	}
+	if last < 4 {
+		t.Fatalf("the last answered write is at %d, so the write whose entry reached the snapshot at 4 lost its answer", last)
+	}
+	select {
+	case <-finished:
+		if runErr == nil || !strings.Contains(runErr.Error(), "saving snapshot") {
+			t.Fatalf("Run returned %v", runErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run went on after its snapshot could not be saved")
+	}
+	d, st, _, err := storage.Open(vfs.OS{Dir: dir}, wal.Options{Salt: randomUint64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if st.Snapshot != nil {
+		t.Fatalf("the log names snapshot %d, which was never saved", st.Snapshot.Index)
+	}
 	if _, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: "k"}); !errors.Is(err, ErrStopped) {
 		t.Fatalf("a write to a stopped node: %v", err)
 	}

@@ -49,7 +49,7 @@ func checkRun(read client.ReadMode, bugs planted.Bug, election, heartbeat, lease
 		return err
 	case read == client.ReadLease && leaseLen <= 0:
 		return errors.New("-read lease needs a -lease longer than zero")
-	case bugs.Has(planted.WatchGap | planted.WatchKeep | planted.LocalKeepAlive):
+	case bugs.Has(planted.Watches | planted.LocalKeepAlive):
 		return errors.New("-bug: the lab runs no watchers or lease holders, so watch and lease bugs are never exercised")
 	case bugs.Has(planted.FollowerRead) && read == client.ReadLog:
 		return errors.New("-bug followerread is never exercised when every read goes through the log")
