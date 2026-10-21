@@ -2,6 +2,7 @@ package transport
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/encoding/protowire"
@@ -30,12 +31,34 @@ func TestConversionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestEveryTypeAPeerSendsKeepsTheNumberThePreviousBuildSent(t *testing.T) {
+	for i := range 256 {
+		typ := raft.MessageType(i)
+		if strings.HasPrefix(typ.String(), "MessageType(") {
+			continue
+		}
+		wire, ok := wireTypes[typ]
+		switch {
+		case typ == raft.MsgStorageAck && ok:
+			t.Errorf("%v has a wire name, but only a node sends it to itself", typ)
+		case typ != raft.MsgStorageAck && (!ok || int(wire) != i):
+			t.Errorf("%v goes out as %v, want wire number %d", typ, wire, i)
+		}
+	}
+	for i := range 256 {
+		typ := raft.EntryType(i)
+		if wire, ok := wireEntryTypes[typ]; ok != typ.Valid() || (ok && int(wire) != i) {
+			t.Errorf("entry type %d goes out as %v", i, wire)
+		}
+	}
+}
+
 func TestAnAppendFromThePreviousBuildStillDecodes(t *testing.T) {
 	varint := func(b []byte, field protowire.Number, v uint64) []byte {
 		return protowire.AppendVarint(protowire.AppendTag(b, field, protowire.VarintType), v)
 	}
-	entry := varint(varint(varint(nil, 1, 3), 2, 5), 3, uint64(raft.EntryConfig))
-	b := varint(varint(varint(varint(varint(nil, 1, uint64(raft.MsgApp)), 2, 2), 3, 1), 4, 3), 6, 4)
+	entry := varint(varint(varint(nil, 1, 3), 2, 5), 3, 1)
+	b := varint(varint(varint(varint(varint(nil, 1, 1), 2, 2), 3, 1), 4, 3), 6, 4)
 	b = protowire.AppendBytes(protowire.AppendTag(b, 7, protowire.BytesType), entry)
 	var m pb.RaftMessage
 	if err := proto.Unmarshal(b, &m); err != nil {

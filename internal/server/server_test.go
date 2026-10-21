@@ -463,9 +463,50 @@ func TestCallsShapedByThePreviousBuildStillWork(t *testing.T) {
 	if _, err := pb.NewKVClient(conn).Get(ctx, &pb.GetRequest{Key: "k"}); err != nil {
 		t.Fatalf("a read without a mode, which was ReadIndex: %v", err)
 	}
-	for _, action := range []string{"isolate", "heal"} {
+	for _, action := range []string{"isolate", "stall-disk", "pause", "heal"} {
 		if _, err := c.admin(leader).Chaos(ctx, &pb.ChaosRequest{Action: action, DurationMs: 50}); err != nil {
 			t.Fatalf("chaos %q named the old way: %v", action, err)
+		}
+	}
+}
+
+func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) {
+	c := newTestCluster(t, 3, nil)
+	leader := c.leader(5 * time.Second)
+	follower := leader%3 + 1
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	kvOn := func(id raft.NodeID) pb.KVClient {
+		conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { conn.Close() })
+		return pb.NewKVClient(conn)
+	}
+	kvc := kvOn(leader)
+	session, err := kvc.OpenSession(ctx, &pb.OpenSessionRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient(), Seq: 2, Key: "k"}); err != nil {
+		t.Fatal(err)
+	}
+	_, notLeader := kvOn(follower).Put(ctx, &pb.PutRequest{Key: "k"})
+	_, stale := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient(), Seq: 1, Key: "k"})
+	_, expired := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient() + 1000, Seq: 1, Key: "k"})
+	for _, tc := range []struct {
+		err    error
+		code   codes.Code
+		msg    string
+		reason pb.ErrorReason
+	}{
+		{notLeader, codes.Unavailable, "not the leader", pb.ErrorReason_ERROR_REASON_NOT_LEADER},
+		{stale, codes.FailedPrecondition, "stale sequence number", pb.ErrorReason_ERROR_REASON_STALE_SEQUENCE},
+		{expired, codes.FailedPrecondition, "session expired", pb.ErrorReason_ERROR_REASON_SESSION_EXPIRED},
+	} {
+		if s := status.Convert(tc.err); s.Code() != tc.code || s.Message() != tc.msg || client.Reason(tc.err) != tc.reason {
+			t.Errorf("got %v %q %v, want %v %q %v", s.Code(), s.Message(), client.Reason(tc.err), tc.code, tc.msg, tc.reason)
 		}
 	}
 }

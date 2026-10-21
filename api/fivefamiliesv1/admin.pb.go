@@ -17,27 +17,27 @@ const (
 type Role int32
 
 const (
-	Role_ROLE_UNSPECIFIED  Role = 0
-	Role_ROLE_FOLLOWER     Role = 1
-	Role_ROLE_PRECANDIDATE Role = 2
-	Role_ROLE_CANDIDATE    Role = 3
-	Role_ROLE_LEADER       Role = 4
+	Role_ROLE_UNSPECIFIED   Role = 0
+	Role_ROLE_FOLLOWER      Role = 1
+	Role_ROLE_PRE_CANDIDATE Role = 2
+	Role_ROLE_CANDIDATE     Role = 3
+	Role_ROLE_LEADER        Role = 4
 )
 
 var (
 	Role_name = map[int32]string{
 		0: "ROLE_UNSPECIFIED",
 		1: "ROLE_FOLLOWER",
-		2: "ROLE_PRECANDIDATE",
+		2: "ROLE_PRE_CANDIDATE",
 		3: "ROLE_CANDIDATE",
 		4: "ROLE_LEADER",
 	}
 	Role_value = map[string]int32{
-		"ROLE_UNSPECIFIED":  0,
-		"ROLE_FOLLOWER":     1,
-		"ROLE_PRECANDIDATE": 2,
-		"ROLE_CANDIDATE":    3,
-		"ROLE_LEADER":       4,
+		"ROLE_UNSPECIFIED":   0,
+		"ROLE_FOLLOWER":      1,
+		"ROLE_PRE_CANDIDATE": 2,
+		"ROLE_CANDIDATE":     3,
+		"ROLE_LEADER":        4,
 	}
 )
 
@@ -896,11 +896,11 @@ const file_fivefamilies_v1_admin_proto_rawDesc = "" +
 	"\x02to\x18\x01 \x01(\x04R\x02to\"H\n" +
 	"\x1aTransferLeadershipResponse\x12\x16\n" +
 	"\x06leader\x18\x01 \x01(\x04R\x06leader\x12\x12\n" +
-	"\x04term\x18\x02 \x01(\x04R\x04term*k\n" +
+	"\x04term\x18\x02 \x01(\x04R\x04term*l\n" +
 	"\x04Role\x12\x14\n" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\x11\n" +
-	"\rROLE_FOLLOWER\x10\x01\x12\x15\n" +
-	"\x11ROLE_PRECANDIDATE\x10\x02\x12\x12\n" +
+	"\rROLE_FOLLOWER\x10\x01\x12\x16\n" +
+	"\x12ROLE_PRE_CANDIDATE\x10\x02\x12\x12\n" +
 	"\x0eROLE_CANDIDATE\x10\x03\x12\x0f\n" +
 	"\vROLE_LEADER\x10\x04*\x91\x01\n" +
 	"\vChaosAction\x12\x1c\n" +

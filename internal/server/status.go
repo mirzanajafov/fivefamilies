@@ -10,7 +10,7 @@ import (
 
 var roles = map[raft.StateType]pb.Role{
 	raft.StateFollower:     pb.Role_ROLE_FOLLOWER,
-	raft.StatePreCandidate: pb.Role_ROLE_PRECANDIDATE,
+	raft.StatePreCandidate: pb.Role_ROLE_PRE_CANDIDATE,
 	raft.StateCandidate:    pb.Role_ROLE_CANDIDATE,
 	raft.StateLeader:       pb.Role_ROLE_LEADER,
 }

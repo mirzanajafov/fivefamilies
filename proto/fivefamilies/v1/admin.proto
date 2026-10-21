@@ -11,7 +11,7 @@ message StatusRequest {
 enum Role {
   ROLE_UNSPECIFIED = 0;
   ROLE_FOLLOWER = 1;
-  ROLE_PRECANDIDATE = 2;
+  ROLE_PRE_CANDIDATE = 2;
   ROLE_CANDIDATE = 3;
   ROLE_LEADER = 4;
 }

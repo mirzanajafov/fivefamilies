@@ -353,8 +353,8 @@ func TestAFreshControllerSendsEmptyListsTheDashboardCanRead(t *testing.T) {
 
 func TestANodeIsShownDownOnlyAfterItHasBeenSilentForAWhile(t *testing.T) {
 	c := &Controller{cfg: Config{DownAfter: time.Second}, nodes: make([]NodeView, 2), silent: make([]time.Time, 2)}
-	leader := &pb.StatusResponse{State: "leader", Term: 1, Leader: 1}
-	follower := &pb.StatusResponse{State: "follower", Term: 1, Leader: 1}
+	leader := &pb.StatusResponse{Role: pb.Role_ROLE_LEADER, Term: 1, Leader: 1}
+	follower := &pb.StatusResponse{Role: pb.Role_ROLE_FOLLOWER, Term: 1, Leader: 1}
 	t0 := time.Now()
 	downs := func() (n int) {
 		for _, e := range c.events {

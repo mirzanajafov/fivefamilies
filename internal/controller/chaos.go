@@ -26,6 +26,9 @@ func (c *Controller) serveChaos(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
 		return
 	}
+	if req.Action == "slow-disk" {
+		req.Action = "stall-disk"
+	}
 	admin := c.admin(r)
 	addr := c.clientAddr(r)
 	f, code, err := c.chaos(r.Context(), req, admin, addr)

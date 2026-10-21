@@ -23,15 +23,21 @@ const (
 	HeaderLeaderAddr = "ff-leader-addr"
 )
 
-var errorDomain = string(pb.File_fivefamilies_v1_errors_proto.Package())
+var (
+	errorDomain = string(pb.File_fivefamilies_v1_errors_proto.Package())
+
+	errNotLeader      = reasoned(codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER, "not the leader")
+	errSessionExpired = reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_SESSION_EXPIRED, "session expired")
+	errStaleSequence  = reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_STALE_SEQUENCE, "stale sequence number")
+	errTooManyLeases  = reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES, "too many leases")
+)
 
 func reasoned(code codes.Code, reason pb.ErrorReason, msg string) error {
-	st := status.New(code, msg)
-	detailed, err := st.WithDetails(&errdetails.ErrorInfo{Reason: reason.String(), Domain: errorDomain})
+	st, err := status.New(code, msg).WithDetails(&errdetails.ErrorInfo{Reason: reason.String(), Domain: errorDomain})
 	if err != nil {
-		return st.Err()
+		panic(err)
 	}
-	return detailed.Err()
+	return st.Err()
 }
 
 type kvService struct {
@@ -52,7 +58,7 @@ func fail(ctx context.Context, s *Server, err error) error {
 				s.log.Warn("setting the leader hint", "err", err)
 			}
 		}
-		return reasoned(codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER, "not the leader")
+		return errNotLeader
 	case errors.Is(err, node.ErrLost), errors.Is(err, node.ErrNotReady), errors.Is(err, raft.ErrNotLeader),
 		errors.Is(err, raft.ErrTransferring), errors.Is(err, raft.ErrConfNotReady):
 		return status.Error(codes.Unavailable, err.Error())
@@ -75,13 +81,13 @@ func outcome(res kv.Result) error {
 	case kv.OK:
 		return nil
 	case kv.ErrSessionExpired:
-		return reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_SESSION_EXPIRED, "session expired")
+		return errSessionExpired
 	case kv.ErrStaleSequence:
-		return reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_STALE_SEQUENCE, "stale sequence number")
+		return errStaleSequence
 	case kv.ErrLeaseNotFound:
 		return status.Error(codes.NotFound, "lease not found")
 	case kv.ErrTooManyLeases:
-		return reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES, "too many leases")
+		return errTooManyLeases
 	}
 	return status.Error(codes.InvalidArgument, res.Code.String())
 }

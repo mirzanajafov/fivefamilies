@@ -32,6 +32,9 @@ web_ok() {
 
 release() {
   "${compose[@]}" build
+  if [ "${1:-}" = back ]; then
+    "${compose[@]}" up -d --no-deps controller web backup || return 1
+  fi
   for n in "${nodes[@]}"; do
     "${compose[@]}" up -d --no-deps "$n"
     wait_for cluster_ok || return 1
@@ -63,7 +66,7 @@ fi
 
 say "Not healthy, rolling back to $(git log --oneline -1 "$previous")"
 git reset --hard --quiet "$previous"
-if release; then
+if release back; then
   echo "Rolled back."
 else
   echo "Rollback is not healthy either. Check: ${compose[*]} logs" >&2

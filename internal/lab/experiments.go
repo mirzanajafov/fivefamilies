@@ -8,6 +8,7 @@ import (
 	"iter"
 	"math/rand/v2"
 	"slices"
+	"strings"
 	"time"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
@@ -187,9 +188,8 @@ func agreedLeader(ctx context.Context, adm *cluster) (int, error) {
 	return leader, nil
 }
 
-var chaosKinds = map[string]pb.ChaosAction{
-	"stall-disk": pb.ChaosAction_CHAOS_ACTION_STALL_DISK,
-	"pause":      pb.ChaosAction_CHAOS_ACTION_PAUSE,
+func faultName(a pb.ChaosAction) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimPrefix(a.String(), "CHAOS_ACTION_"), "_", "-"))
 }
 
 func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
@@ -234,14 +234,16 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		}()
 		row := E1bRow{Election: v.t, SyncStorage: v.sync}
 		type fault struct {
-			kind, target string
-			d            time.Duration
+			action pb.ChaosAction
+			target string
+			d      time.Duration
 		}
+		stall, pause := pb.ChaosAction_CHAOS_ACTION_STALL_DISK, pb.ChaosAction_CHAOS_ACTION_PAUSE
 		faults := []fault{
-			{"stall-disk", "leader", 100 * time.Millisecond}, {"stall-disk", "leader", 300 * time.Millisecond}, {"stall-disk", "leader", time.Second},
-			{"stall-disk", "follower", time.Second},
-			{"pause", "leader", v.t / 2}, {"pause", "leader", v.t}, {"pause", "leader", 2 * v.t},
-			{"pause", "follower", 2 * v.t},
+			{stall, "leader", 100 * time.Millisecond}, {stall, "leader", 300 * time.Millisecond}, {stall, "leader", time.Second},
+			{stall, "follower", time.Second},
+			{pause, "leader", v.t / 2}, {pause, "leader", v.t}, {pause, "leader", 2 * v.t},
+			{pause, "follower", 2 * v.t},
 		}
 		if v.sync {
 			faults = faults[:3]
@@ -251,7 +253,7 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		}
 		wait(lctx, 2*time.Second)
 		for _, f := range faults {
-			out := FaultOutcome{Kind: f.kind, Duration: f.d, Target: f.target}
+			out := FaultOutcome{Kind: faultName(f.action), Duration: f.d, Target: f.target}
 			for range injections {
 				leader, err := agreedLeader(lctx, adm)
 				if err != nil {
@@ -263,7 +265,7 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 				}
 				before := maxElections(adm.statuses(lctx, time.Second))
 				cctx, cancel := context.WithTimeout(lctx, 5*time.Second)
-				_, err = adm.admin(n).Chaos(cctx, &pb.ChaosRequest{Kind: chaosKinds[f.kind], DurationMs: uint64(f.d / time.Millisecond)})
+				_, err = adm.admin(n).Chaos(cctx, &pb.ChaosRequest{Kind: f.action, DurationMs: uint64(f.d / time.Millisecond)})
 				cancel()
 				if err != nil {
 					o.Log("chaos on %d: %v", n, err)
@@ -280,7 +282,7 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 			if lctx.Err() != nil {
 				break
 			}
-			o.Log("  %s %s %v: %d of %d followed by an election", f.kind, f.target, f.d, out.WithElected, out.Injections)
+			o.Log("  %s %s %v: %d of %d followed by an election", out.Kind, f.target, f.d, out.WithElected, out.Injections)
 			row.Faults = append(row.Faults, out)
 		}
 		generatorDied := lctx.Err() != nil

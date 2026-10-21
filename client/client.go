@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,15 +23,11 @@ const headerLeaderAddr = "ff-leader-addr"
 
 var errorDomain = string(pb.File_fivefamilies_v1_errors_proto.Package())
 
-var roleNames = map[pb.Role]string{
-	pb.Role_ROLE_FOLLOWER:     "follower",
-	pb.Role_ROLE_PRECANDIDATE: "precandidate",
-	pb.Role_ROLE_CANDIDATE:    "candidate",
-	pb.Role_ROLE_LEADER:       "leader",
-}
-
 func RoleName(r pb.Role) string {
-	return roleNames[r]
+	if r == pb.Role_ROLE_UNSPECIFIED {
+		return ""
+	}
+	return strings.ToLower(strings.ReplaceAll(strings.TrimPrefix(r.String(), "ROLE_"), "_", ""))
 }
 
 func Reason(err error) pb.ErrorReason {
