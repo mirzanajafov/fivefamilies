@@ -70,14 +70,8 @@ func serveAPI(addr string, nodes map[raft.NodeID]string, srv *server.Server, log
 		}
 	}()
 	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if err := hs.Shutdown(ctx); err != nil {
-			err = errors.Join(err, hs.Close())
+		if err := errors.Join(hs.Stop(), cl.Close()); err != nil {
 			logger.Warn("stopping the HTTP API", "err", err)
-		}
-		if err := cl.Close(); err != nil {
-			logger.Warn("closing the HTTP API's client", "err", err)
 		}
 	}, nil
 }
@@ -262,13 +256,18 @@ func main() {
 		go serveProfiles(*profile, logger)
 	}
 	logger.Info("node started", "id", *id, "addr", addr, "http", *httpAddr, "nodes", len(nodes), "election", *election, "lease", *lease)
-	if err := srv.Run(ctx); err != nil {
+	running, stopRunning := context.WithCancel(context.Background())
+	go func() {
+		<-ctx.Done()
+		closeAPI()
+		stopRunning()
+	}()
+	if err := srv.Run(running); err != nil {
 		stop()
 		g.Stop()
 		logger.Error("fatal", "err", err)
 		os.Exit(70)
 	}
-	closeAPI()
 	g.GracefulStop()
 	stop()
 	logger.Info("node stopped")

@@ -418,7 +418,7 @@ func TestTheHTTPAPIRegistersRenewsAndAnswersABlockingQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cl.Close()
-	web := httptest.NewServer(httpapi.NewServer(cl, c.running[leader].srv.Status).Handler)
+	web := httptest.NewServer(httpapi.NewServer(cl, c.running[leader].srv.Status).Handler())
 	defer web.Close()
 	api := web.URL + "/v1"
 

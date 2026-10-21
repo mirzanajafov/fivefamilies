@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,7 +121,7 @@ func TestTheHandlersAnswerEveryExampleOfTheContract(t *testing.T) {
 			}
 			f := c.fake
 			rec := httptest.NewRecorder()
-			NewServer(&f, status).Handler.ServeHTTP(rec, httptest.NewRequest(ex.Request.Method, ex.Request.Path, bytes.NewReader(ex.Request.Body)))
+			NewServer(&f, status).Handler().ServeHTTP(rec, httptest.NewRequest(ex.Request.Method, ex.Request.Path, bytes.NewReader(ex.Request.Body)))
 			if f.called != c.call {
 				t.Errorf("called %q, want %q", f.called, c.call)
 			}
@@ -154,7 +156,7 @@ func TestBadRequestsNeverReachTheRegistry(t *testing.T) {
 		}
 		f := fake{}
 		rec := httptest.NewRecorder()
-		NewServer(&f, nil).Handler.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+		NewServer(&f, nil).Handler().ServeHTTP(rec, httptest.NewRequest(method, path, nil))
 		if rec.Code != 400 || f.called != "" {
 			t.Errorf("%s: %d, called %q", target, rec.Code, f.called)
 		}
@@ -167,6 +169,11 @@ func TestBadRequestsNeverReachTheRegistry(t *testing.T) {
 		`{"addr": "a:1", "meta": {"version": "` + string(bytes.Repeat([]byte("x"), maxMetaVal+1)) + `"}}`,
 		`{"addr": "a:1", "meta": {"a": "", "b": "", "c": "", "d": "", "e": "", "f": "", "g": "", "h": "", "i": ""}}`,
 		`{"addr": "a:1", "ttl": "-5s"}`,
+		`{"addr": "a:1", "ttl": "0s"}`,
+		`{"addr": "a:1", "ttl": "500us"}`,
+		`{"addr": "a:1"}}`,
+		`{"addr": "` + strings.Repeat("a", maxAddr) + `:1"}`,
+		bigButValid(),
 		`{"addr": "a:1", "ttl": "48h"}`,
 		`{"addr": "a:1"} {"addr": "b:2"}`,
 		``,
@@ -174,20 +181,56 @@ func TestBadRequestsNeverReachTheRegistry(t *testing.T) {
 	} {
 		f := fake{}
 		rec := httptest.NewRecorder()
-		NewServer(&f, nil).Handler.ServeHTTP(rec, httptest.NewRequest("PUT", "/v1/registry/dimensions/e-7", bytes.NewReader([]byte(body))))
+		NewServer(&f, nil).Handler().ServeHTTP(rec, httptest.NewRequest("PUT", "/v1/registry/dimensions/e-7", bytes.NewReader([]byte(body))))
 		if rec.Code != 400 || f.called != "" {
 			t.Errorf("%.40s: %d, called %q", body, rec.Code, f.called)
 		}
 	}
 }
 
+func bigButValid() string {
+	meta := map[string]string{}
+	for i := range maxMeta {
+		meta[fmt.Sprintf("%0*d", maxMetaKey, i)] = strings.Repeat("v", maxMetaVal)
+	}
+	b, err := json.Marshal(map[string]any{"addr": "a:1", "meta": meta})
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
+func TestANameLongerThanTheLimitIsRefused(t *testing.T) {
+	long := strings.Repeat("n", maxName+1)
+	for _, req := range []*http.Request{
+		httptest.NewRequest("GET", "/v1/registry/"+long, nil),
+		httptest.NewRequest("PUT", "/v1/registry/dimensions/"+long, strings.NewReader(`{"addr": "a:1"}`)),
+	} {
+		f := fake{}
+		rec := httptest.NewRecorder()
+		NewServer(&f, nil).Handler().ServeHTTP(rec, req)
+		if rec.Code != 400 || f.called != "" {
+			t.Errorf("%s with a %d-byte name: %d, called %q", req.Method, len(long), rec.Code, f.called)
+		}
+	}
+}
+
+func TestARegistrationWhoseNewLeaseRanOutCanBeRetried(t *testing.T) {
+	f := fake{err: client.ErrLeaseNotFound}
+	rec := httptest.NewRecorder()
+	NewServer(&f, nil).Handler().ServeHTTP(rec, httptest.NewRequest("PUT", "/v1/registry/dimensions/e-7", strings.NewReader(`{"addr": "a:1"}`)))
+	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") != "1" {
+		t.Fatalf("%d %s, want a 503 to retry", rec.Code, rec.Body.Bytes())
+	}
+}
+
 func TestAWaitIsCappedAndATTLDefaults(t *testing.T) {
 	f := fake{instances: []client.Instance{}}
-	NewServer(&f, nil).Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/v1/registry/dimensions?index=5&wait=1h", nil))
+	NewServer(&f, nil).Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/v1/registry/dimensions?index=5&wait=1h", nil))
 	if f.called != "Lookup(dimensions, 5, 5m0s)" {
 		t.Errorf("called %q", f.called)
 	}
-	NewServer(&f, nil).Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PUT", "/v1/registry/dimensions/e-7", bytes.NewReader([]byte(`{"addr": "a:1"}`))))
+	NewServer(&f, nil).Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PUT", "/v1/registry/dimensions/e-7", bytes.NewReader([]byte(`{"addr": "a:1"}`))))
 	if f.called != "RegisterOnce(dimensions, e-7=a:1, 10s)" {
 		t.Errorf("called %q", f.called)
 	}
@@ -209,7 +252,7 @@ func (s *slowKeepAlive) KeepAliveOnce(ctx context.Context, _ uint64) (time.Durat
 
 func TestACallWhoseCallerWentAwayStillFinishesInTheCluster(t *testing.T) {
 	reg := &slowKeepAlive{ended: make(chan error, 1)}
-	srv := httptest.NewServer(NewServer(reg, nil).Handler)
+	srv := httptest.NewServer(NewServer(reg, nil).Handler())
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -238,10 +281,47 @@ func TestAnythingOutsideTheAPIGetsAJSONNotFound(t *testing.T) {
 		}
 		f := fake{}
 		rec := httptest.NewRecorder()
-		NewServer(&f, nil).Handler.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+		NewServer(&f, nil).Handler().ServeHTTP(rec, httptest.NewRequest(method, path, nil))
 		var body failure
 		if rec.Code != http.StatusNotFound || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Error == "" || f.called != "" {
 			t.Errorf("%s: %d %s, called %q", target, rec.Code, rec.Body.Bytes(), f.called)
 		}
+	}
+}
+
+type blockingLookup struct{ fake }
+
+func (b *blockingLookup) Lookup(ctx context.Context, _ string, _ uint64, _ time.Duration) ([]client.Instance, uint64, error) {
+	<-ctx.Done()
+	return nil, 0, ctx.Err()
+}
+
+func TestStoppingEndsBlockingQueriesAtOnce(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(&blockingLookup{}, nil)
+	go func() { _ = srv.Serve(ln) }()
+	answered := make(chan int, 1)
+	go func() {
+		resp, err := http.Get("http://" + ln.Addr().String() + "/v1/registry/dimensions?index=5&wait=1m")
+		if err != nil {
+			answered <- 0
+			return
+		}
+		_ = resp.Body.Close()
+		answered <- resp.StatusCode
+	}()
+	time.Sleep(100 * time.Millisecond)
+	start := time.Now()
+	if err := srv.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("stopping took %v with a blocking query open", took)
+	}
+	if code := <-answered; code != http.StatusServiceUnavailable {
+		t.Fatalf("the blocking query got %d, want 503", code)
 	}
 }
