@@ -169,6 +169,16 @@ func (h *Hub) Progress() {
 	}
 }
 
+func (h *Hub) Beat() {
+	for _, id := range h.ids() {
+		w := h.watchers[id]
+		w.sent = max(h.rev, w.next-1)
+		if !w.send(Batch{Rev: w.sent, Progress: true}) {
+			delete(h.watchers, id)
+		}
+	}
+}
+
 func (h *Hub) EndAll() {
 	for _, id := range h.ids() {
 		h.watchers[id].send(Batch{Ended: true})

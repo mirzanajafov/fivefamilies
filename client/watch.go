@@ -4,6 +4,9 @@ import (
 	"context"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 )
 
@@ -36,14 +39,16 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 		backoff := c.opts.Backoff
 		for ctx.Err() == nil {
 			addr := c.watchTarget()
-			got, compacted := c.watchOnce(ctx, addr, key, prefix, &next, out)
-			if compacted || ctx.Err() != nil {
+			got, end := c.watchOnce(ctx, addr, key, prefix, &next, out)
+			if end == endCompacted || ctx.Err() != nil {
 				return
 			}
 			if got {
 				backoff = c.opts.Backoff
 			}
-			c.watchFailed(addr)
+			if end == endBroken {
+				c.watchFailed(addr)
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -69,25 +74,37 @@ func (c *Client) watchFailed(addr string) {
 	}
 }
 
-func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, next *uint64, out chan<- WatchResponse) (got, compacted bool) {
+type watchEnd int
+
+const (
+	endBroken watchEnd = iota
+	endBehind
+	endCompacted
+)
+
+func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, next *uint64, out chan<- WatchResponse) (bool, watchEnd) {
 	cc, err := c.conn(addr)
 	if err != nil {
-		return false, false
+		return false, endBroken
 	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := pb.NewWatchClient(cc).Watch(sctx, &pb.WatchRequest{Key: key, Prefix: prefix, StartRev: *next})
-	if err != nil {
-		return false, false
-	}
 	idle := time.AfterFunc(watchSilence, cancel)
 	defer idle.Stop()
+	stream, err := pb.NewWatchClient(cc).Watch(sctx, &pb.WatchRequest{Key: key, Prefix: prefix, StartRev: *next})
+	if err != nil {
+		return false, endBroken
+	}
+	got := false
 	for {
 		resp, err := stream.Recv()
-		if err != nil {
-			return got, false
+		if status.Code(err) == codes.ResourceExhausted {
+			return got, endBehind
 		}
-		idle.Reset(watchSilence)
+		if err != nil {
+			return got, endBroken
+		}
+		idle.Stop()
 		got = true
 		r := WatchResponse{Rev: resp.GetRev(), Progress: resp.GetProgress(), CompactRev: resp.GetCompactRev()}
 		for _, ev := range resp.GetEvents() {
@@ -97,14 +114,17 @@ func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, n
 			}
 			r.Events = append(r.Events, Event{Type: t, KV: fromPB(ev.GetKv())})
 		}
-		select {
-		case out <- r:
-		case <-ctx.Done():
-			return got, false
+		if !r.Progress || r.Rev >= *next {
+			select {
+			case out <- r:
+			case <-ctx.Done():
+				return got, endBroken
+			}
 		}
 		if r.CompactRev != 0 {
-			return got, true
+			return got, endCompacted
 		}
 		*next = r.Rev + 1
+		idle.Reset(watchSilence)
 	}
 }

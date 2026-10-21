@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
 )
 
@@ -203,7 +204,7 @@ func TestAWatchMovesOnFromANodeThatStoppedAnsweringAndTheNextOneStartsElsewhere(
 	waitFor(t, wcl.Watch(ctx, "b", false, 1), 3*time.Second, hasEvents)
 }
 
-func TestAQuietWatchHearsFromItsNodeEveryProgressInterval(t *testing.T) {
+func TestAQuietWatchStaysOnItsNode(t *testing.T) {
 	c := newTestCluster(t, 3, func(cfg *Config) { cfg.WatchProgress = 50 * time.Millisecond })
 	c.leader(5 * time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -213,12 +214,54 @@ func TestAQuietWatchHearsFromItsNodeEveryProgressInterval(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cl.Close()
-	events := cl.Watch(ctx, "quiet", false, 0)
-	first := <-events
-	for range 5 {
-		r, _ := waitFor(t, events, time.Second, func(client.WatchResponse) bool { return true })
-		if !r.Progress || len(r.Events) != 0 || r.Rev < first.Rev {
-			t.Fatalf("a quiet watch got %+v after starting at %d", r, first.Rev)
+	rev, err := cl.Put(ctx, "other", []byte("1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := cl.Watch(ctx, "quiet", false, rev+1)
+	<-events
+	select {
+	case r := <-events:
+		t.Fatalf("a quiet watch delivered %+v, so it reconnected or passed on a heartbeat", r)
+	case <-time.After(7 * time.Second):
+	}
+}
+
+func TestAWatchMovesOnFromANodeWhoseLoopStopped(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
+	leader := c.leader(5 * time.Second)
+	follower := leader%3 + 1
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	addrs := []string{c.nodes[follower]}
+	for id, addr := range c.nodes {
+		if id != follower {
+			addrs = append(addrs, addr)
 		}
 	}
+	wcl, err := client.New(addrs, client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wcl.Close()
+	cl, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	events := wcl.Watch(ctx, "a", false, 0)
+	<-events
+	chaos(t, c, follower, pb.ChaosAction_CHAOS_ACTION_PAUSE, 30*time.Second)
+	if _, err := cl.Put(ctx, "a", []byte("1")); err != nil {
+		t.Fatal(err)
+	}
+	got, took := waitFor(t, events, 15*time.Second, func(r client.WatchResponse) bool { return len(r.Events) > 0 })
+	if string(got.Events[0].KV.Value) != "1" {
+		t.Fatalf("after the move the watch got %+v", got.Events)
+	}
+	if took < 2*time.Second {
+		t.Fatalf("the event came after %v, so the watch wasn't on the paused node and this proves nothing", took)
+	}
+	t.Logf("the event came %v after the put, with the watch's node paused", took)
+	chaos(t, c, follower, pb.ChaosAction_CHAOS_ACTION_HEAL, 0)
 }
