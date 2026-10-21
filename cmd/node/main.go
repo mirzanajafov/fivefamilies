@@ -2,15 +2,18 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -18,7 +21,9 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/backup"
+	"github.com/mirzanajafov/fivefamilies/internal/httpapi"
 	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/server"
@@ -43,6 +48,32 @@ func serveProfiles(addr string, logger *slog.Logger) {
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		logger.Error("serving profiles", "addr", addr, "err", err)
 	}
+}
+
+func serveAPI(addr string, nodes map[raft.NodeID]string, srv *server.Server, logger *slog.Logger) (func(), error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]string, 0, len(nodes))
+	for _, id := range slices.Sorted(maps.Keys(nodes)) {
+		addrs = append(addrs, nodes[id])
+	}
+	cl, err := client.New(addrs, client.Options{})
+	if err != nil {
+		return nil, errors.Join(err, ln.Close())
+	}
+	hs := httpapi.NewServer(cl, srv.Status)
+	go func() {
+		if err := hs.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("serving the HTTP API", "addr", addr, "err", err)
+		}
+	}()
+	return func() {
+		if err := errors.Join(hs.Close(), cl.Close()); err != nil {
+			logger.Warn("closing the HTTP API", "err", err)
+		}
+	}, nil
 }
 
 func parseCluster(s string) (map[raft.NodeID]string, error) {
@@ -106,6 +137,7 @@ func main() {
 	level := flag.String("log-level", "info", "debug, info, warn or error")
 	profile := flag.String("pprof", "", "serve Go profiles on this address (off by default; for the lab, never published in production)")
 	procs := flag.Int("gomaxprocs", 0, "Go processors (default: what the runtime picks, but at least 2)")
+	httpAddr := flag.String("http", "", "serve the HTTP registry API on this address (off by default)")
 	flag.Parse()
 
 	var lvl slog.Level
@@ -202,6 +234,13 @@ func main() {
 		logger.Error("listening", "addr", addr, "err", err)
 		os.Exit(1)
 	}
+	closeAPI := func() {}
+	if *httpAddr != "" {
+		if closeAPI, err = serveAPI(*httpAddr, nodes, srv, logger); err != nil {
+			logger.Error("serving the HTTP API", "addr", *httpAddr, "err", err)
+			os.Exit(1)
+		}
+	}
 	g := grpc.NewServer(transport.ServerOptions()...)
 	srv.Register(g)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -216,13 +255,14 @@ func main() {
 		runtime.SetBlockProfileRate(int(100 * time.Microsecond))
 		go serveProfiles(*profile, logger)
 	}
-	logger.Info("node started", "id", *id, "addr", addr, "nodes", len(nodes), "election", *election, "lease", *lease)
+	logger.Info("node started", "id", *id, "addr", addr, "http", *httpAddr, "nodes", len(nodes), "election", *election, "lease", *lease)
 	if err := srv.Run(ctx); err != nil {
 		stop()
 		g.Stop()
 		logger.Error("fatal", "err", err)
 		os.Exit(70)
 	}
+	closeAPI()
 	g.GracefulStop()
 	stop()
 	logger.Info("node stopped")

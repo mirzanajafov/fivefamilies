@@ -18,9 +18,11 @@ const (
 	ConfigPrefix   = "/config/"
 )
 
+var ErrInvalid = errors.New("client: invalid argument")
+
 func checkName(kind, name string) error {
 	if name == "" || strings.Contains(name, "/") {
-		return fmt.Errorf("client: %s name %q must be non-empty and without a slash", kind, name)
+		return fmt.Errorf("%w: %s name %q must be non-empty and without a slash", ErrInvalid, kind, name)
 	}
 	return nil
 }
@@ -200,7 +202,7 @@ func (c *Client) RegisterOnce(ctx context.Context, service string, inst Instance
 		return Lease{}, err
 	}
 	if inst.Addr == "" {
-		return Lease{}, fmt.Errorf("client: instance %q has no address", inst.Name)
+		return Lease{}, fmt.Errorf("%w: instance %q has no address", ErrInvalid, inst.Name)
 	}
 	value, err := json.Marshal(record{Addr: inst.Addr, Meta: inst.Meta})
 	if err != nil {
