@@ -25,7 +25,11 @@ export function role(n: NodeView): string {
   return 'sworn'
 }
 
-export const actionNames: Record<string, string> = {
+export const faultActions = ['kill', 'pause', 'isolate', 'stall-disk'] as const
+
+type Action = (typeof faultActions)[number] | 'step-down'
+
+export const actionNames: Record<Action, string> = {
   kill: 'kill the process',
   pause: 'freeze the process',
   isolate: 'cut it off',
@@ -39,9 +43,9 @@ export const faultLabels: Record<string, string> = {
   isolate: 'cut off',
   'stall-disk': 'slow disk',
   'step-down': 'stepped down',
-}
+} satisfies Record<Action, string>
 
-export const realness: Record<string, string> = {
+export const realness: Record<Action, string> = {
   kill: 'a real SIGKILL, and the process restarts when the fault ends',
   pause: 'a real SIGSTOP, then SIGCONT',
   isolate: 'in-process: the node drops every message to and from the others',

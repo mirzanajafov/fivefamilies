@@ -48,11 +48,29 @@ func TestEveryTypeAPeerSendsKeepsTheNumberThePreviousBuildSent(t *testing.T) {
 			t.Errorf("%v goes out as %v, and the previous build sent %v", typ, wireTypes[typ], want)
 		}
 	}
+	previousEntries := map[raft.EntryType]pb.EntryType{raft.EntryNormal: 0, raft.EntryConfig: 1}
 	for i := range 256 {
 		typ := raft.EntryType(i)
-		if wire, ok := wireEntryTypes[typ]; ok != typ.Valid() || (ok && int(wire) != i) {
-			t.Errorf("entry type %d goes out as %v, and the previous build sent %d", i, wire, i)
+		want, sent := previousEntries[typ]
+		if wire, ok := wireEntryTypes[typ]; ok != sent || ok != typ.Valid() || wire != want {
+			t.Errorf("entry type %d goes out as %v, and the previous build sent %v", i, wire, want)
 		}
+	}
+}
+
+func TestATypeWithNoWireNameNeverLeavesTheNode(t *testing.T) {
+	for _, m := range []raft.Message{
+		{Type: raft.MsgStorageAck, From: 1, To: 1},
+		{Type: raft.MsgApp, From: 1, To: 2, Entries: []raft.Entry{{Term: 1, Index: 1, Type: raft.EntryType(7)}}},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%v went out", m)
+				}
+			}()
+			toProto(m)
+		}()
 	}
 }
 

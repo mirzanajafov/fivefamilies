@@ -39,7 +39,7 @@ release() {
     "${compose[@]}" up -d --no-deps "$n" || return 1
     wait_for cluster_ok || return 1
   done
-  "${compose[@]}" up -d --remove-orphans
+  "${compose[@]}" up -d --remove-orphans || return 1
   wait_for web_ok
 }
 

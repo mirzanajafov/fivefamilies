@@ -484,6 +484,15 @@ func TestCallsShapedByThePreviousBuildStillWork(t *testing.T) {
 	}
 }
 
+func TestEveryRaftStateHasARoleOnTheWire(t *testing.T) {
+	for i := range 256 {
+		state := raft.StateType(i)
+		if !strings.HasPrefix(state.String(), "StateType(") && roles[state] == pb.Role_ROLE_UNSPECIFIED {
+			t.Errorf("%v has no role", state)
+		}
+	}
+}
+
 func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
 	leader := c.leader(5 * time.Second)
@@ -520,6 +529,7 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 		{stale, codes.FailedPrecondition, "stale sequence number", pb.ErrorReason_ERROR_REASON_STALE_SEQUENCE},
 		{expired, codes.FailedPrecondition, "session expired", pb.ErrorReason_ERROR_REASON_SESSION_EXPIRED},
 		{noLease, codes.NotFound, "lease not found", pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND},
+		{outcome(kv.Result{Code: kv.ErrTooManyLeases}), codes.FailedPrecondition, "too many leases", pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES},
 	} {
 		if s := status.Convert(tc.err); s.Code() != tc.code || s.Message() != tc.msg || client.Reason(tc.err) != tc.reason {
 			t.Errorf("got %v %q %v, want %v %q %v", s.Code(), s.Message(), client.Reason(tc.err), tc.code, tc.msg, tc.reason)
