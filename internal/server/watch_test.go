@@ -168,7 +168,7 @@ func newWatcher(t *testing.T, addrs []string) *client.Client {
 	return watcher
 }
 
-func aFollower(t *testing.T, c *testCluster) (raft.NodeID, []string, *client.Client) {
+func followerAndWriter(t *testing.T, c *testCluster) (raft.NodeID, []string, *client.Client) {
 	t.Helper()
 	leader := c.leader(5 * time.Second)
 	follower := leader%3 + 1
@@ -221,7 +221,7 @@ func TestAWatchMovesOnFromANodeThatStoppedAnsweringAndTheNextOneStartsElsewhere(
 	c := newTestCluster(t, 3, beating)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	follower, others, writer := aFollower(t, c)
+	follower, others, writer := followerAndWriter(t, c)
 	f := newFreezer(t, c.nodes[follower])
 	addrs := append([]string{f.ln.Addr().String()}, others...)
 	watcher := newWatcher(t, addrs)
@@ -248,7 +248,7 @@ func TestAWatchMovesOnFromANodeWhoseLoopStopped(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	follower, others, writer := aFollower(t, c)
+	follower, others, writer := followerAndWriter(t, c)
 	events := newWatcher(t, append([]string{c.nodes[follower]}, others...)).Watch(ctx, "a", false, 0)
 	<-events
 	chaos(t, c, follower, pb.ChaosAction_CHAOS_ACTION_PAUSE, 30*time.Second)
@@ -271,15 +271,44 @@ func TestAQuietWatchStaysOnItsNode(t *testing.T) {
 	}
 	events := cl.Watch(ctx, "quiet", false, rev+1)
 	<-events
-	timeout := time.After(10 * silence)
-	for {
+	select {
+	case r := <-events:
+		t.Fatalf("a quiet watch delivered %+v: a reconnect starts with an empty batch, and a beat should not be passed on", r)
+	case <-time.After(10 * silence):
+	}
+}
+
+func TestAReaderSlowerThanTheSilenceKeepsItsStream(t *testing.T) {
+	c := newTestCluster(t, 3, beating)
+	c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cl := newWatcher(t, c.addrs())
+	events := cl.Watch(ctx, "busy/", true, 0)
+	<-events
+	for i := range 40 {
+		if _, err := cl.Put(ctx, fmt.Sprintf("busy/%d", i), []byte("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(3 * silence)
+	seen := 0
+	for seen < 40 {
 		select {
 		case r := <-events:
-			if !r.Progress {
-				t.Fatalf("a quiet watch delivered %+v, which is how a reconnect starts", r)
+			if len(r.Events) == 0 && !r.Progress {
+				t.Fatalf("after %d of 40 events the watch started over, so the reader's pause counted as silence", seen)
 			}
-		case <-timeout:
-			return
+			seen += len(r.Events)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("only %d of 40 events arrived", seen)
 		}
+	}
+	select {
+	case r := <-events:
+		if len(r.Events) == 0 && !r.Progress {
+			t.Fatal("the watch started over after the reader caught up, so the reader's pause counted as silence")
+		}
+	case <-time.After(2 * silence):
 	}
 }

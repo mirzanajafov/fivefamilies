@@ -164,13 +164,17 @@ func TestABeatGoesToEveryWatcherThatHeardNothingSinceTheLastOne(t *testing.T) {
 	if n := len(busy.got); n != 4 || !busy.got[3].Progress {
 		t.Fatalf("the busy watcher got no beat once it went quiet: %d batches", n)
 	}
+}
+
+func TestAWatcherThatCannotTakeABeatIsDropped(t *testing.T) {
+	h := New(100, 0, 0)
 	full := &sink{}
 	watch(t, h, "/z/", true, full.send)
 	h.Beat()
 	full.full = true
 	h.Beat()
-	if h.Len() != 3 {
-		t.Fatalf("%d watchers after a beat that one could not take, want 3", h.Len())
+	if h.Len() != 0 {
+		t.Fatalf("%d watchers after a beat the only one could not take", h.Len())
 	}
 }
 

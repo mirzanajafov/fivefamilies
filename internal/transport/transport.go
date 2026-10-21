@@ -73,6 +73,7 @@ func New(id raft.NodeID, addrs map[raft.NodeID]string, deliver func(raft.Message
 func ServerOptions() []grpc.ServerOption {
 	return []grpc.ServerOption{
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: time.Second, PermitWithoutStream: true}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{Time: 30 * time.Second, Timeout: 10 * time.Second}),
 		grpc.MaxRecvMsgSize(64 << 20),
 	}
 }
