@@ -54,7 +54,7 @@ func unreachable(t *testing.T) (*Client, context.Context) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = c.Close() })
+	t.Cleanup(func() { c.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	t.Cleanup(cancel)
 	return c, ctx
@@ -121,25 +121,31 @@ func TestTheServersRefusalsComeBackAsTheClientsErrors(t *testing.T) {
 		ErrInvalid:       status.Error(codes.InvalidArgument, "a lease needs a TTL between 1 ms and 24h0m0s"),
 		ErrTooManyLeases: refusal(t, codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES),
 	} {
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		g := grpc.NewServer()
-		fake := refusingLeases{refusal: refused}
-		pb.RegisterKVServer(g, fake)
-		pb.RegisterLeaseServer(g, fake)
-		go func() { _ = g.Serve(ln) }()
-		c, err := New([]string{ln.Addr().String()}, Options{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if _, err := c.Grant(ctx, 48*time.Hour); !errors.Is(err, want) {
-			t.Errorf("%v came back as %v, want %v", refused, err, want)
-		}
-		cancel()
-		_ = c.Close()
-		g.Stop()
+		t.Run(want.Error(), func(t *testing.T) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			g := grpc.NewServer()
+			fake := refusingLeases{refusal: refused}
+			pb.RegisterKVServer(g, fake)
+			pb.RegisterLeaseServer(g, fake)
+			go func() {
+				if err := g.Serve(ln); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+					t.Error(err)
+				}
+			}()
+			t.Cleanup(g.Stop)
+			c, err := New([]string{ln.Addr().String()}, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { c.Close() })
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := c.Grant(ctx, 48*time.Hour); !errors.Is(err, want) {
+				t.Errorf("%v came back as %v, want %v", refused, err, want)
+			}
+		})
 	}
 }

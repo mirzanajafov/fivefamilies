@@ -50,18 +50,22 @@ func serveProfiles(addr string, logger *slog.Logger) {
 	}
 }
 
-func serveAPI(addr string, self raft.NodeID, nodes map[raft.NodeID]string, srv *server.Server, logger *slog.Logger) (func(), error) {
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
+func roundFrom(self raft.NodeID, nodes map[raft.NodeID]string) []string {
 	ids := slices.Sorted(maps.Keys(nodes))
 	at := slices.Index(ids, self)
 	addrs := make([]string, 0, len(ids))
 	for _, id := range slices.Concat(ids[at:], ids[:at]) {
 		addrs = append(addrs, nodes[id])
 	}
-	cl, err := client.New(addrs, client.Options{})
+	return addrs
+}
+
+func serveAPI(addr string, self raft.NodeID, nodes map[raft.NodeID]string, srv *server.Server, logger *slog.Logger) (func(), error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	cl, err := client.New(roundFrom(self, nodes), client.Options{})
 	if err != nil {
 		return nil, errors.Join(err, ln.Close())
 	}

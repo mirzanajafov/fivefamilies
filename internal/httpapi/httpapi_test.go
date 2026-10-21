@@ -229,7 +229,7 @@ func TestOnlyABlockingQueryGetsItsWaitOnTopOfTheCallTime(t *testing.T) {
 	}
 }
 
-func TestARegistrationTheClusterHasNoRoomForIsTriedAgainLater(t *testing.T) {
+func TestARegistrationTheClusterHasNoRoomForCanBeRetried(t *testing.T) {
 	f := fake{err: fmt.Errorf("granting: %w", client.ErrTooManyLeases)}
 	rec := httptest.NewRecorder()
 	NewServer(&f, nil).Handler().ServeHTTP(rec, httptest.NewRequest("PUT", "/v1/registry/dimensions/e-7", strings.NewReader(`{"addr": "a:1"}`)))
