@@ -3,6 +3,8 @@ package client
 import (
 	"testing"
 
+	"google.golang.org/grpc/metadata"
+
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 )
 
@@ -35,5 +37,21 @@ func TestOnlyKnownReadModesParse(t *testing.T) {
 		if err := got.UnmarshalText([]byte(s)); err == nil {
 			t.Errorf("%q was accepted", s)
 		}
+	}
+}
+
+func TestAFailedLeaderGuessMovesToTheNodeAfterIt(t *testing.T) {
+	c := &Client{addrs: []string{"n1", "n2", "n3"}, leader: "n1"}
+	c.moveOn("n1", metadata.Pairs(headerLeaderAddr, "n2"))
+	if c.leader != "n2" {
+		t.Fatalf("the hint was not followed: %s", c.leader)
+	}
+	c.moveOn("n2", nil)
+	if c.leader != "n3" {
+		t.Fatalf("after the hinted leader failed the guess is %s, want n3", c.leader)
+	}
+	c.moveOn("n3", nil)
+	if c.leader != "n1" {
+		t.Fatalf("after n3 failed the guess is %s, want n1", c.leader)
 	}
 }

@@ -187,7 +187,7 @@ func (c *Client) moveOn(failed string, md metadata.MD) {
 		return
 	}
 	if c.leader == failed {
-		c.next = (c.next + 1) % len(c.addrs)
+		c.next = (slices.Index(c.addrs, failed) + 1) % len(c.addrs)
 		c.leader = c.addrs[c.next]
 	}
 }
@@ -200,16 +200,26 @@ func retryable(err error) bool {
 	return false
 }
 
+func (c *Client) attemptTimeout(ctx context.Context) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		return min(c.opts.AttemptTimeout, time.Until(deadline)/2)
+	}
+	return c.opts.AttemptTimeout
+}
+
 func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (T, error)) (T, error) {
 	var zero T
 	backoff := c.opts.Backoff
 	for {
+		if err := ctx.Err(); err != nil {
+			return zero, err
+		}
 		addr := c.target()
 		cc, err := c.conn(addr)
 		if err != nil {
 			return zero, err
 		}
-		actx, cancel := context.WithTimeout(ctx, c.opts.AttemptTimeout)
+		actx, cancel := context.WithTimeout(ctx, c.attemptTimeout(ctx))
 		var md metadata.MD
 		out, err := call(actx, cc, grpc.Header(&md))
 		cancel()
@@ -219,14 +229,11 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 		if !retryable(err) {
 			return zero, err
 		}
-		if errors.Is(ctx.Err(), context.Canceled) {
+		if ctx.Err() != nil {
 			return zero, ctx.Err()
 		}
 		if status.Code(err) != codes.ResourceExhausted {
 			c.moveOn(addr, md)
-		}
-		if ctx.Err() != nil {
-			return zero, ctx.Err()
 		}
 		select {
 		case <-ctx.Done():

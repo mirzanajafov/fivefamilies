@@ -583,7 +583,7 @@ func TestACallMovesOffANodeThatLetItsDeadlinePass(t *testing.T) {
 		}
 		cancel()
 	}
-	if answered < 4 {
+	if answered != 5 {
 		t.Fatalf("%d of 5 calls with a 500 ms deadline were answered with the client's first node silent", answered)
 	}
 }
