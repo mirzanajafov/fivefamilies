@@ -42,16 +42,28 @@ func TestOnlyKnownReadModesParse(t *testing.T) {
 	}
 }
 
-func TestALeaseWithoutAPositiveTTLIsRefusedBeforeAnythingIsSent(t *testing.T) {
+func TestALeaseOutsideOneMillisecondToADayIsRefusedBeforeAnythingIsSent(t *testing.T) {
 	c, err := New([]string{"127.0.0.1:1"}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	for _, ttl := range []time.Duration{0, -5 * time.Second} {
+	for _, ttl := range []time.Duration{0, -5 * time.Second, 500 * time.Microsecond, 48 * time.Hour} {
 		if _, err := c.Grant(context.Background(), ttl); !errors.Is(err, ErrInvalid) {
 			t.Errorf("a %v lease: %v, want ErrInvalid", ttl, err)
 		}
+	}
+}
+
+func TestAnInstanceOverTheLimitAsStoredIsRefusedBeforeAnythingIsSent(t *testing.T) {
+	c, err := New([]string{"127.0.0.1:1"}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	escaped := Instance{Name: "e-7", Addr: "a:1", Meta: map[string]string{"v": strings.Repeat("<", 200)}}
+	if _, err := c.RegisterOnce(context.Background(), "dimensions", escaped, time.Second); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("200 bytes that are stored as 1,200: %v, want ErrInvalid", err)
 	}
 }
 

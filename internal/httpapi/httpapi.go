@@ -13,9 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
 )
@@ -25,7 +22,6 @@ const (
 	maxWait     = 5 * time.Minute
 	defaultTTL  = 10 * time.Second
 	callTimeout = 5 * time.Second
-	maxTTL      = 24 * time.Hour
 	maxBody     = 1 << 10
 )
 
@@ -172,10 +168,16 @@ func (a *api) lookup(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), wait+callTimeout)
+	timeout := callTimeout
+	if index > 0 {
+		timeout += wait
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
-	stop := context.AfterFunc(a.stopping, cancel)
-	defer stop()
+	if index > 0 {
+		stop := context.AfterFunc(a.stopping, cancel)
+		defer stop()
+	}
 	list, rev, err := a.reg.Lookup(ctx, r.PathValue("service"), index, wait)
 	if err != nil {
 		fail(w, err)
@@ -191,8 +193,11 @@ func (a *api) lookup(w http.ResponseWriter, r *http.Request) {
 func readRegistration(w http.ResponseWriter, r *http.Request) (registration, error) {
 	var req registration
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	if tooBig := new(http.MaxBytesError); errors.As(err, &tooBig) {
+		return req, fmt.Errorf("a registration is at most %d bytes", maxBody)
+	}
 	if err != nil {
-		return req, fmt.Errorf("a registration is at most %d bytes: %w", maxBody, err)
+		return req, fmt.Errorf("reading the registration: %w", err)
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
@@ -204,9 +209,6 @@ func readRegistration(w http.ResponseWriter, r *http.Request) (registration, err
 	}
 	if req.TTL == nil {
 		req.TTL = new(duration(defaultTTL))
-	}
-	if ttl := time.Duration(*req.TTL); ttl < time.Millisecond || ttl > maxTTL {
-		return req, fmt.Errorf("ttl must be between 1ms and %v", maxTTL)
 	}
 	return req, nil
 }
@@ -282,11 +284,11 @@ func reason(r pb.ErrorReason) string {
 
 func fail(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, client.ErrInvalid), status.Code(err) == codes.InvalidArgument:
+	case errors.Is(err, client.ErrInvalid):
 		badRequest(w, err)
 	case errors.Is(err, client.ErrLeaseNotFound):
 		writeJSON(w, http.StatusNotFound, failure{Error: err.Error(), Reason: reason(pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND)})
-	case client.Reason(err) == pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES:
+	case errors.Is(err, client.ErrTooManyLeases):
 		unavailable(w, failure{Error: err.Error(), Reason: reason(pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES)})
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled), errors.Is(err, client.ErrSessionExpired):
 		unavailable(w, failure{Error: err.Error()})

@@ -50,14 +50,16 @@ func serveProfiles(addr string, logger *slog.Logger) {
 	}
 }
 
-func serveAPI(addr string, nodes map[raft.NodeID]string, srv *server.Server, logger *slog.Logger) (func(), error) {
+func serveAPI(addr string, self raft.NodeID, nodes map[raft.NodeID]string, srv *server.Server, logger *slog.Logger) (func(), error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
-	addrs := make([]string, 0, len(nodes))
+	addrs := []string{nodes[self]}
 	for _, id := range slices.Sorted(maps.Keys(nodes)) {
-		addrs = append(addrs, nodes[id])
+		if id != self {
+			addrs = append(addrs, nodes[id])
+		}
 	}
 	cl, err := client.New(addrs, client.Options{})
 	if err != nil {
@@ -236,7 +238,7 @@ func main() {
 	}
 	closeAPI := func() {}
 	if *httpAddr != "" {
-		if closeAPI, err = serveAPI(*httpAddr, nodes, srv, logger); err != nil {
+		if closeAPI, err = serveAPI(*httpAddr, raft.NodeID(*id), nodes, srv, logger); err != nil {
 			logger.Error("serving the HTTP API", "addr", *httpAddr, "err", err)
 			os.Exit(1)
 		}

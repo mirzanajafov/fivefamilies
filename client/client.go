@@ -222,6 +222,9 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 		if err == nil {
 			return out, nil
 		}
+		if status.Code(err) == codes.InvalidArgument {
+			return zero, fmt.Errorf("%w: %w", ErrInvalid, err)
+		}
 		if !retryable(err) {
 			return zero, err
 		}

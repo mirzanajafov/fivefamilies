@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
@@ -34,6 +36,7 @@ type exchange struct {
 
 type fake struct {
 	called    string
+	timeout   time.Duration
 	instances []client.Instance
 	index     uint64
 	lease     client.Lease
@@ -41,8 +44,11 @@ type fake struct {
 	err       error
 }
 
-func (f *fake) Lookup(_ context.Context, service string, index uint64, wait time.Duration) ([]client.Instance, uint64, error) {
+func (f *fake) Lookup(ctx context.Context, service string, index uint64, wait time.Duration) ([]client.Instance, uint64, error) {
 	f.called = fmt.Sprintf("Lookup(%s, %d, %v)", service, index, wait)
+	if deadline, ok := ctx.Deadline(); ok {
+		f.timeout = time.Until(deadline).Round(time.Second)
+	}
 	return f.instances, f.index, f.err
 }
 
@@ -166,11 +172,8 @@ func TestBadRequestsNeverReachTheRegistry(t *testing.T) {
 		`{"addr": "a:1", "port": 80}`,
 		`{"addr": "a:1", "meta": {"weight": 2}}`,
 		`{"addr": "a:1", "meta": {"pad": "` + strings.Repeat("x", maxBody) + `"}}`,
-		`{"addr": "a:1", "ttl": "-5s"}`,
-		`{"addr": "a:1", "ttl": "0s"}`,
-		`{"addr": "a:1", "ttl": "500us"}`,
+		`{"addr": "a:1", "ttl": 10}`,
 		`{"addr": "a:1"}}`,
-		`{"addr": "a:1", "ttl": "48h"}`,
 		`{"addr": "a:1"} {"addr": "b:2"}`,
 		``,
 		`not json`,
@@ -194,12 +197,35 @@ func TestARegistrationOverTheLimitIsRefusedForItsSize(t *testing.T) {
 	}
 }
 
+func TestABodyThatBreaksOffIsNotTakenForOneTooLarge(t *testing.T) {
+	rec := httptest.NewRecorder()
+	NewServer(&fake{}, nil).Handler().ServeHTTP(rec, httptest.NewRequest("PUT", "/v1/registry/dimensions/e-7", iotest.ErrReader(io.ErrUnexpectedEOF)))
+	var body failure
+	if rec.Code != 400 || json.Unmarshal(rec.Body.Bytes(), &body) != nil || strings.Contains(body.Error, fmt.Sprint(maxBody)) {
+		t.Fatalf("%d %s, want a 400 that doesn't blame the size", rec.Code, rec.Body.Bytes())
+	}
+}
+
 func TestARegistrationWhoseNewLeaseRanOutCanBeRetried(t *testing.T) {
 	f := fake{err: client.ErrLeaseNotFound}
 	rec := httptest.NewRecorder()
 	NewServer(&f, nil).Handler().ServeHTTP(rec, httptest.NewRequest("PUT", "/v1/registry/dimensions/e-7", strings.NewReader(`{"addr": "a:1"}`)))
 	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") != "1" {
 		t.Fatalf("%d %s, want a 503 to retry", rec.Code, rec.Body.Bytes())
+	}
+}
+
+func TestOnlyABlockingQueryGetsItsWaitOnTopOfTheCallTime(t *testing.T) {
+	for target, want := range map[string]time.Duration{
+		"/v1/registry/dimensions":                 callTimeout,
+		"/v1/registry/dimensions?wait=5m":         callTimeout,
+		"/v1/registry/dimensions?index=5&wait=1m": callTimeout + time.Minute,
+	} {
+		f := fake{instances: []client.Instance{}}
+		NewServer(&f, nil).Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", target, nil))
+		if f.timeout != want {
+			t.Errorf("%s: the registry was given %v, want %v", target, f.timeout, want)
+		}
 	}
 }
 
@@ -298,20 +324,25 @@ func TestStoppingEndsBlockingQueriesAtOnceAndLetsARegistrationFinish(t *testing.
 	reg := &stoppable{entered: make(chan struct{}, 2), ended: make(chan error, 1)}
 	srv := NewServer(reg, nil)
 	go func() { _ = srv.Serve(ln) }()
-	answers := make(chan string, 2)
+	type answer struct {
+		method string
+		code   int
+		at     time.Time
+	}
+	answers := make(chan answer, 2)
 	send := func(method, path, body string) {
 		req, err := http.NewRequest(method, "http://"+ln.Addr().String()+path, strings.NewReader(body))
 		if err != nil {
-			answers <- err.Error()
+			answers <- answer{method: method}
 			return
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			answers <- err.Error()
+			answers <- answer{method: method}
 			return
 		}
 		_ = resp.Body.Close()
-		answers <- fmt.Sprint(method, " ", resp.StatusCode)
+		answers <- answer{method, resp.StatusCode, time.Now()}
 	}
 	go send("GET", "/v1/registry/dimensions?index=5&wait=1m", "")
 	go send("PUT", "/v1/registry/dimensions/e-7", `{"addr": "a:1"}`)
@@ -329,8 +360,13 @@ func TestStoppingEndsBlockingQueriesAtOnceAndLetsARegistrationFinish(t *testing.
 	if took := time.Since(start); took > 2*time.Second {
 		t.Fatalf("stopping took %v", took)
 	}
-	if first, second := <-answers, <-answers; first != "GET 503" || second != "PUT 200" {
-		t.Fatalf("answered %q then %q, want the blocking query ended with a 503 and then the registration done", first, second)
+	got := map[string]answer{}
+	for range 2 {
+		a := <-answers
+		got[a.method] = a
+	}
+	if got["GET"].code != http.StatusServiceUnavailable || got["GET"].at.Sub(start) > time.Second || got["PUT"].code != http.StatusOK {
+		t.Fatalf("answered %+v, want the blocking query ended at once with a 503 and the registration done", got)
 	}
 	if err := <-reg.ended; err != nil {
 		t.Fatalf("the registration was cut off with %v", err)
