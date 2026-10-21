@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import type { Snapshot } from '@/lib/types'
-import { actionNames, family, faultLabels, numeral, realness } from '@/lib/words'
-
-const actions = ['kill', 'pause', 'isolate', 'slow-disk'] as const
+import { actionNames, family, faultActions, faultLabels, numeral, realness } from '@/lib/words'
 
 export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boolean }) {
   const [node, setNode] = useState(1)
-  const [action, setAction] = useState<string>('kill')
+  const [action, setAction] = useState<(typeof faultActions)[number]>('kill')
   const [seconds, setSeconds] = useState(5)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string>()
@@ -67,7 +65,7 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
       <div>
         <div className="muted mb-2 text-xs tracking-wide uppercase">Fault</div>
         <div className="grid grid-cols-2 gap-2">
-          {actions.map((a) => (
+          {faultActions.map((a) => (
             <button
               key={a}
               type="button"

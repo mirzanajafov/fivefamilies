@@ -147,7 +147,7 @@ func (c *testCluster) leader(timeout time.Duration) raft.NodeID {
 		var term uint64
 		for id, r := range c.running {
 			st := r.srv.Status()
-			if st.GetState() == "leader" && st.GetTerm() >= term {
+			if st.GetRole() == pb.Role_ROLE_LEADER && st.GetTerm() >= term {
 				leader, term = id, st.GetTerm()
 			}
 		}
@@ -390,7 +390,7 @@ func TestASnapshotThatCannotBeSavedEndsRunWithoutItsLogRecordAndCallsStopWaiting
 		<-finished
 	})
 	deadline := time.Now().Add(5 * time.Second)
-	for srv.Status().GetState() != "leader" {
+	for srv.Status().GetRole() != pb.Role_ROLE_LEADER {
 		if time.Now().After(deadline) {
 			t.Fatal("no leader")
 		}
@@ -440,5 +440,99 @@ func TestASnapshotThatCannotBeSavedEndsRunWithoutItsLogRecordAndCallsStopWaiting
 	}
 	if _, _, err := srv.StateHash(ctx); !errors.Is(err, ErrStopped) {
 		t.Fatalf("a hash from a stopped node: %v", err)
+	}
+}
+
+func TestCallsShapedByThePreviousBuildStillWork(t *testing.T) {
+	c := newTestCluster(t, 1, func(cfg *Config) { cfg.Chaos = true })
+	leader := c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := grpc.NewClient(c.nodes[leader], grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if st := c.status(leader); st.GetState() != "leader" || st.GetRole() != pb.Role_ROLE_LEADER {
+		t.Fatalf("status says %q and %v, want both to name the leader", st.GetState(), st.GetRole())
+	}
+	session, err := pb.NewKVClient(conn).Register(ctx, &pb.RegisterRequest{})
+	if err != nil || session.GetClient() == 0 {
+		t.Fatalf("registering a session the old way: %v %v", session, err)
+	}
+	if _, err := pb.NewKVClient(conn).Get(ctx, &pb.GetRequest{Key: "k"}); err != nil {
+		t.Fatalf("a read without a mode, which was ReadIndex: %v", err)
+	}
+	srv := c.running[leader].srv
+	for _, tc := range []struct {
+		action string
+		fault  *fault
+	}{
+		{"isolate", &srv.isolated.fault},
+		{"stall-disk", &srv.stalled},
+		{"pause", &srv.paused},
+	} {
+		if _, err := c.admin(leader).Chaos(ctx, &pb.ChaosRequest{LegacyAction: tc.action, DurationMs: 2000}); err != nil || tc.fault.remaining() <= 0 {
+			t.Fatalf("chaos %q named the old way: %v", tc.action, err)
+		}
+	}
+	if _, err := c.admin(leader).Chaos(ctx, &pb.ChaosRequest{LegacyAction: "heal"}); err != nil {
+		t.Fatalf("heal named the old way: %v", err)
+	}
+	if srv.isolated.remaining() > 0 || srv.stalled.remaining() > 0 || srv.paused.remaining() > 0 {
+		t.Fatal("the old heal left a fault running")
+	}
+}
+
+func TestEveryRaftStateHasARoleOnTheWire(t *testing.T) {
+	for i := range 256 {
+		state := raft.StateType(i)
+		if !strings.HasPrefix(state.String(), "StateType(") && roles[state] == pb.Role_ROLE_UNSPECIFIED {
+			t.Errorf("%v has no role", state)
+		}
+	}
+}
+
+func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) {
+	c := newTestCluster(t, 3, nil)
+	leader := c.leader(5 * time.Second)
+	follower := leader%3 + 1
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	connTo := func(id raft.NodeID) *grpc.ClientConn {
+		conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { conn.Close() })
+		return conn
+	}
+	kvc := pb.NewKVClient(connTo(leader))
+	session, err := kvc.OpenSession(ctx, &pb.OpenSessionRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient(), Seq: 2, Key: "k"}); err != nil {
+		t.Fatal(err)
+	}
+	_, notLeader := pb.NewKVClient(connTo(follower)).Put(ctx, &pb.PutRequest{Key: "k"})
+	_, noLease := pb.NewLeaseClient(connTo(leader)).TimeToLive(ctx, &pb.LeaseTimeToLiveRequest{Id: 404})
+	_, stale := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient(), Seq: 1, Key: "k"})
+	_, expired := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient() + 1000, Seq: 1, Key: "k"})
+	for _, tc := range []struct {
+		err    error
+		code   codes.Code
+		msg    string
+		reason pb.ErrorReason
+	}{
+		{notLeader, codes.Unavailable, "not the leader", pb.ErrorReason_ERROR_REASON_NOT_LEADER},
+		{stale, codes.FailedPrecondition, "stale sequence number", pb.ErrorReason_ERROR_REASON_STALE_SEQUENCE},
+		{expired, codes.FailedPrecondition, "session expired", pb.ErrorReason_ERROR_REASON_SESSION_EXPIRED},
+		{noLease, codes.NotFound, "lease not found", pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND},
+		{outcome(kv.Result{Code: kv.ErrTooManyLeases}), codes.FailedPrecondition, "too many leases", pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES},
+	} {
+		if s := status.Convert(tc.err); s.Code() != tc.code || s.Message() != tc.msg || client.Reason(tc.err) != tc.reason {
+			t.Errorf("got %v %q %v, want %v %q %v", s.Code(), s.Message(), client.Reason(tc.err), tc.code, tc.msg, tc.reason)
+		}
 	}
 }

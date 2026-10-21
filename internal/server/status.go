@@ -8,6 +8,13 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
+var roles = map[raft.StateType]pb.Role{
+	raft.StateFollower:     pb.Role_ROLE_FOLLOWER,
+	raft.StatePreCandidate: pb.Role_ROLE_PRE_CANDIDATE,
+	raft.StateCandidate:    pb.Role_ROLE_CANDIDATE,
+	raft.StateLeader:       pb.Role_ROLE_LEADER,
+}
+
 type counters struct {
 	fsyncs, batches, entries, sent, received, reads, writes, elections atomic.Uint64
 }
@@ -17,6 +24,7 @@ func (s *Server) publish() {
 	st := &pb.StatusResponse{
 		Id:         uint64(s.cfg.ID),
 		State:      r.State().String(),
+		Role:       roles[r.State()],
 		Term:       r.Term(),
 		Leader:     uint64(r.Leader()),
 		Commit:     r.Committed(),

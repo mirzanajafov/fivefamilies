@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
@@ -50,9 +51,9 @@ func (s *Server) TransferLeadership(ctx context.Context, to raft.NodeID) error {
 		switch {
 		case raft.NodeID(st.GetLeader()) == to && to != s.cfg.ID:
 			return nil
-		case to == s.cfg.ID && st.GetState() == raft.StateLeader.String():
+		case to == s.cfg.ID && st.GetRole() == pb.Role_ROLE_LEADER:
 			return nil
-		case st.GetState() == raft.StateLeader.String() && st.GetTransferee() == 0:
+		case st.GetRole() == pb.Role_ROLE_LEADER && st.GetTransferee() == 0:
 			return ErrTransferAborted
 		}
 		select {

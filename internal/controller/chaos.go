@@ -18,13 +18,16 @@ type chaosRequest struct {
 	Seconds int    `json:"seconds"`
 }
 
-var actions = []string{"kill", "pause", "isolate", "slow-disk", "step-down"}
+var actions = []string{"kill", "pause", "isolate", "stall-disk", "step-down"}
 
 func (c *Controller) serveChaos(w http.ResponseWriter, r *http.Request) {
 	var req chaosRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
 		return
+	}
+	if req.Action == "slow-disk" {
+		req.Action = "stall-disk"
 	}
 	admin := c.admin(r)
 	addr := c.clientAddr(r)
@@ -82,7 +85,7 @@ func (c *Controller) chaos(ctx context.Context, req chaosRequest, admin bool, ad
 	if req.Action == "step-down" {
 		f.Node, f.Duration, f.Ends = leader, 0, now
 	}
-	f.OnLeader = f.Node == leader && req.Action != "slow-disk"
+	f.OnLeader = f.Node == leader && req.Action != "stall-disk"
 	c.fault = f
 	c.mu.Unlock()
 	if err := c.inject(ctx, req.Action, f.Node, d, leader); err != nil {
@@ -130,10 +133,10 @@ func (c *Controller) inject(ctx context.Context, action string, node int, d time
 	case "kill", "pause":
 		return c.supervisor(ctx, node, fmt.Sprintf("/%s?ms=%d", action, ms))
 	case "isolate":
-		_, err := c.admins[node-1].Chaos(ctx, &pb.ChaosRequest{Action: "isolate", DurationMs: uint64(ms)})
+		_, err := c.admins[node-1].Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_ISOLATE, DurationMs: uint64(ms)})
 		return err
-	case "slow-disk":
-		_, err := c.admins[node-1].Chaos(ctx, &pb.ChaosRequest{Action: "stall-disk", DurationMs: uint64(ms)})
+	case "stall-disk":
+		_, err := c.admins[node-1].Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_STALL_DISK, DurationMs: uint64(ms)})
 		return err
 	case "step-down":
 		if leader == 0 {
@@ -154,7 +157,7 @@ func (c *Controller) healAll(ctx context.Context) {
 				c.cfg.Logger.Warn("heal", "node", i+1, "err", err)
 			}
 		}
-		if _, err := c.admins[i].Chaos(hctx, &pb.ChaosRequest{Action: "heal"}); err != nil {
+		if _, err := c.admins[i].Chaos(hctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_HEAL}); err != nil {
 			c.cfg.Logger.Warn("heal", "node", i+1, "err", err)
 		}
 		cancel()

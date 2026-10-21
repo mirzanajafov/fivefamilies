@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -18,6 +20,24 @@ import (
 )
 
 const headerLeaderAddr = "ff-leader-addr"
+
+const errorDomain = "fivefamilies.najafov.dev"
+
+func RoleName(r pb.Role) string {
+	if r == pb.Role_ROLE_UNSPECIFIED {
+		return ""
+	}
+	return strings.ToLower(strings.ReplaceAll(strings.TrimPrefix(r.String(), "ROLE_"), "_", ""))
+}
+
+func Reason(err error) pb.ErrorReason {
+	for _, d := range status.Convert(err).Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok && info.GetDomain() == errorDomain {
+			return pb.ErrorReason(pb.ErrorReason_value[info.GetReason()])
+		}
+	}
+	return pb.ErrorReason_ERROR_REASON_UNSPECIFIED
+}
 
 type ReadMode int
 
@@ -223,8 +243,8 @@ func write[T any](ctx context.Context, c *Client, call func(ctx context.Context,
 	}
 	defer func() { <-c.writing }()
 	if c.session == 0 {
-		res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.RegisterResponse, error) {
-			return pb.NewKVClient(cc).Register(ctx, &pb.RegisterRequest{}, opts...)
+		res, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (*pb.OpenSessionResponse, error) {
+			return pb.NewKVClient(cc).OpenSession(ctx, &pb.OpenSessionRequest{}, opts...)
 		})
 		if err != nil {
 			return zero, err
@@ -236,7 +256,7 @@ func write[T any](ctx context.Context, c *Client, call func(ctx context.Context,
 	out, err := do(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, opts ...grpc.CallOption) (T, error) {
 		return call(ctx, cc, session, seq, opts...)
 	})
-	if status.Code(err) == codes.FailedPrecondition && status.Convert(err).Message() == "session expired" {
+	if Reason(err) == pb.ErrorReason_ERROR_REASON_SESSION_EXPIRED {
 		c.session = 0
 		return zero, ErrSessionExpired
 	}

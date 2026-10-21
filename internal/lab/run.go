@@ -119,7 +119,7 @@ func (c *cluster) ask(ctx context.Context, timeout time.Duration, req *pb.Status
 func leaderOf(sts []*pb.StatusResponse) (int, uint64) {
 	best, term := 0, uint64(0)
 	for i, st := range sts {
-		if st != nil && st.GetState() == "leader" && st.GetTerm() >= term {
+		if st != nil && st.GetRole() == pb.Role_ROLE_LEADER && st.GetTerm() >= term {
 			best, term = i+1, st.GetTerm()
 		}
 	}

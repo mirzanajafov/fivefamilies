@@ -8,6 +8,7 @@ import (
 	"time"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
+	"github.com/mirzanajafov/fivefamilies/client"
 )
 
 type NodeView struct {
@@ -161,14 +162,14 @@ func (c *Controller) observe(sts []*pb.StatusResponse, now time.Time) {
 			}
 			continue
 		}
-		v.State, v.Term, v.Leader = st.GetState(), st.GetTerm(), int(st.GetLeader())
+		v.State, v.Term, v.Leader = client.RoleName(st.GetRole()), st.GetTerm(), int(st.GetLeader())
 		v.Commit, v.Applied, v.Last, v.First, v.Snapshot = st.GetCommit(), st.GetApplied(), st.GetLastIndex(), st.GetFirstIndex(), st.GetSnapshotIndex()
 		v.Voter = slices.Contains(st.GetVoters(), uint64(i+1))
 		v.Learner = slices.Contains(st.GetLearners(), uint64(i+1))
 		if p := c.prev; p != nil && p[i] != nil && elapsed > 0 && st.GetMsgsSent() >= p[i].GetMsgsSent() {
 			v.MsgsPerS = float64(st.GetMsgsSent()-p[i].GetMsgsSent()) / elapsed
 		}
-		if st.GetState() == "leader" && st.GetTerm() >= term {
+		if st.GetRole() == pb.Role_ROLE_LEADER && st.GetTerm() >= term {
 			leader, term = i+1, st.GetTerm()
 		}
 		if leader == i+1 {

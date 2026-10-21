@@ -7,9 +7,44 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
+var (
+	wireTypes = map[raft.MessageType]pb.MessageType{
+		raft.MsgApp:           pb.MessageType_MESSAGE_TYPE_APP,
+		raft.MsgAppResp:       pb.MessageType_MESSAGE_TYPE_APP_RESP,
+		raft.MsgHeartbeat:     pb.MessageType_MESSAGE_TYPE_HEARTBEAT,
+		raft.MsgHeartbeatResp: pb.MessageType_MESSAGE_TYPE_HEARTBEAT_RESP,
+		raft.MsgPreVote:       pb.MessageType_MESSAGE_TYPE_PRE_VOTE,
+		raft.MsgPreVoteResp:   pb.MessageType_MESSAGE_TYPE_PRE_VOTE_RESP,
+		raft.MsgVote:          pb.MessageType_MESSAGE_TYPE_VOTE,
+		raft.MsgVoteResp:      pb.MessageType_MESSAGE_TYPE_VOTE_RESP,
+		raft.MsgSnap:          pb.MessageType_MESSAGE_TYPE_SNAP,
+		raft.MsgReadIndex:     pb.MessageType_MESSAGE_TYPE_READ_INDEX,
+		raft.MsgReadIndexResp: pb.MessageType_MESSAGE_TYPE_READ_INDEX_RESP,
+		raft.MsgTimeoutNow:    pb.MessageType_MESSAGE_TYPE_TIMEOUT_NOW,
+	}
+	wireEntryTypes = map[raft.EntryType]pb.EntryType{
+		raft.EntryNormal: pb.EntryType_ENTRY_TYPE_NORMAL,
+		raft.EntryConfig: pb.EntryType_ENTRY_TYPE_CONFIG,
+	}
+	raftTypes      = invert(wireTypes)
+	raftEntryTypes = invert(wireEntryTypes)
+)
+
+func invert[K, V comparable](m map[K]V) map[V]K {
+	out := make(map[V]K, len(m))
+	for k, v := range m {
+		out[v] = k
+	}
+	return out
+}
+
 func toProto(m raft.Message) *pb.RaftMessage {
+	typ, ok := wireTypes[m.Type]
+	if !ok {
+		panic(fmt.Sprintf("transport: %v has no wire name, so it never leaves the node", m.Type))
+	}
 	out := &pb.RaftMessage{
-		Type:    uint32(m.Type),
+		Type:    typ,
 		From:    uint64(m.From),
 		To:      uint64(m.To),
 		Term:    m.Term,
@@ -23,7 +58,11 @@ func toProto(m raft.Message) *pb.RaftMessage {
 	if len(m.Entries) > 0 {
 		out.Entries = make([]*pb.Entry, len(m.Entries))
 		for i, e := range m.Entries {
-			out.Entries[i] = &pb.Entry{Term: e.Term, Index: e.Index, Type: uint32(e.Type), Data: e.Data}
+			et, ok := wireEntryTypes[e.Type]
+			if !ok {
+				panic(fmt.Sprintf("transport: entry type %d has no wire name", e.Type))
+			}
+			out.Entries[i] = &pb.Entry{Term: e.Term, Index: e.Index, Type: et, Data: e.Data}
 		}
 	}
 	if m.Snapshot != nil {
@@ -33,8 +72,8 @@ func toProto(m raft.Message) *pb.RaftMessage {
 }
 
 func fromProto(m *pb.RaftMessage) (raft.Message, error) {
-	typ := raft.MessageType(m.GetType())
-	if uint32(typ) != m.GetType() || !typ.Remote() {
+	typ, ok := raftTypes[m.GetType()]
+	if !ok {
 		return raft.Message{}, fmt.Errorf("transport: message type %d is not one a peer sends", m.GetType())
 	}
 	out := raft.Message{
@@ -53,8 +92,8 @@ func fromProto(m *pb.RaftMessage) (raft.Message, error) {
 		out.Entries = make([]raft.Entry, n)
 		prevIndex, prevTerm := m.GetIndex(), max(m.GetLogTerm(), 1)
 		for i, e := range m.GetEntries() {
-			et := raft.EntryType(e.GetType())
-			if uint32(et) != e.GetType() || !et.Valid() {
+			et, ok := raftEntryTypes[e.GetType()]
+			if !ok {
 				return raft.Message{}, fmt.Errorf("transport: unknown entry type %d", e.GetType())
 			}
 			if e.GetIndex() != prevIndex+1 || e.GetIndex() == 0 {

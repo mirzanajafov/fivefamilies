@@ -58,7 +58,7 @@ func (r *router) watch(ctx context.Context, start time.Time, record func(sample)
 				down[i] = false
 				record(sample{Kind: "reachable", Node: i + 1, Done: now})
 			}
-			if st.GetState() == "leader" && (i+1 != lastLeader || st.GetTerm() != lastTerm) && st.GetTerm() >= lastTerm {
+			if st.GetRole() == pb.Role_ROLE_LEADER && (i+1 != lastLeader || st.GetTerm() != lastTerm) && st.GetTerm() >= lastTerm {
 				lastLeader, lastTerm = i+1, st.GetTerm()
 				record(sample{Kind: "leader", Leader: i + 1, Term: st.GetTerm(), Done: now})
 			}

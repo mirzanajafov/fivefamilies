@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package fivefamilies.v1;
+
+option go_package = "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1";
+
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_NOT_LEADER = 1;
+  ERROR_REASON_SESSION_EXPIRED = 2;
+  ERROR_REASON_STALE_SEQUENCE = 3;
+  ERROR_REASON_TOO_MANY_LEASES = 4;
+  ERROR_REASON_LEASE_NOT_FOUND = 5;
+}

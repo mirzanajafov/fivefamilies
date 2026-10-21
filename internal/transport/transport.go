@@ -128,8 +128,8 @@ func (t *Transport) runPeer(ctx context.Context, p *peer) {
 	}
 }
 
-func (t *Transport) pump(ctx context.Context, p *peer, stream grpc.ClientStreamingClient[pb.Batch, pb.Ack]) error {
-	batch := &pb.Batch{}
+func (t *Transport) pump(ctx context.Context, p *peer, stream grpc.ClientStreamingClient[pb.SendRequest, pb.SendResponse]) error {
+	batch := &pb.SendRequest{}
 	for {
 		var m raft.Message
 		select {
@@ -181,7 +181,7 @@ func (t *Transport) sendSnapshot(ctx context.Context, client pb.PeerClient, m ra
 	first := true
 	for first || len(data) > 0 {
 		n := min(len(data), chunkBytes)
-		chunk := &pb.SnapshotChunk{Data: data[:n]}
+		chunk := &pb.InstallSnapshotRequest{Data: data[:n]}
 		if first {
 			chunk.Message = toProto(m)
 			first = false
@@ -233,13 +233,13 @@ func (t *Transport) Server() pb.PeerServer {
 	return server{t: t}
 }
 
-func (s server) Send(stream grpc.ClientStreamingServer[pb.Batch, pb.Ack]) error {
+func (s server) Send(stream grpc.ClientStreamingServer[pb.SendRequest, pb.SendResponse]) error {
 	refused := 0
 	var logged time.Time
 	for {
 		b, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
-			return stream.SendAndClose(&pb.Ack{})
+			return stream.SendAndClose(&pb.SendResponse{})
 		}
 		if err != nil {
 			return err
@@ -259,7 +259,7 @@ func (s server) Send(stream grpc.ClientStreamingServer[pb.Batch, pb.Ack]) error 
 	}
 }
 
-func (s server) InstallSnapshot(stream grpc.ClientStreamingServer[pb.SnapshotChunk, pb.Ack]) error {
+func (s server) InstallSnapshot(stream grpc.ClientStreamingServer[pb.InstallSnapshotRequest, pb.InstallSnapshotResponse]) error {
 	var msg *raft.Message
 	var data []byte
 	for {
@@ -290,5 +290,5 @@ func (s server) InstallSnapshot(stream grpc.ClientStreamingServer[pb.SnapshotChu
 	}
 	msg.Snapshot.Data = data
 	s.t.receive(*msg)
-	return stream.SendAndClose(&pb.Ack{})
+	return stream.SendAndClose(&pb.InstallSnapshotResponse{})
 }
