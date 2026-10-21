@@ -536,3 +536,52 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 		}
 	}
 }
+
+func silentNode(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held []net.Conn
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				for _, c := range held {
+					c.Close()
+				}
+				return
+			}
+			held = append(held, conn)
+		}
+	}()
+	t.Cleanup(func() {
+		ln.Close()
+		<-done
+	})
+	return ln.Addr().String()
+}
+
+func TestACallMovesOffANodeThatLetItsDeadlinePass(t *testing.T) {
+	c := newTestCluster(t, 3, nil)
+	c.leader(5 * time.Second)
+	cl, err := client.New(append([]string{silentNode(t)}, c.addrs()...), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	answered := 0
+	for range 5 {
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		if _, _, err := cl.Get(ctx, "k", client.ReadIndex); err == nil {
+			answered++
+		}
+		cancel()
+	}
+	if answered < 4 {
+		t.Fatalf("%d of 5 calls with a 500 ms deadline were answered with the client's first node silent", answered)
+	}
+}

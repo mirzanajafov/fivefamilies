@@ -219,11 +219,14 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 		if !retryable(err) {
 			return zero, err
 		}
-		if ctx.Err() != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			return zero, ctx.Err()
 		}
 		if status.Code(err) != codes.ResourceExhausted {
 			c.moveOn(addr, md)
+		}
+		if ctx.Err() != nil {
+			return zero, ctx.Err()
 		}
 		select {
 		case <-ctx.Done():
