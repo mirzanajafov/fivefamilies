@@ -77,7 +77,10 @@ func (m *ReadMode) UnmarshalText(b []byte) error {
 	return fmt.Errorf("client: unknown read mode %q", b)
 }
 
-var ErrSessionExpired = errors.New("client: the cluster forgot this session; the last write's outcome is unknown")
+var (
+	ErrSessionExpired = errors.New("client: the cluster forgot this session; the last write's outcome is unknown")
+	ErrInvalid        = errors.New("client: invalid argument")
+)
 
 type KeyValue struct {
 	Key       string
@@ -221,6 +224,9 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 		cancel()
 		if err == nil {
 			return out, nil
+		}
+		if status.Code(err) == codes.InvalidArgument {
+			return zero, fmt.Errorf("%w: %w", ErrInvalid, err)
 		}
 		if !retryable(err) {
 			return zero, err

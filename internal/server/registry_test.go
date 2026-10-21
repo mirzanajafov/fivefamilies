@@ -2,11 +2,18 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/client"
+	"github.com/mirzanajafov/fivefamilies/internal/httpapi"
 )
 
 func waitFor[T any](t *testing.T, ch <-chan T, within time.Duration, ok func(T) bool) (T, time.Duration) {
@@ -370,5 +377,92 @@ func TestLookupAnswersAtOnceWhenItsIndexIsCompacted(t *testing.T) {
 	}
 	if waited := time.Since(start); waited > 5*time.Second {
 		t.Fatalf("waited %v on an index the watch history no longer has", waited)
+	}
+}
+
+type httpInstances struct {
+	Index     uint64
+	Instances []client.Instance
+}
+
+type httpLease struct {
+	Lease  uint64
+	TTL    string
+	Reason string
+}
+
+func fetch[T any](ctx context.Context, method, url, body string) (int, T, error) {
+	var out T
+	req, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(body))
+	if err != nil {
+		return 0, out, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, out, err
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err = errors.Join(err, resp.Body.Close()); err == nil && len(raw) > 0 {
+		err = json.Unmarshal(raw, &out)
+	}
+	return resp.StatusCode, out, err
+}
+
+func TestTheHTTPAPIRegistersRenewsAndAnswersABlockingQuery(t *testing.T) {
+	c := newTestCluster(t, 3, nil)
+	leader := c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cl, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	web := httptest.NewServer(httpapi.NewServer(cl, c.running[leader].srv.Status).Handler())
+	defer web.Close()
+	api := web.URL + "/v1"
+
+	code, first, err := fetch[httpInstances](ctx, "GET", api+"/registry/api", "")
+	if err != nil || code != 200 || len(first.Instances) != 0 || first.Index == 0 {
+		t.Fatalf("first list: %d %+v %v", code, first, err)
+	}
+	type answer struct {
+		code int
+		list httpInstances
+		err  error
+	}
+	answers := make(chan answer, 1)
+	go func() {
+		code, list, err := fetch[httpInstances](ctx, "GET", fmt.Sprintf("%s/registry/api?index=%d&wait=10s", api, first.Index), "")
+		answers <- answer{code, list, err}
+	}()
+	code, reg, err := fetch[httpLease](ctx, "PUT", api+"/registry/api/one", `{"addr": "10.0.0.1:80", "meta": {"version": "v2"}}`)
+	if err != nil || code != 200 || reg.Lease == 0 || reg.TTL != "10s" {
+		t.Fatalf("register: %d %+v %v", code, reg, err)
+	}
+	a := <-answers
+	if a.err != nil || a.code != 200 || fmt.Sprint(a.list.Instances) != "[one=10.0.0.1:80 (version=v2)]" || a.list.Index <= first.Index {
+		t.Fatalf("blocking query: %d %+v %v", a.code, a.list, a.err)
+	}
+
+	lease := fmt.Sprintf("%s/leases/%d", api, reg.Lease)
+	if code, renewed, err := fetch[httpLease](ctx, "POST", lease+"/keepalive", ""); err != nil || code != 200 || renewed.TTL != "10s" {
+		t.Fatalf("keepalive: %d %+v %v", code, renewed, err)
+	}
+	if code, _, err := fetch[httpLease](ctx, "DELETE", lease, ""); err != nil || code != 204 {
+		t.Fatalf("revoke: %d %v", code, err)
+	}
+	if code, gone, err := fetch[httpLease](ctx, "POST", lease+"/keepalive", ""); err != nil || code != 404 || gone.Reason != "LEASE_NOT_FOUND" {
+		t.Fatalf("keepalive after the revoke: %d %+v %v", code, gone, err)
+	}
+	if code, list, err := fetch[httpInstances](ctx, "GET", api+"/registry/api", ""); err != nil || code != 200 || len(list.Instances) != 0 {
+		t.Fatalf("after the revoke: %d %+v %v", code, list, err)
+	}
+	code, st, err := fetch[struct {
+		ID   uint64
+		Role string
+	}](ctx, "GET", api+"/status", "")
+	if err != nil || code != 200 || st.ID != uint64(leader) || st.Role != "leader" {
+		t.Fatalf("status: %d %+v %v", code, st, err)
 	}
 }

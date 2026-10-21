@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"google.golang.org/grpc"
@@ -10,7 +11,10 @@ import (
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 )
 
-var ErrLeaseNotFound = errors.New("client: the lease does not exist or has expired")
+var (
+	ErrLeaseNotFound = errors.New("client: the lease does not exist or has expired")
+	ErrTooManyLeases = errors.New("client: the cluster holds as many leases as it allows")
+)
 
 type Lease struct {
 	ID  uint64
@@ -18,18 +22,24 @@ type Lease struct {
 }
 
 func leaseErr(err error) error {
-	if Reason(err) == pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND {
+	switch Reason(err) {
+	case pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND:
 		return ErrLeaseNotFound
+	case pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES:
+		return ErrTooManyLeases
 	}
 	return err
 }
 
 func (c *Client) Grant(ctx context.Context, ttl time.Duration) (Lease, error) {
+	if ttl <= 0 {
+		return Lease{}, fmt.Errorf("%w: a lease needs a positive TTL, got %v", ErrInvalid, ttl)
+	}
 	res, err := write(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (*pb.LeaseGrantResponse, error) {
 		return pb.NewLeaseClient(cc).Grant(ctx, &pb.LeaseGrantRequest{Client: session, Seq: seq, TtlMs: uint64(ttl / time.Millisecond)}, opts...)
 	})
 	if err != nil {
-		return Lease{}, err
+		return Lease{}, leaseErr(err)
 	}
 	return Lease{ID: res.GetId(), TTL: time.Duration(res.GetTtlMs()) * time.Millisecond}, nil
 }

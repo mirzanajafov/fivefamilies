@@ -16,33 +16,53 @@ services:
   n1:
     <<: *node
     hostname: n1
-    command: ["-id", "1", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos"]
+    command: ["-id", "1", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos", "-http", ":3171"]
     ports: ["127.0.0.1:3151:3161"]
     volumes: ["n1:/data"]
+    networks:
+      default:
+      registry:
+        aliases: [fivefamilies-n1]
   n2:
     <<: *node
     hostname: n2
-    command: ["-id", "2", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos"]
+    command: ["-id", "2", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos", "-http", ":3171"]
     ports: ["127.0.0.1:3152:3161"]
     volumes: ["n2:/data"]
+    networks:
+      default:
+      registry:
+        aliases: [fivefamilies-n2]
   n3:
     <<: *node
     hostname: n3
-    command: ["-id", "3", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos"]
+    command: ["-id", "3", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos", "-http", ":3171"]
     ports: ["127.0.0.1:3153:3161"]
     volumes: ["n3:/data"]
+    networks:
+      default:
+      registry:
+        aliases: [fivefamilies-n3]
   n4:
     <<: *node
     hostname: n4
-    command: ["-id", "4", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos"]
+    command: ["-id", "4", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos", "-http", ":3171"]
     ports: ["127.0.0.1:3154:3161"]
     volumes: ["n4:/data"]
+    networks:
+      default:
+      registry:
+        aliases: [fivefamilies-n4]
   n5:
     <<: *node
     hostname: n5
-    command: ["-id", "5", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos"]
+    command: ["-id", "5", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-lease", "800ms", "-chaos", "-http", ":3171"]
     ports: ["127.0.0.1:3155:3161"]
     volumes: ["n5:/data"]
+    networks:
+      default:
+      registry:
+        aliases: [fivefamilies-n5]
   controller:
     image: fivefamilies-node
     restart: unless-stopped
@@ -59,6 +79,10 @@ services:
       FF_ADMIN_TOKEN: ${FF_ADMIN_TOKEN:-local-dev-admin}
     ports: ["127.0.0.1:3159:3159"]
     depends_on: [n1, n2, n3, n4, n5]
+
+networks:
+  registry:
+    name: fivefamilies-registry
 
 volumes:
   n1:

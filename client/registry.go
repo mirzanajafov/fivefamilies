@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -18,9 +19,14 @@ const (
 	ConfigPrefix   = "/config/"
 )
 
+const (
+	maxNameLen     = 128
+	maxInstanceLen = 1 << 10
+)
+
 func checkName(kind, name string) error {
-	if name == "" || strings.Contains(name, "/") {
-		return fmt.Errorf("client: %s name %q must be non-empty and without a slash", kind, name)
+	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") || len(name) > maxNameLen || !utf8.ValidString(name) {
+		return fmt.Errorf("%w: %s name %q must be a UTF-8 path segment of at most %d bytes", ErrInvalid, kind, name, maxNameLen)
 	}
 	return nil
 }
@@ -200,18 +206,21 @@ func (c *Client) RegisterOnce(ctx context.Context, service string, inst Instance
 		return Lease{}, err
 	}
 	if inst.Addr == "" {
-		return Lease{}, fmt.Errorf("client: instance %q has no address", inst.Name)
+		return Lease{}, fmt.Errorf("%w: instance %q has no address", ErrInvalid, inst.Name)
 	}
 	value, err := json.Marshal(record{Addr: inst.Addr, Meta: inst.Meta})
 	if err != nil {
 		return Lease{}, err
+	}
+	if len(value) > maxInstanceLen {
+		return Lease{}, fmt.Errorf("%w: instance %q is %d bytes as stored, at most %d", ErrInvalid, inst.Name, len(value), maxInstanceLen)
 	}
 	l, err := c.Grant(ctx, ttl)
 	if err != nil {
 		return Lease{}, err
 	}
 	if _, err := c.Put(ctx, prefix+inst.Name, value, WithLease(l.ID)); err != nil {
-		return Lease{}, err
+		return Lease{}, leaseErr(err)
 	}
 	return l, nil
 }
