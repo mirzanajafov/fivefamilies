@@ -229,6 +229,16 @@ func TestOnlyABlockingQueryGetsItsWaitOnTopOfTheCallTime(t *testing.T) {
 	}
 }
 
+func TestARegistrationTheClusterHasNoRoomForIsTriedAgainLater(t *testing.T) {
+	f := fake{err: fmt.Errorf("granting: %w", client.ErrTooManyLeases)}
+	rec := httptest.NewRecorder()
+	NewServer(&f, nil).Handler().ServeHTTP(rec, httptest.NewRequest("PUT", "/v1/registry/dimensions/e-7", strings.NewReader(`{"addr": "a:1"}`)))
+	var body failure
+	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") != "1" || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Reason != "TOO_MANY_LEASES" {
+		t.Fatalf("%d %s, want a 503 with the reason", rec.Code, rec.Body.Bytes())
+	}
+}
+
 func TestAWaitIsCappedAndATTLDefaults(t *testing.T) {
 	f := fake{instances: []client.Instance{}}
 	NewServer(&f, nil).Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/v1/registry/dimensions?index=5&wait=1h", nil))

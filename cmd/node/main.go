@@ -55,11 +55,11 @@ func serveAPI(addr string, self raft.NodeID, nodes map[raft.NodeID]string, srv *
 	if err != nil {
 		return nil, err
 	}
-	addrs := []string{nodes[self]}
-	for _, id := range slices.Sorted(maps.Keys(nodes)) {
-		if id != self {
-			addrs = append(addrs, nodes[id])
-		}
+	ids := slices.Sorted(maps.Keys(nodes))
+	at := slices.Index(ids, self)
+	addrs := make([]string, 0, len(ids))
+	for _, id := range slices.Concat(ids[at:], ids[:at]) {
+		addrs = append(addrs, nodes[id])
 	}
 	cl, err := client.New(addrs, client.Options{})
 	if err != nil {

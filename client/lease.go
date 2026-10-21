@@ -16,8 +16,6 @@ var (
 	ErrTooManyLeases = errors.New("client: the cluster holds as many leases as it allows")
 )
 
-const maxLeaseTTL = 24 * time.Hour
-
 type Lease struct {
 	ID  uint64
 	TTL time.Duration
@@ -34,8 +32,8 @@ func leaseErr(err error) error {
 }
 
 func (c *Client) Grant(ctx context.Context, ttl time.Duration) (Lease, error) {
-	if ttl < time.Millisecond || ttl > maxLeaseTTL {
-		return Lease{}, fmt.Errorf("%w: a lease needs a TTL between 1ms and %v, got %v", ErrInvalid, maxLeaseTTL, ttl)
+	if ttl <= 0 {
+		return Lease{}, fmt.Errorf("%w: a lease needs a positive TTL, got %v", ErrInvalid, ttl)
 	}
 	res, err := write(ctx, c, func(ctx context.Context, cc grpc.ClientConnInterface, session, seq uint64, opts ...grpc.CallOption) (*pb.LeaseGrantResponse, error) {
 		return pb.NewLeaseClient(cc).Grant(ctx, &pb.LeaseGrantRequest{Client: session, Seq: seq, TtlMs: uint64(ttl / time.Millisecond)}, opts...)

@@ -19,11 +19,9 @@ const (
 )
 
 const (
-	maxNameLen  = 128
-	maxValueLen = 1 << 10
+	maxNameLen     = 128
+	maxInstanceLen = 1 << 10
 )
-
-var ErrInvalid = errors.New("client: invalid argument")
 
 func checkName(kind, name string) error {
 	if name == "" || strings.Contains(name, "/") || len(name) > maxNameLen {
@@ -213,8 +211,8 @@ func (c *Client) RegisterOnce(ctx context.Context, service string, inst Instance
 	if err != nil {
 		return Lease{}, err
 	}
-	if len(value) > maxValueLen {
-		return Lease{}, fmt.Errorf("%w: instance %q is %d bytes as stored, at most %d", ErrInvalid, inst.Name, len(value), maxValueLen)
+	if len(value) > maxInstanceLen {
+		return Lease{}, fmt.Errorf("%w: instance %q is %d bytes as stored, at most %d", ErrInvalid, inst.Name, len(value), maxInstanceLen)
 	}
 	l, err := c.Grant(ctx, ttl)
 	if err != nil {

@@ -193,7 +193,8 @@ func (a *api) lookup(w http.ResponseWriter, r *http.Request) {
 func readRegistration(w http.ResponseWriter, r *http.Request) (registration, error) {
 	var req registration
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
-	if tooBig := new(http.MaxBytesError); errors.As(err, &tooBig) {
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
 		return req, fmt.Errorf("a registration is at most %d bytes", maxBody)
 	}
 	if err != nil {
