@@ -125,8 +125,12 @@ func main() {
 		os.Exit(2)
 	}
 	bugs, err := planted.Parse(*bugList)
-	if err != nil || (bugs != 0 && plantable != "yes") {
-		logger.Error("planted bugs are only available in test builds", "bug", *bugList, "err", err)
+	if err != nil {
+		logger.Error("bad -bug", "err", err)
+		os.Exit(2)
+	}
+	if bugs != 0 && plantable != "yes" {
+		logger.Error("planted bugs are only available in test builds", "bug", *bugList)
 		os.Exit(2)
 	}
 	if *fsync == server.FsyncOff && plantable != "yes" {

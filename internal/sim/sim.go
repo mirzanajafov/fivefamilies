@@ -45,7 +45,7 @@ func (o Options) Validate(catch Category) error {
 	switch {
 	case !o.Leases && (catch == CatLease || o.Bugs.Has(planted.LocalKeepAlive)):
 		return errors.New("sim: there are no lease holders")
-	case !o.Watches && (catch == CatWatch || o.Bugs.Has(planted.WatchGap|planted.WatchKeep)):
+	case !o.Watches && (catch == CatWatch || o.Bugs.Has(planted.Watches)):
 		return errors.New("sim: there are no watchers")
 	case !o.Membership && o.Bugs.Has(planted.EarlyConf):
 		return errors.New("sim: membership never changes")
