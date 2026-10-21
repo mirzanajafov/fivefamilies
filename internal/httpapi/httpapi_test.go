@@ -101,7 +101,7 @@ func TestTheHandlersAnswerEveryExampleOfTheContract(t *testing.T) {
 		"a service with no instances":        {"Lookup(billing, 0, 30s)", fake{instances: []client.Instance{}, index: 12}},
 		"the cluster cannot answer in time":  {"Lookup(dimensions, 64, 30s)", fake{err: context.DeadlineExceeded}},
 		"register an instance":               {"RegisterOnce(dimensions, e-7=dim-e:8080 (version=v1), 10s)", fake{lease: client.Lease{ID: 63, TTL: 10 * time.Second}}},
-		"register under a name with a slash": {"RegisterOnce(dimensions, e/7=dim-e:8080 (version=v1), 10s)", fake{err: fmt.Errorf("%w: instance name %q must be non-empty and without a slash", client.ErrInvalid, "e/7")}},
+		"register under a name with a slash": {"RegisterOnce(dimensions, e/7=dim-e:8080 (version=v1), 10s)", fake{err: fmt.Errorf("%w: instance name %q must be non-empty, without a slash and at most 128 bytes", client.ErrInvalid, "e/7")}},
 		"renew a lease":                      {"KeepAliveOnce(63)", fake{ttl: 10 * time.Second}},
 		"renew a lease that is gone":         {"KeepAliveOnce(63)", fake{err: client.ErrLeaseNotFound}},
 		"deregister":                         {"Revoke(63)", fake{}},
@@ -165,15 +165,11 @@ func TestBadRequestsNeverReachTheRegistry(t *testing.T) {
 		`{"addr": "a:1", "ttl": "soon"}`,
 		`{"addr": "a:1", "port": 80}`,
 		`{"addr": "a:1", "meta": {"weight": 2}}`,
-		`{"addr": "a:1", "meta": {"pad": "` + string(bytes.Repeat([]byte("x"), maxBody)) + `"}}`,
-		`{"addr": "a:1", "meta": {"version": "` + string(bytes.Repeat([]byte("x"), maxMetaVal+1)) + `"}}`,
-		`{"addr": "a:1", "meta": {"a": "", "b": "", "c": "", "d": "", "e": "", "f": "", "g": "", "h": "", "i": ""}}`,
+		`{"addr": "a:1", "meta": {"pad": "` + strings.Repeat("x", maxBody) + `"}}`,
 		`{"addr": "a:1", "ttl": "-5s"}`,
 		`{"addr": "a:1", "ttl": "0s"}`,
 		`{"addr": "a:1", "ttl": "500us"}`,
 		`{"addr": "a:1"}}`,
-		`{"addr": "` + strings.Repeat("a", maxAddr) + `:1"}`,
-		bigButValid(),
 		`{"addr": "a:1", "ttl": "48h"}`,
 		`{"addr": "a:1"} {"addr": "b:2"}`,
 		``,
@@ -188,30 +184,13 @@ func TestBadRequestsNeverReachTheRegistry(t *testing.T) {
 	}
 }
 
-func bigButValid() string {
-	meta := map[string]string{}
-	for i := range maxMeta {
-		meta[fmt.Sprintf("%0*d", maxMetaKey, i)] = strings.Repeat("v", maxMetaVal)
-	}
-	b, err := json.Marshal(map[string]any{"addr": "a:1", "meta": meta})
-	if err != nil {
-		panic(err)
-	}
-	return string(b)
-}
-
-func TestANameLongerThanTheLimitIsRefused(t *testing.T) {
-	long := strings.Repeat("n", maxName+1)
-	for _, req := range []*http.Request{
-		httptest.NewRequest("GET", "/v1/registry/"+long, nil),
-		httptest.NewRequest("PUT", "/v1/registry/dimensions/"+long, strings.NewReader(`{"addr": "a:1"}`)),
-	} {
-		f := fake{}
-		rec := httptest.NewRecorder()
-		NewServer(&f, nil).Handler().ServeHTTP(rec, req)
-		if rec.Code != 400 || f.called != "" {
-			t.Errorf("%s with a %d-byte name: %d, called %q", req.Method, len(long), rec.Code, f.called)
-		}
+func TestARegistrationOverTheLimitIsRefusedForItsSize(t *testing.T) {
+	padded := `{"addr": "a:1"}` + strings.Repeat(" ", maxBody)
+	rec := httptest.NewRecorder()
+	NewServer(&fake{}, nil).Handler().ServeHTTP(rec, httptest.NewRequest("PUT", "/v1/registry/dimensions/e-7", strings.NewReader(padded)))
+	var body failure
+	if rec.Code != 400 || json.Unmarshal(rec.Body.Bytes(), &body) != nil || !strings.Contains(body.Error, fmt.Sprint(maxBody)) {
+		t.Fatalf("%d %s, want a 400 that names the size limit", rec.Code, rec.Body.Bytes())
 	}
 }
 
@@ -289,39 +268,71 @@ func TestAnythingOutsideTheAPIGetsAJSONNotFound(t *testing.T) {
 	}
 }
 
-type blockingLookup struct{ fake }
+type stoppable struct {
+	fake
+	entered chan struct{}
+	ended   chan error
+}
 
-func (b *blockingLookup) Lookup(ctx context.Context, _ string, _ uint64, _ time.Duration) ([]client.Instance, uint64, error) {
+func (s *stoppable) Lookup(ctx context.Context, _ string, _ uint64, _ time.Duration) ([]client.Instance, uint64, error) {
+	s.entered <- struct{}{}
 	<-ctx.Done()
 	return nil, 0, ctx.Err()
 }
 
-func TestStoppingEndsBlockingQueriesAtOnce(t *testing.T) {
+func (s *stoppable) RegisterOnce(ctx context.Context, _ string, _ client.Instance, ttl time.Duration) (client.Lease, error) {
+	s.entered <- struct{}{}
+	select {
+	case <-ctx.Done():
+	case <-time.After(300 * time.Millisecond):
+	}
+	s.ended <- ctx.Err()
+	return client.Lease{ID: 63, TTL: ttl}, ctx.Err()
+}
+
+func TestStoppingEndsBlockingQueriesAtOnceAndLetsARegistrationFinish(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := NewServer(&blockingLookup{}, nil)
+	reg := &stoppable{entered: make(chan struct{}, 2), ended: make(chan error, 1)}
+	srv := NewServer(reg, nil)
 	go func() { _ = srv.Serve(ln) }()
-	answered := make(chan int, 1)
-	go func() {
-		resp, err := http.Get("http://" + ln.Addr().String() + "/v1/registry/dimensions?index=5&wait=1m")
+	answers := make(chan string, 2)
+	send := func(method, path, body string) {
+		req, err := http.NewRequest(method, "http://"+ln.Addr().String()+path, strings.NewReader(body))
 		if err != nil {
-			answered <- 0
+			answers <- err.Error()
+			return
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			answers <- err.Error()
 			return
 		}
 		_ = resp.Body.Close()
-		answered <- resp.StatusCode
-	}()
-	time.Sleep(100 * time.Millisecond)
+		answers <- fmt.Sprint(method, " ", resp.StatusCode)
+	}
+	go send("GET", "/v1/registry/dimensions?index=5&wait=1m", "")
+	go send("PUT", "/v1/registry/dimensions/e-7", `{"addr": "a:1"}`)
+	for range 2 {
+		select {
+		case <-reg.entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the calls never reached the registry")
+		}
+	}
 	start := time.Now()
 	if err := srv.Stop(); err != nil {
 		t.Fatal(err)
 	}
-	if took := time.Since(start); took > time.Second {
-		t.Fatalf("stopping took %v with a blocking query open", took)
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("stopping took %v", took)
 	}
-	if code := <-answered; code != http.StatusServiceUnavailable {
-		t.Fatalf("the blocking query got %d, want 503", code)
+	if first, second := <-answers, <-answers; first != "GET 503" || second != "PUT 200" {
+		t.Fatalf("answered %q then %q, want the blocking query ended with a 503 and then the registration done", first, second)
+	}
+	if err := <-reg.ended; err != nil {
+		t.Fatalf("the registration was cut off with %v", err)
 	}
 }

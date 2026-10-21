@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,5 +52,25 @@ func TestALeaseWithoutAPositiveTTLIsRefusedBeforeAnythingIsSent(t *testing.T) {
 		if _, err := c.Grant(context.Background(), ttl); !errors.Is(err, ErrInvalid) {
 			t.Errorf("a %v lease: %v, want ErrInvalid", ttl, err)
 		}
+	}
+}
+
+func TestANameLongerThanTheLimitIsRefusedBeforeAnythingIsSent(t *testing.T) {
+	c, err := New([]string{"127.0.0.1:1"}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	long := strings.Repeat("n", maxNameLen+1)
+	if _, _, err := c.Lookup(context.Background(), long, 0, time.Second); !errors.Is(err, ErrInvalid) {
+		t.Errorf("looking up a %d-byte service: %v, want ErrInvalid", len(long), err)
+	}
+	if _, err := c.RegisterOnce(context.Background(), "dimensions", Instance{Name: long, Addr: "a:1"}, time.Second); !errors.Is(err, ErrInvalid) {
+		t.Errorf("registering a %d-byte instance: %v, want ErrInvalid", len(long), err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := c.Lookup(ctx, strings.Repeat("n", maxNameLen), 0, time.Second); errors.Is(err, ErrInvalid) {
+		t.Errorf("a name at the limit was refused: %v", err)
 	}
 }

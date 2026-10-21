@@ -259,6 +259,7 @@ func main() {
 	running, stopRunning := context.WithCancel(context.Background())
 	go func() {
 		<-ctx.Done()
+		stop()
 		closeAPI()
 		stopRunning()
 	}()
@@ -269,6 +270,5 @@ func main() {
 		os.Exit(70)
 	}
 	g.GracefulStop()
-	stop()
 	logger.Info("node stopped")
 }

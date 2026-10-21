@@ -18,11 +18,13 @@ const (
 	ConfigPrefix   = "/config/"
 )
 
+const maxNameLen = 128
+
 var ErrInvalid = errors.New("client: invalid argument")
 
 func checkName(kind, name string) error {
-	if name == "" || strings.Contains(name, "/") {
-		return fmt.Errorf("%w: %s name %q must be non-empty and without a slash", ErrInvalid, kind, name)
+	if name == "" || strings.Contains(name, "/") || len(name) > maxNameLen {
+		return fmt.Errorf("%w: %s name %q must be non-empty, without a slash and at most %d bytes", ErrInvalid, kind, name, maxNameLen)
 	}
 	return nil
 }
@@ -213,7 +215,7 @@ func (c *Client) RegisterOnce(ctx context.Context, service string, inst Instance
 		return Lease{}, err
 	}
 	if _, err := c.Put(ctx, prefix+inst.Name, value, WithLease(l.ID)); err != nil {
-		return Lease{}, err
+		return Lease{}, leaseErr(err)
 	}
 	return l, nil
 }

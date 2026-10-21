@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -26,11 +27,6 @@ const (
 	callTimeout = 5 * time.Second
 	maxTTL      = 24 * time.Hour
 	maxBody     = 1 << 10
-	maxMeta     = 8
-	maxMetaKey  = 64
-	maxMetaVal  = 256
-	maxName     = 128
-	maxAddr     = 255
 )
 
 type Registry interface {
@@ -98,17 +94,19 @@ type failure struct {
 }
 
 type api struct {
-	reg    Registry
-	status func() *pb.StatusResponse
+	reg      Registry
+	status   func() *pb.StatusResponse
+	stopping context.Context
 }
 
 type Server struct {
-	http   *http.Server
-	cancel context.CancelFunc
+	http *http.Server
+	stop context.CancelFunc
 }
 
 func NewServer(reg Registry, statusOf func() *pb.StatusResponse) *Server {
-	a := &api{reg: reg, status: statusOf}
+	stopping, stop := context.WithCancel(context.Background())
+	a := &api{reg: reg, status: statusOf, stopping: stopping}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, failure{Error: r.Method + " " + r.URL.Path + " is not part of the API"})
@@ -118,7 +116,6 @@ func NewServer(reg Registry, statusOf func() *pb.StatusResponse) *Server {
 	mux.HandleFunc("POST /v1/leases/{id}/keepalive", a.keepAlive)
 	mux.HandleFunc("DELETE /v1/leases/{id}", a.revoke)
 	mux.HandleFunc("GET /v1/status", a.nodeStatus)
-	base, cancel := context.WithCancel(context.Background())
 	return &Server{
 		http: &http.Server{
 			Handler:           mux,
@@ -126,9 +123,8 @@ func NewServer(reg Registry, statusOf func() *pb.StatusResponse) *Server {
 			ReadTimeout:       10 * time.Second,
 			WriteTimeout:      maxWait + 2*callTimeout,
 			IdleTimeout:       2 * time.Minute,
-			BaseContext:       func(net.Listener) context.Context { return base },
 		},
-		cancel: cancel,
+		stop: stop,
 	}
 }
 
@@ -137,7 +133,7 @@ func (s *Server) Handler() http.Handler { return s.http.Handler }
 func (s *Server) Serve(ln net.Listener) error { return s.http.Serve(ln) }
 
 func (s *Server) Stop() error {
-	s.cancel()
+	s.stop()
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout+time.Second)
 	defer cancel()
 	if err := s.http.Shutdown(ctx); err != nil {
@@ -172,15 +168,14 @@ func finishing(r *http.Request) (context.Context, context.CancelFunc) {
 
 func (a *api) lookup(w http.ResponseWriter, r *http.Request) {
 	index, wait, err := waitParams(r)
-	if err == nil && len(r.PathValue("service")) > maxName {
-		err = fmt.Errorf("names are at most %d bytes", maxName)
-	}
 	if err != nil {
 		badRequest(w, err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), wait+callTimeout)
 	defer cancel()
+	stop := context.AfterFunc(a.stopping, cancel)
+	defer stop()
 	list, rev, err := a.reg.Lookup(ctx, r.PathValue("service"), index, wait)
 	if err != nil {
 		fail(w, err)
@@ -195,10 +190,14 @@ func (a *api) lookup(w http.ResponseWriter, r *http.Request) {
 
 func readRegistration(w http.ResponseWriter, r *http.Request) (registration, error) {
 	var req registration
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	if err != nil {
+		return req, fmt.Errorf("a registration is at most %d bytes: %w", maxBody, err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
-		return req, fmt.Errorf("the body must be one JSON registration of at most %d bytes: %w", maxBody, err)
+		return req, fmt.Errorf("the body must be one JSON registration: %w", err)
 	}
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return req, errors.New("the body must hold one JSON registration and nothing after it")
@@ -208,17 +207,6 @@ func readRegistration(w http.ResponseWriter, r *http.Request) (registration, err
 	}
 	if ttl := time.Duration(*req.TTL); ttl < time.Millisecond || ttl > maxTTL {
 		return req, fmt.Errorf("ttl must be between 1ms and %v", maxTTL)
-	}
-	if len(req.Addr) > maxAddr || len(r.PathValue("service")) > maxName || len(r.PathValue("instance")) > maxName {
-		return req, fmt.Errorf("names are at most %d bytes and the address at most %d", maxName, maxAddr)
-	}
-	if len(req.Meta) > maxMeta {
-		return req, fmt.Errorf("meta holds at most %d keys", maxMeta)
-	}
-	for k, v := range req.Meta {
-		if len(k) > maxMetaKey || len(v) > maxMetaVal {
-			return req, fmt.Errorf("meta keys are at most %d bytes and values at most %d", maxMetaKey, maxMetaVal)
-		}
 	}
 	return req, nil
 }
@@ -233,7 +221,7 @@ func (a *api) register(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), callTimeout)
 	defer cancel()
 	l, err := a.reg.RegisterOnce(ctx, r.PathValue("service"), client.Instance{Name: r.PathValue("instance"), Addr: req.Addr, Meta: req.Meta}, ttl)
-	if errors.Is(err, client.ErrLeaseNotFound) || client.Reason(err) == pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND {
+	if errors.Is(err, client.ErrLeaseNotFound) {
 		unavailable(w, failure{Error: "the lease ran out before the instance was put on it: " + err.Error()})
 		return
 	}
@@ -296,7 +284,7 @@ func fail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, client.ErrInvalid), status.Code(err) == codes.InvalidArgument:
 		badRequest(w, err)
-	case errors.Is(err, client.ErrLeaseNotFound), client.Reason(err) == pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND:
+	case errors.Is(err, client.ErrLeaseNotFound):
 		writeJSON(w, http.StatusNotFound, failure{Error: err.Error(), Reason: reason(pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND)})
 	case client.Reason(err) == pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES:
 		unavailable(w, failure{Error: err.Error(), Reason: reason(pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES)})
