@@ -166,15 +166,16 @@ func TestABeatGoesToEveryWatcherThatHeardNothingSinceTheLastOne(t *testing.T) {
 	}
 }
 
-func TestAWatcherThatCannotTakeABeatIsDropped(t *testing.T) {
+func TestAWatcherThatCannotTakeABeatIsDroppedAndTheOthersStay(t *testing.T) {
 	h := New(100, 0, 0)
-	full := &sink{}
+	full, fine := &sink{}, &sink{}
 	watch(t, h, "/z/", true, full.send)
+	watch(t, h, "/y/", true, fine.send)
 	h.Beat()
 	full.full = true
 	h.Beat()
-	if h.Len() != 0 {
-		t.Fatalf("%d watchers after a beat the only one could not take", h.Len())
+	if h.Len() != 1 || !fine.got[len(fine.got)-1].Progress {
+		t.Fatalf("%d watchers after a beat one could not take, want the other one, which got the beat", h.Len())
 	}
 }
 
