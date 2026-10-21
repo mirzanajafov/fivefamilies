@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
@@ -25,7 +26,7 @@ type Config struct {
 	MaxSessions   int
 	WatchHistory  int
 	WatchProgress time.Duration
-	Bugs          raft.Bug
+	Bugs          planted.Bug
 	Logger        *slog.Logger
 
 	FsyncMode       string

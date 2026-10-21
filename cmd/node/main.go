@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/mirzanajafov/fivefamilies/internal/backup"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/server"
 	"github.com/mirzanajafov/fivefamilies/internal/transport"
@@ -92,7 +93,7 @@ func main() {
 	snapEvery := flag.Uint64("snapshot-every", 10000, "applied entries between snapshots")
 	retain := flag.Uint64("retain", 5000, "entries kept behind a snapshot for slow followers")
 	segment := flag.Int64("segment-bytes", 64<<20, "log segment size")
-	bugs := flag.String("bug", "", "planted bugs (only in builds made for testing)")
+	bugList := flag.String("bug", "", "planted bugs (only in builds made for testing)")
 	fsync := flag.String("fsync", "group", "group (one fsync for everything queued), ready (one per write), entry (one per entry), or off (unsafe, test builds only)")
 	syncStorage := flag.Bool("sync-storage", false, "wait for the disk inside the event loop, for measuring what asynchronous storage buys")
 	writeFirst := flag.Bool("write-before-send", false, "the leader writes entries before sending them, instead of in parallel")
@@ -123,9 +124,13 @@ func main() {
 		logger.Error("bad -voters", "err", err)
 		os.Exit(2)
 	}
-	planted, err := raft.ParseBugs(*bugs)
-	if err != nil || (planted != 0 && plantable != "yes") {
-		logger.Error("planted bugs are only available in test builds", "bug", *bugs, "err", err)
+	bugs, err := planted.Parse(*bugList)
+	if err != nil {
+		logger.Error("bad -bug", "err", err)
+		os.Exit(2)
+	}
+	if bugs != 0 && plantable != "yes" {
+		logger.Error("planted bugs are only available in test builds", "bug", *bugList)
 		os.Exit(2)
 	}
 	if *fsync == server.FsyncOff && plantable != "yes" {
@@ -153,7 +158,7 @@ func main() {
 		SnapshotEvery:   *snapEvery,
 		Retain:          *retain,
 		SegmentBytes:    *segment,
-		Bugs:            planted,
+		Bugs:            bugs,
 		Logger:          logger,
 		FsyncMode:       *fsync,
 		SyncStorage:     *syncStorage,

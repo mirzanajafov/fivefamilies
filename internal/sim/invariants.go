@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/watch"
 )
@@ -248,7 +249,7 @@ type recorder struct {
 	last uint64
 }
 
-func newRecorder(chk *checker, idx int, history int, bugs raft.Bug) *recorder {
+func newRecorder(chk *checker, idx int, history int, bugs planted.Bug) *recorder {
 	return &recorder{chk: chk, idx: idx, Machine: watch.NewMachine(0, history, bugs)}
 }
 

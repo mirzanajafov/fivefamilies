@@ -13,6 +13,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/check"
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
@@ -27,7 +28,7 @@ type Options struct {
 	HeartbeatTick int
 	PreVote       bool
 	CheckQuorum   bool
-	Bugs          raft.Bug
+	Bugs          planted.Bug
 	MuteSafety    bool
 	LeaseTicks    int
 	ClockSkew     float64
@@ -42,13 +43,13 @@ type Options struct {
 
 func (o Options) Validate(catch Category) error {
 	switch {
-	case !o.Leases && (catch == CatLease || o.Bugs.Has(raft.BugLocalKeepAlive)):
+	case !o.Leases && (catch == CatLease || o.Bugs.Has(planted.LocalKeepAlive)):
 		return errors.New("sim: there are no lease holders")
-	case !o.Watches && (catch == CatWatch || o.Bugs.Has(raft.BugWatchGap|raft.BugWatchKeep)):
+	case !o.Watches && (catch == CatWatch || o.Bugs.Has(planted.Watches)):
 		return errors.New("sim: there are no watchers")
-	case !o.Membership && o.Bugs.Has(raft.BugEarlyConf):
+	case !o.Membership && o.Bugs.Has(planted.EarlyConf):
 		return errors.New("sim: membership never changes")
-	case o.Reads == ReadLog && o.Bugs.Has(raft.BugFollowerRead):
+	case o.Reads == ReadLog && o.Bugs.Has(planted.FollowerRead):
 		return errors.New("sim: every read goes through the log")
 	}
 	return nil
@@ -367,7 +368,7 @@ func (s *Sim) boot(sn *simNode) {
 			return
 		}
 	}
-	sn.n = node.New(r, nodeEnv{s: s, sn: sn}, sn.sm, node.Config{SnapshotEvery: s.sw.snapEvery, Retain: s.sw.retain, Tick: s.opts.Tick})
+	sn.n = node.New(r, nodeEnv{s: s, sn: sn}, sn.sm, node.Config{SnapshotEvery: s.sw.snapEvery, Retain: s.sw.retain, Tick: s.opts.Tick, Bugs: s.opts.Bugs})
 	s.chk.restarted(sn.idx)
 	s.process(sn)
 	if sn.n == nil {

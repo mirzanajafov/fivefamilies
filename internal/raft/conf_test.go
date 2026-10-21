@@ -4,6 +4,8 @@ import (
 	"errors"
 	"slices"
 	"testing"
+
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 )
 
 func (c *cluster) add(tweak func(*Config)) NodeID {
@@ -158,11 +160,11 @@ func TestOnlyOneChangeIsInFlight(t *testing.T) {
 }
 
 func TestANewLeaderCommitsInItsOwnTermBeforeChanging(t *testing.T) {
-	for _, planted := range []bool{false, true} {
+	for _, buggy := range []bool{false, true} {
 		r := newNode(t, 1, []NodeID{1, 2, 3}, Restore{}, func(cfg *Config) {
 			cfg.PreVote = false
-			if planted {
-				cfg.Bugs = BugEarlyConf
+			if buggy {
+				cfg.Bugs = planted.EarlyConf
 			}
 		})
 		r.Campaign()
@@ -171,10 +173,10 @@ func TestANewLeaderCommitsInItsOwnTermBeforeChanging(t *testing.T) {
 		}
 		r.Step(Message{Type: MsgVoteResp, From: 2, To: 1, Term: 1})
 		_, err := r.ProposeConfChange(ConfChange{ConfAddLearner, 4})
-		if planted != (err == nil) {
-			t.Fatalf("planted %v: change before the first commit gave %v", planted, err)
+		if buggy != (err == nil) {
+			t.Fatalf("planted %v: change before the first commit gave %v", buggy, err)
 		}
-		if !planted && !errors.Is(err, ErrConfNotReady) {
+		if !buggy && !errors.Is(err, ErrConfNotReady) {
 			t.Fatalf("error %v", err)
 		}
 	}
@@ -436,11 +438,11 @@ func TestAReadForwardedToAnOldLeaderIsRefusedWithTheNewTerm(t *testing.T) {
 }
 
 func TestAnEarlyChangeLetsTwoMajoritiesCommitDifferentEntries(t *testing.T) {
-	for _, planted := range []bool{false, true} {
+	for _, buggy := range []bool{false, true} {
 		tweak := func(cfg *Config) {
 			cfg.PreVote, cfg.CheckQuorum = false, false
-			if planted {
-				cfg.Bugs = BugEarlyConf
+			if buggy {
+				cfg.Bugs = planted.EarlyConf
 			}
 		}
 		c := newCluster(t, 4, tweak)
@@ -460,7 +462,7 @@ func TestAnEarlyChangeLetsTwoMajoritiesCommitDifferentEntries(t *testing.T) {
 		c.drop = func(m Message) bool { return m.From == 2 && (m.Type == MsgApp || m.Type == MsgHeartbeat) }
 		c.elect(2)
 		_, err := c.node(2).ProposeConfChange(ConfChange{ConfRemove, 1})
-		if !planted {
+		if !buggy {
 			if !errors.Is(err, ErrConfNotReady) {
 				t.Fatalf("a leader whose empty entry has not committed proposed a change: %v", err)
 			}

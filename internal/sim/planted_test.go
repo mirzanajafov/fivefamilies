@@ -3,26 +3,26 @@ package sim
 import (
 	"testing"
 
-	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 )
 
 var canaries = []struct {
-	bug       raft.Bug
+	bug       planted.Bug
 	reads     ReadMode
 	noPreVote bool
 	nets      []Category
 	seeds     []uint64
 }{
-	{raft.BugFigure8, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{853}},
-	{raft.BugStaleTerm, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{667}},
-	{raft.BugPrevTerm, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{19}},
-	{raft.BugAnyVote, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{3}},
-	{raft.BugNoFsync, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{1}},
-	{raft.BugFollowerRead, ReadFollower, false, []Category{CatLinearizability}, []uint64{1}},
-	{raft.BugEarlyConf, ReadAny, true, []Category{CatSafety}, []uint64{7622}},
-	{raft.BugLocalKeepAlive, ReadAny, false, []Category{CatLease}, []uint64{981}},
-	{raft.BugWatchGap, ReadAny, false, []Category{CatWatch}, []uint64{2}},
-	{raft.BugWatchKeep, ReadAny, false, []Category{CatWatch}, []uint64{7}},
+	{planted.Figure8, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{853}},
+	{planted.StaleTerm, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{667}},
+	{planted.PrevTerm, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{19}},
+	{planted.AnyVote, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{3}},
+	{planted.NoFsync, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{1}},
+	{planted.FollowerRead, ReadFollower, false, []Category{CatLinearizability}, []uint64{1}},
+	{planted.EarlyConf, ReadAny, true, []Category{CatSafety}, []uint64{7622}},
+	{planted.LocalKeepAlive, ReadAny, false, []Category{CatLease}, []uint64{981}},
+	{planted.WatchGap, ReadAny, false, []Category{CatWatch}, []uint64{2}},
+	{planted.WatchKeep, ReadAny, false, []Category{CatWatch}, []uint64{7}},
 }
 
 func TestPlantedBugsAreCaught(t *testing.T) {
@@ -65,11 +65,11 @@ func TestCanarySeedsPassWithoutTheBug(t *testing.T) {
 }
 
 func TestEveryBugHasACanary(t *testing.T) {
-	have := map[raft.Bug]bool{}
+	have := map[planted.Bug]bool{}
 	for _, c := range canaries {
 		have[c.bug] = len(c.seeds) > 0
 	}
-	for _, b := range raft.AllBugs() {
+	for _, b := range planted.All() {
 		if !have[b] {
 			t.Errorf("planted bug %s has no canary seed", b)
 		}

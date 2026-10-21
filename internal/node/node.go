@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/wal"
 )
@@ -38,6 +39,7 @@ type Config struct {
 	Retain          uint64
 	Tick            time.Duration
 	WriteBeforeSend bool
+	Bugs            planted.Bug
 }
 
 var (
@@ -187,7 +189,7 @@ func (n *Node) KeepAlive(id uint64, done Done) {
 		lc.deadline = max(lc.deadline, n.ticks+lc.ttl)
 		return kv.Result{Ok: true, Rev: n.r.Applied(), Lease: id, TTL: info.TTL}, nil
 	}
-	if n.r.Planted(raft.BugLocalKeepAlive) {
+	if n.cfg.Bugs.Has(planted.LocalKeepAlive) {
 		n.syncLessor()
 		done(renew())
 		return
