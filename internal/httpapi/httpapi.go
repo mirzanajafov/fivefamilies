@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,7 +22,11 @@ const (
 	maxWait     = 5 * time.Minute
 	defaultTTL  = 10 * time.Second
 	callTimeout = 5 * time.Second
-	maxBody     = 4 << 10
+	maxTTL      = 24 * time.Hour
+	maxBody     = 1 << 10
+	maxMeta     = 8
+	maxMetaKey  = 64
+	maxMetaVal  = 256
 )
 
 type Registry interface {
@@ -35,6 +40,19 @@ type duration time.Duration
 
 func (d duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(d).String())
+}
+
+func (d *duration) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return errors.New(`a duration is a string like "10s"`)
+	}
+	v, err := time.ParseDuration(s)
+	if err != nil {
+		return errors.New(`a duration is a string like "10s"`)
+	}
+	*d = duration(v)
+	return nil
 }
 
 type instance struct {
@@ -51,7 +69,7 @@ type instances struct {
 type registration struct {
 	Addr string            `json:"addr"`
 	Meta map[string]string `json:"meta"`
-	TTL  string            `json:"ttl"`
+	TTL  duration          `json:"ttl"`
 }
 
 type granted struct {
@@ -80,9 +98,12 @@ type api struct {
 	status func() *pb.StatusResponse
 }
 
-func NewServer(reg Registry, status func() *pb.StatusResponse) *http.Server {
-	a := &api{reg: reg, status: status}
+func NewServer(reg Registry, statusOf func() *pb.StatusResponse) *http.Server {
+	a := &api{reg: reg, status: statusOf}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusNotFound, failure{Error: r.Method + " " + r.URL.Path + " is not part of the API"})
+	})
 	mux.HandleFunc("GET /v1/registry/{service}", a.lookup)
 	mux.HandleFunc("PUT /v1/registry/{service}/{instance}", a.register)
 	mux.HandleFunc("POST /v1/leases/{id}/keepalive", a.keepAlive)
@@ -141,24 +162,41 @@ func (a *api) lookup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (a *api) register(w http.ResponseWriter, r *http.Request) {
+func readRegistration(w http.ResponseWriter, r *http.Request) (registration, error) {
 	var req registration
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
+		return req, fmt.Errorf("the body must be one JSON registration of at most %d bytes: %w", maxBody, err)
+	}
+	if dec.More() {
+		return req, errors.New("the body must hold one JSON registration and nothing after it")
+	}
+	if req.TTL == 0 {
+		req.TTL = duration(defaultTTL)
+	}
+	if req.TTL < 0 || time.Duration(req.TTL) > maxTTL {
+		return req, fmt.Errorf("ttl must be positive and at most %v", maxTTL)
+	}
+	if len(req.Meta) > maxMeta {
+		return req, fmt.Errorf("meta holds at most %d keys", maxMeta)
+	}
+	for k, v := range req.Meta {
+		if len(k) > maxMetaKey || len(v) > maxMetaVal {
+			return req, fmt.Errorf("meta keys are at most %d bytes and values at most %d", maxMetaKey, maxMetaVal)
+		}
+	}
+	return req, nil
+}
+
+func (a *api) register(w http.ResponseWriter, r *http.Request) {
+	req, err := readRegistration(w, r)
+	if err != nil {
 		badRequest(w, err)
 		return
 	}
-	ttl := defaultTTL
-	if req.TTL != "" {
-		d, err := time.ParseDuration(req.TTL)
-		if err != nil {
-			badRequest(w, errors.New(`ttl must be a duration like "10s"`))
-			return
-		}
-		ttl = d
-	}
-	ctx, cancel := finishing(r)
+	ttl := time.Duration(req.TTL)
+	ctx, cancel := context.WithTimeout(r.Context(), callTimeout)
 	defer cancel()
 	l, err := a.reg.RegisterOnce(ctx, r.PathValue("service"), client.Instance{Name: r.PathValue("instance"), Addr: req.Addr, Meta: req.Meta}, ttl)
 	if err != nil {
@@ -220,7 +258,7 @@ func fail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, client.ErrInvalid), status.Code(err) == codes.InvalidArgument:
 		badRequest(w, err)
-	case errors.Is(err, client.ErrLeaseNotFound):
+	case errors.Is(err, client.ErrLeaseNotFound), client.Reason(err) == pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND:
 		writeJSON(w, http.StatusNotFound, failure{Error: err.Error(), Reason: reason(pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND)})
 	case client.Reason(err) == pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES:
 		unavailable(w, failure{Error: err.Error(), Reason: reason(pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES)})

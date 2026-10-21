@@ -1,7 +1,10 @@
 package client
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 )
@@ -34,6 +37,19 @@ func TestOnlyKnownReadModesParse(t *testing.T) {
 		var got ReadMode
 		if err := got.UnmarshalText([]byte(s)); err == nil {
 			t.Errorf("%q was accepted", s)
+		}
+	}
+}
+
+func TestALeaseWithoutAPositiveTTLIsRefusedBeforeAnythingIsSent(t *testing.T) {
+	c, err := New([]string{"127.0.0.1:1"}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	for _, ttl := range []time.Duration{0, -5 * time.Second} {
+		if _, err := c.Grant(context.Background(), ttl); !errors.Is(err, ErrInvalid) {
+			t.Errorf("a %v lease: %v, want ErrInvalid", ttl, err)
 		}
 	}
 }

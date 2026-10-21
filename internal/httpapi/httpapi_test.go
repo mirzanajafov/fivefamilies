@@ -164,6 +164,12 @@ func TestBadRequestsNeverReachTheRegistry(t *testing.T) {
 		`{"addr": "a:1", "port": 80}`,
 		`{"addr": "a:1", "meta": {"weight": 2}}`,
 		`{"addr": "a:1", "meta": {"pad": "` + string(bytes.Repeat([]byte("x"), maxBody)) + `"}}`,
+		`{"addr": "a:1", "meta": {"version": "` + string(bytes.Repeat([]byte("x"), maxMetaVal+1)) + `"}}`,
+		`{"addr": "a:1", "meta": {"a": "", "b": "", "c": "", "d": "", "e": "", "f": "", "g": "", "h": "", "i": ""}}`,
+		`{"addr": "a:1", "ttl": "-5s"}`,
+		`{"addr": "a:1", "ttl": "48h"}`,
+		`{"addr": "a:1"} {"addr": "b:2"}`,
+		``,
 		`not json`,
 	} {
 		f := fake{}
@@ -214,7 +220,28 @@ func TestACallWhoseCallerWentAwayStillFinishesInTheCluster(t *testing.T) {
 	if _, err := http.DefaultClient.Do(req); err == nil {
 		t.Fatal("the caller got an answer before its deadline")
 	}
-	if err := <-reg.ended; err != nil {
-		t.Fatalf("the call stopped with %v when its caller went away", err)
+	select {
+	case err := <-reg.ended:
+		if err != nil {
+			t.Fatalf("the call stopped with %v when its caller went away", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the keepalive never reached the registry")
+	}
+}
+
+func TestAnythingOutsideTheAPIGetsAJSONNotFound(t *testing.T) {
+	for _, target := range []string{"GET /v1/leases/63", "POST /v1/registry/dimensions", "GET /v2/status", "GET /"} {
+		var method, path string
+		if _, err := fmt.Sscan(target, &method, &path); err != nil {
+			t.Fatal(err)
+		}
+		f := fake{}
+		rec := httptest.NewRecorder()
+		NewServer(&f, nil).Handler.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+		var body failure
+		if rec.Code != http.StatusNotFound || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Error == "" || f.called != "" {
+			t.Errorf("%s: %d %s, called %q", target, rec.Code, rec.Body.Bytes(), f.called)
+		}
 	}
 }

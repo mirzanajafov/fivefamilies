@@ -70,8 +70,14 @@ func serveAPI(addr string, nodes map[raft.NodeID]string, srv *server.Server, log
 		}
 	}()
 	return func() {
-		if err := errors.Join(hs.Close(), cl.Close()); err != nil {
-			logger.Warn("closing the HTTP API", "err", err)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := hs.Shutdown(ctx); err != nil {
+			err = errors.Join(err, hs.Close())
+			logger.Warn("stopping the HTTP API", "err", err)
+		}
+		if err := cl.Close(); err != nil {
+			logger.Warn("closing the HTTP API's client", "err", err)
 		}
 	}, nil
 }
