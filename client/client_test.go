@@ -77,17 +77,16 @@ func TestAnInstanceOverTheLimitAsStoredIsRefusedBeforeAnythingIsSent(t *testing.
 	}
 }
 
-func TestANameLongerThanTheLimitIsRefusedBeforeAnythingIsSent(t *testing.T) {
+func TestANameThatIsNotAPathSegmentOfAtMost128BytesIsRefusedBeforeAnythingIsSent(t *testing.T) {
 	c, ctx := unreachable(t)
 	long := strings.Repeat("n", maxNameLen+1)
 	if _, _, err := c.Lookup(ctx, long, 0, time.Second); !errors.Is(err, ErrInvalid) {
 		t.Errorf("looking up a %d-byte service: %v, want ErrInvalid", len(long), err)
 	}
-	if _, err := c.RegisterOnce(ctx, "dimensions", Instance{Name: long, Addr: "a:1"}, time.Second); !errors.Is(err, ErrInvalid) {
-		t.Errorf("registering a %d-byte instance: %v, want ErrInvalid", len(long), err)
-	}
-	if _, err := c.RegisterOnce(ctx, "dimensions", Instance{Name: "e-\xff", Addr: "a:1"}, time.Second); !errors.Is(err, ErrInvalid) {
-		t.Errorf("registering a name that isn't UTF-8: %v, want ErrInvalid", err)
+	for _, name := range []string{long, "e-\xff", ".", ".."} {
+		if _, err := c.RegisterOnce(ctx, "dimensions", Instance{Name: name, Addr: "a:1"}, time.Second); !errors.Is(err, ErrInvalid) {
+			t.Errorf("registering %q: %v, want ErrInvalid", name, err)
+		}
 	}
 	done, cancel := context.WithCancel(context.Background())
 	cancel()
