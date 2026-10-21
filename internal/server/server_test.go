@@ -390,7 +390,7 @@ func TestASnapshotThatCannotBeSavedEndsRunWithoutItsLogRecordAndCallsStopWaiting
 		<-finished
 	})
 	deadline := time.Now().Add(5 * time.Second)
-	for srv.Status().GetState() != "leader" {
+	for srv.Status().GetRole() != pb.Role_ROLE_LEADER {
 		if time.Now().After(deadline) {
 			t.Fatal("no leader")
 		}
