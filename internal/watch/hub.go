@@ -171,13 +171,12 @@ func (h *Hub) Progress() {
 }
 
 func (h *Hub) Beat() {
-	for _, id := range h.ids() {
-		w := h.watchers[id]
+	for id, w := range h.watchers {
 		if w.spoke {
 			w.spoke = false
 			continue
 		}
-		if !w.send(Batch{Rev: max(h.rev, w.next-1), Progress: true}) {
+		if !w.send(Batch{Rev: w.next - 1, Progress: true}) {
 			delete(h.watchers, id)
 		}
 	}

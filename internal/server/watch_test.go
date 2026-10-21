@@ -156,10 +156,19 @@ const silence = 500 * time.Millisecond
 
 func beating(cfg *Config) {
 	cfg.WatchProgress = 50 * time.Millisecond
-	cfg.Chaos = true
 }
 
-func watchingAFollower(t *testing.T, c *testCluster, front func(addr string) string) (raft.NodeID, *client.Client, *client.Client) {
+func newWatcher(t *testing.T, addrs []string) *client.Client {
+	t.Helper()
+	watcher, err := client.New(addrs, client.Options{WatchSilence: silence})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { watcher.Close() })
+	return watcher
+}
+
+func watchingAFollower(t *testing.T, c *testCluster, front func(addr string) string) (raft.NodeID, []string, *client.Client) {
 	t.Helper()
 	leader := c.leader(5 * time.Second)
 	follower := leader%3 + 1
@@ -176,25 +185,30 @@ func watchingAFollower(t *testing.T, c *testCluster, front func(addr string) str
 			addrs = append(addrs, addr)
 		}
 	}
-	watcher, err := client.New(addrs, client.Options{WatchSilence: silence})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = watcher.Close() })
 	writer, err := client.New(c.addrs(), client.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = writer.Close() })
-	return follower, watcher, writer
+	t.Cleanup(func() { writer.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := writer.Put(ctx, "warm", []byte("up")); err != nil {
+		t.Fatal(err)
+	}
+	return follower, addrs, writer
 }
 
 func hasEvents(r client.WatchResponse) bool { return len(r.Events) > 0 }
 
-func movedOn(t *testing.T, events <-chan client.WatchResponse, value string) {
+func movedOn(t *testing.T, ctx context.Context, writer *client.Client, events <-chan client.WatchResponse) {
 	t.Helper()
-	got, took := waitFor(t, events, 10*time.Second, hasEvents)
-	if string(got.Events[0].KV.Value) != value {
+	start := time.Now()
+	if _, err := writer.Put(ctx, "a", []byte("1")); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := waitFor(t, events, 10*time.Second, hasEvents)
+	took := time.Since(start)
+	if string(got.Events[0].KV.Value) != "1" {
 		t.Fatalf("after the move the watch got %+v", got.Events)
 	}
 	if took < silence/2 {
@@ -208,40 +222,47 @@ func TestAWatchMovesOnFromANodeThatStoppedAnsweringAndTheNextOneStartsElsewhere(
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	var f *freezer
-	_, watcher, writer := watchingAFollower(t, c, func(addr string) string {
+	_, addrs, writer := watchingAFollower(t, c, func(addr string) string {
 		f = newFreezer(t, addr)
 		return f.ln.Addr().String()
 	})
+	watcher := newWatcher(t, addrs)
 	events := watcher.Watch(ctx, "a", false, 0)
 	<-events
 	f.frozen.Store(true)
-	if _, err := writer.Put(ctx, "a", []byte("1")); err != nil {
-		t.Fatal(err)
-	}
-	movedOn(t, events, "1")
+	movedOn(t, ctx, writer, events)
 	if _, err := writer.Put(ctx, "b", []byte("2")); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, watcher.Watch(ctx, "b", false, 1), 3*silence, hasEvents)
+	waitFor(t, watcher.Watch(ctx, "b", false, 1), silence/2, hasEvents)
+
+	fresh := newWatcher(t, addrs)
+	if _, _, err := fresh.Get(ctx, "b", client.ReadIndex); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, fresh.Watch(ctx, "b", false, 1), silence/2, hasEvents)
 }
 
 func TestAWatchMovesOnFromANodeWhoseLoopStopped(t *testing.T) {
-	c := newTestCluster(t, 3, beating)
+	c := newTestCluster(t, 3, func(cfg *Config) {
+		beating(cfg)
+		cfg.Chaos = true
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	follower, watcher, writer := watchingAFollower(t, c, func(addr string) string { return addr })
-	events := watcher.Watch(ctx, "a", false, 0)
+	follower, addrs, writer := watchingAFollower(t, c, func(addr string) string { return addr })
+	events := newWatcher(t, addrs).Watch(ctx, "a", false, 0)
 	<-events
 	chaos(t, c, follower, pb.ChaosAction_CHAOS_ACTION_PAUSE, 30*time.Second)
-	if _, err := writer.Put(ctx, "a", []byte("1")); err != nil {
-		t.Fatal(err)
-	}
-	movedOn(t, events, "1")
+	movedOn(t, ctx, writer, events)
 	chaos(t, c, follower, pb.ChaosAction_CHAOS_ACTION_HEAL, 0)
 }
 
 func TestAQuietWatchStaysOnItsNode(t *testing.T) {
-	c := newTestCluster(t, 3, beating)
+	c := newTestCluster(t, 3, func(cfg *Config) {
+		beating(cfg)
+		cfg.ElectionTick = 200
+	})
 	c.leader(5 * time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

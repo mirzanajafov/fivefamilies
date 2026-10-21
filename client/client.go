@@ -195,6 +195,9 @@ func (c *Client) moveOn(failed string, md metadata.MD) {
 		c.next = (c.next + 1) % len(c.addrs)
 		c.leader = c.addrs[c.next]
 	}
+	if c.addrs[c.watchAt] == failed {
+		c.watchAt = (c.watchAt + 1) % len(c.addrs)
+	}
 }
 
 func retryable(err error) bool {
