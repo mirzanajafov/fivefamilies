@@ -436,9 +436,9 @@ func (x *StatusResponse) GetRole() Role {
 type ChaosRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 
-	Action        string      `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	LegacyAction  string      `protobuf:"bytes,1,opt,name=legacy_action,json=legacyAction,proto3" json:"legacy_action,omitempty"`
 	DurationMs    uint64      `protobuf:"varint,2,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
-	Kind          ChaosAction `protobuf:"varint,3,opt,name=kind,proto3,enum=fivefamilies.v1.ChaosAction" json:"kind,omitempty"`
+	Action        ChaosAction `protobuf:"varint,3,opt,name=action,proto3,enum=fivefamilies.v1.ChaosAction" json:"action,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -472,9 +472,9 @@ func (*ChaosRequest) Descriptor() ([]byte, []int) {
 	return file_fivefamilies_v1_admin_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ChaosRequest) GetAction() string {
+func (x *ChaosRequest) GetLegacyAction() string {
 	if x != nil {
-		return x.Action
+		return x.LegacyAction
 	}
 	return ""
 }
@@ -486,9 +486,9 @@ func (x *ChaosRequest) GetDurationMs() uint64 {
 	return 0
 }
 
-func (x *ChaosRequest) GetKind() ChaosAction {
+func (x *ChaosRequest) GetAction() ChaosAction {
 	if x != nil {
-		return x.Kind
+		return x.Action
 	}
 	return ChaosAction_CHAOS_ACTION_UNSPECIFIED
 }
@@ -872,12 +872,12 @@ const file_fivefamilies_v1_admin_proto_rawDesc = "" +
 	"\x05reads\x18\x14 \x01(\x04R\x05reads\x12\x16\n" +
 	"\x06writes\x18\x15 \x01(\x04R\x06writes\x12\x1c\n" +
 	"\telections\x18\x16 \x01(\x04R\telections\x12)\n" +
-	"\x04role\x18\x17 \x01(\x0e2\x15.fivefamilies.v1.RoleR\x04role\"}\n" +
-	"\fChaosRequest\x12\x1a\n" +
-	"\x06action\x18\x01 \x01(\tB\x02\x18\x01R\x06action\x12\x1f\n" +
+	"\x04role\x18\x17 \x01(\x0e2\x15.fivefamilies.v1.RoleR\x04role\"\x8e\x01\n" +
+	"\fChaosRequest\x12'\n" +
+	"\rlegacy_action\x18\x01 \x01(\tB\x02\x18\x01R\flegacyAction\x12\x1f\n" +
 	"\vduration_ms\x18\x02 \x01(\x04R\n" +
-	"durationMs\x120\n" +
-	"\x04kind\x18\x03 \x01(\x0e2\x1c.fivefamilies.v1.ChaosActionR\x04kind\"\x0f\n" +
+	"durationMs\x124\n" +
+	"\x06action\x18\x03 \x01(\x0e2\x1c.fivefamilies.v1.ChaosActionR\x06action\"\x0f\n" +
 	"\rChaosResponse\"\x0f\n" +
 	"\rBackupRequest\"^\n" +
 	"\x0eBackupResponse\x12\x10\n" +

@@ -231,7 +231,7 @@ func chaos(t *testing.T, c *testCluster, id raft.NodeID, action pb.ChaosAction, 
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := c.admin(id).Chaos(ctx, &pb.ChaosRequest{Kind: action, DurationMs: uint64(d / time.Millisecond)}); err != nil {
+	if _, err := c.admin(id).Chaos(ctx, &pb.ChaosRequest{Action: action, DurationMs: uint64(d / time.Millisecond)}); err != nil {
 		t.Fatalf("%s on %d: %v", action, id, err)
 	}
 }
@@ -279,13 +279,13 @@ func TestChaosIsBoundedAndOffByDefault(t *testing.T) {
 	c2.leader(5 * time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := c.admin(1).Chaos(ctx, &pb.ChaosRequest{Kind: pb.ChaosAction_CHAOS_ACTION_PAUSE, DurationMs: 100}); err == nil {
+	if _, err := c.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_PAUSE, DurationMs: 100}); err == nil {
 		t.Fatal("chaos ran on a node started without it")
 	}
-	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Kind: pb.ChaosAction_CHAOS_ACTION_PAUSE, DurationMs: uint64(2 * time.Minute / time.Millisecond)}); status.Code(err) != codes.InvalidArgument {
+	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_PAUSE, DurationMs: uint64(2 * time.Minute / time.Millisecond)}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("a two-minute pause got %v", err)
 	}
-	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Kind: pb.ChaosAction(42), DurationMs: 1}); status.Code(err) != codes.InvalidArgument {
+	if _, err := c2.admin(1).Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction(42), DurationMs: 1}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("an unknown action got %v", err)
 	}
 	old := c2.leader(time.Second)
@@ -311,7 +311,7 @@ func TestHealClearsAnIsolationEarly(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := c.admin(old).Chaos(ctx, &pb.ChaosRequest{Kind: pb.ChaosAction_CHAOS_ACTION_HEAL}); err != nil {
+	if _, err := c.admin(old).Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_HEAL}); err != nil {
 		t.Fatal(err)
 	}
 	if !c.running[old].srv.isolated.Allow(old, old%3+1) {

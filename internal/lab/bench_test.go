@@ -9,8 +9,20 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
 )
+
+func TestFaultNamesAreTheKeysInTheCommittedResults(t *testing.T) {
+	for action, want := range map[pb.ChaosAction]string{
+		pb.ChaosAction_CHAOS_ACTION_STALL_DISK: "stall-disk",
+		pb.ChaosAction_CHAOS_ACTION_PAUSE:      "pause",
+	} {
+		if got := faultName(action); got != want {
+			t.Errorf("%v is recorded as %q, want %q", action, got, want)
+		}
+	}
+}
 
 type fakeCluster struct {
 	capacity float64

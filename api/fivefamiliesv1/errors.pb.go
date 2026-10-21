@@ -22,6 +22,7 @@ const (
 	ErrorReason_ERROR_REASON_SESSION_EXPIRED ErrorReason = 2
 	ErrorReason_ERROR_REASON_STALE_SEQUENCE  ErrorReason = 3
 	ErrorReason_ERROR_REASON_TOO_MANY_LEASES ErrorReason = 4
+	ErrorReason_ERROR_REASON_LEASE_NOT_FOUND ErrorReason = 5
 )
 
 var (
@@ -31,6 +32,7 @@ var (
 		2: "ERROR_REASON_SESSION_EXPIRED",
 		3: "ERROR_REASON_STALE_SEQUENCE",
 		4: "ERROR_REASON_TOO_MANY_LEASES",
+		5: "ERROR_REASON_LEASE_NOT_FOUND",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":     0,
@@ -38,6 +40,7 @@ var (
 		"ERROR_REASON_SESSION_EXPIRED": 2,
 		"ERROR_REASON_STALE_SEQUENCE":  3,
 		"ERROR_REASON_TOO_MANY_LEASES": 4,
+		"ERROR_REASON_LEASE_NOT_FOUND": 5,
 	}
 )
 
@@ -71,13 +74,14 @@ var File_fivefamilies_v1_errors_proto protoreflect.FileDescriptor
 
 const file_fivefamilies_v1_errors_proto_rawDesc = "" +
 	"\n" +
-	"\x1cfivefamilies/v1/errors.proto\x12\x0ffivefamilies.v1*\xad\x01\n" +
+	"\x1cfivefamilies/v1/errors.proto\x12\x0ffivefamilies.v1*\xcf\x01\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17ERROR_REASON_NOT_LEADER\x10\x01\x12 \n" +
 	"\x1cERROR_REASON_SESSION_EXPIRED\x10\x02\x12\x1f\n" +
 	"\x1bERROR_REASON_STALE_SEQUENCE\x10\x03\x12 \n" +
-	"\x1cERROR_REASON_TOO_MANY_LEASES\x10\x04BHZFgithub.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1b\x06proto3"
+	"\x1cERROR_REASON_TOO_MANY_LEASES\x10\x04\x12 \n" +
+	"\x1cERROR_REASON_LEASE_NOT_FOUND\x10\x05BHZFgithub.com/mirzanajafov/fivefamilies/api/fivefamiliesv1;fivefamiliesv1b\x06proto3"
 
 var (
 	file_fivefamilies_v1_errors_proto_rawDescOnce sync.Once

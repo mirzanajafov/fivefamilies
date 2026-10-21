@@ -133,10 +133,10 @@ func (c *Controller) inject(ctx context.Context, action string, node int, d time
 	case "kill", "pause":
 		return c.supervisor(ctx, node, fmt.Sprintf("/%s?ms=%d", action, ms))
 	case "isolate":
-		_, err := c.admins[node-1].Chaos(ctx, &pb.ChaosRequest{Kind: pb.ChaosAction_CHAOS_ACTION_ISOLATE, DurationMs: uint64(ms)})
+		_, err := c.admins[node-1].Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_ISOLATE, DurationMs: uint64(ms)})
 		return err
 	case "stall-disk":
-		_, err := c.admins[node-1].Chaos(ctx, &pb.ChaosRequest{Kind: pb.ChaosAction_CHAOS_ACTION_STALL_DISK, DurationMs: uint64(ms)})
+		_, err := c.admins[node-1].Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_STALL_DISK, DurationMs: uint64(ms)})
 		return err
 	case "step-down":
 		if leader == 0 {
@@ -157,7 +157,7 @@ func (c *Controller) healAll(ctx context.Context) {
 				c.cfg.Logger.Warn("heal", "node", i+1, "err", err)
 			}
 		}
-		if _, err := c.admins[i].Chaos(hctx, &pb.ChaosRequest{Kind: pb.ChaosAction_CHAOS_ACTION_HEAL}); err != nil {
+		if _, err := c.admins[i].Chaos(hctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_HEAL}); err != nil {
 			c.cfg.Logger.Warn("heal", "node", i+1, "err", err)
 		}
 		cancel()

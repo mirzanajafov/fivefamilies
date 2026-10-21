@@ -39,8 +39,12 @@ func invert[K, V comparable](m map[K]V) map[V]K {
 }
 
 func toProto(m raft.Message) *pb.RaftMessage {
+	typ, ok := wireTypes[m.Type]
+	if !ok {
+		panic(fmt.Sprintf("transport: %v has no wire name, so it never leaves the node", m.Type))
+	}
 	out := &pb.RaftMessage{
-		Type:    wireTypes[m.Type],
+		Type:    typ,
 		From:    uint64(m.From),
 		To:      uint64(m.To),
 		Term:    m.Term,
@@ -54,7 +58,11 @@ func toProto(m raft.Message) *pb.RaftMessage {
 	if len(m.Entries) > 0 {
 		out.Entries = make([]*pb.Entry, len(m.Entries))
 		for i, e := range m.Entries {
-			out.Entries[i] = &pb.Entry{Term: e.Term, Index: e.Index, Type: wireEntryTypes[e.Type], Data: e.Data}
+			et, ok := wireEntryTypes[e.Type]
+			if !ok {
+				panic(fmt.Sprintf("transport: entry type %d has no wire name", e.Type))
+			}
+			out.Entries[i] = &pb.Entry{Term: e.Term, Index: e.Index, Type: et, Data: e.Data}
 		}
 	}
 	if m.Snapshot != nil {

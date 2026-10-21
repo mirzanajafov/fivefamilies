@@ -21,7 +21,7 @@ import (
 
 const headerLeaderAddr = "ff-leader-addr"
 
-var errorDomain = string(pb.File_fivefamilies_v1_errors_proto.Package())
+const errorDomain = "fivefamilies.najafov.dev"
 
 func RoleName(r pb.Role) string {
 	if r == pb.Role_ROLE_UNSPECIFIED {

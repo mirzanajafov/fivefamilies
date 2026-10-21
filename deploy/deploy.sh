@@ -31,12 +31,12 @@ web_ok() {
 }
 
 release() {
-  "${compose[@]}" build
+  "${compose[@]}" build || return 1
   if [ "${1:-}" = back ]; then
     "${compose[@]}" up -d --no-deps controller web backup || return 1
   fi
   for n in "${nodes[@]}"; do
-    "${compose[@]}" up -d --no-deps "$n"
+    "${compose[@]}" up -d --no-deps "$n" || return 1
     wait_for cluster_ok || return 1
   done
   "${compose[@]}" up -d --remove-orphans

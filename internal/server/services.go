@@ -21,15 +21,15 @@ import (
 const (
 	HeaderLeader     = "ff-leader"
 	HeaderLeaderAddr = "ff-leader-addr"
+	errorDomain      = "fivefamilies.najafov.dev"
 )
 
 var (
-	errorDomain = string(pb.File_fivefamilies_v1_errors_proto.Package())
-
 	errNotLeader      = reasoned(codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER, "not the leader")
 	errSessionExpired = reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_SESSION_EXPIRED, "session expired")
 	errStaleSequence  = reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_STALE_SEQUENCE, "stale sequence number")
 	errTooManyLeases  = reasoned(codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES, "too many leases")
+	errNoSuchLease    = reasoned(codes.NotFound, pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND, "lease not found")
 )
 
 func reasoned(code codes.Code, reason pb.ErrorReason, msg string) error {
@@ -85,7 +85,7 @@ func outcome(res kv.Result) error {
 	case kv.ErrStaleSequence:
 		return errStaleSequence
 	case kv.ErrLeaseNotFound:
-		return status.Error(codes.NotFound, "lease not found")
+		return errNoSuchLease
 	case kv.ErrTooManyLeases:
 		return errTooManyLeases
 	}
@@ -270,11 +270,11 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 	if !a.s.cfg.Chaos {
 		return nil, status.Error(codes.PermissionDenied, "chaos is off on this node")
 	}
-	kind := req.GetKind()
-	if kind == pb.ChaosAction_CHAOS_ACTION_UNSPECIFIED {
-		kind = chaosActions[req.GetAction()]
+	action := req.GetAction()
+	if action == pb.ChaosAction_CHAOS_ACTION_UNSPECIFIED {
+		action = chaosActions[req.GetLegacyAction()]
 	}
-	if kind == pb.ChaosAction_CHAOS_ACTION_HEAL {
+	if action == pb.ChaosAction_CHAOS_ACTION_HEAL {
 		a.s.heal()
 		return &pb.ChaosResponse{}, nil
 	}
@@ -282,7 +282,7 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 	if d <= 0 || d > maxChaos {
 		return nil, status.Errorf(codes.InvalidArgument, "chaos lasts between 1 ms and %v", maxChaos)
 	}
-	switch kind {
+	switch action {
 	case pb.ChaosAction_CHAOS_ACTION_STALL_DISK:
 		a.s.stalled.set(d)
 	case pb.ChaosAction_CHAOS_ACTION_PAUSE:
@@ -293,7 +293,7 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 	case pb.ChaosAction_CHAOS_ACTION_ISOLATE:
 		a.s.isolated.set(d)
 	default:
-		return nil, status.Errorf(codes.InvalidArgument, "unknown chaos action %v %q", req.GetKind(), req.GetAction())
+		return nil, status.Errorf(codes.InvalidArgument, "unknown chaos action %v %q", req.GetAction(), req.GetLegacyAction())
 	}
 	return &pb.ChaosResponse{}, nil
 }
@@ -354,7 +354,7 @@ func (l *leaseService) KeepAlive(ctx context.Context, req *pb.LeaseKeepAliveRequ
 func (l *leaseService) TimeToLive(ctx context.Context, req *pb.LeaseTimeToLiveRequest) (*pb.LeaseTimeToLiveResponse, error) {
 	remaining, info, err := l.s.TimeToLive(ctx, req.GetId())
 	if errors.Is(err, errLeaseNotFound) {
-		return nil, status.Error(codes.NotFound, "lease not found")
+		return nil, errNoSuchLease
 	}
 	if err != nil {
 		return nil, fail(ctx, l.s, err)

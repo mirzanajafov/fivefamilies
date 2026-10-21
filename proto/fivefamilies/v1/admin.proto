@@ -51,9 +51,9 @@ enum ChaosAction {
 }
 
 message ChaosRequest {
-  string action = 1 [deprecated = true];
+  string legacy_action = 1 [deprecated = true];
   uint64 duration_ms = 2;
-  ChaosAction kind = 3;
+  ChaosAction action = 3;
 }
 
 message ChaosResponse {}

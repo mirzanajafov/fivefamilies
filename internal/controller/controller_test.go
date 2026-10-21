@@ -214,8 +214,8 @@ func TestVisitorsGetBoundedChaos(t *testing.T) {
 		t.Fatalf("a second fault while one runs: %d", code)
 	}
 	h.waitFor("the fault to close", 10*time.Second, func(s Snapshot) bool { return s.Fault == nil && s.Last != nil })
-	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "1.1.1.1", false); code != http.StatusOK {
-		t.Fatalf("the second fault from one address: %d %s", code, body)
+	if code, body := h.chaos(`{"action":"slow-disk","node":3,"seconds":1}`, "1.1.1.1", false); code != http.StatusOK || !strings.Contains(body, `"action":"stall-disk"`) {
+		t.Fatalf("the second fault from one address, by the name the previous dashboard sends: %d %s", code, body)
 	}
 	h.waitFor("the fault to close", 10*time.Second, func(s Snapshot) bool { return s.Fault == nil && s.Last.ID == 2 })
 	if code, _ := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "9.9.9.9, 1.1.1.1", false); code != http.StatusTooManyRequests {

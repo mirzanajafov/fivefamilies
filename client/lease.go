@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 )
@@ -20,7 +18,7 @@ type Lease struct {
 }
 
 func leaseErr(err error) error {
-	if status.Code(err) == codes.NotFound {
+	if Reason(err) == pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND {
 		return ErrLeaseNotFound
 	}
 	return err

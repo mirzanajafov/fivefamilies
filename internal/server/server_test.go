@@ -463,10 +463,24 @@ func TestCallsShapedByThePreviousBuildStillWork(t *testing.T) {
 	if _, err := pb.NewKVClient(conn).Get(ctx, &pb.GetRequest{Key: "k"}); err != nil {
 		t.Fatalf("a read without a mode, which was ReadIndex: %v", err)
 	}
-	for _, action := range []string{"isolate", "stall-disk", "pause", "heal"} {
-		if _, err := c.admin(leader).Chaos(ctx, &pb.ChaosRequest{Action: action, DurationMs: 50}); err != nil {
-			t.Fatalf("chaos %q named the old way: %v", action, err)
+	srv := c.running[leader].srv
+	for _, tc := range []struct {
+		action string
+		fault  *fault
+	}{
+		{"isolate", &srv.isolated.fault},
+		{"stall-disk", &srv.stalled},
+		{"pause", &srv.paused},
+	} {
+		if _, err := c.admin(leader).Chaos(ctx, &pb.ChaosRequest{LegacyAction: tc.action, DurationMs: 2000}); err != nil || tc.fault.remaining() <= 0 {
+			t.Fatalf("chaos %q named the old way: %v", tc.action, err)
 		}
+	}
+	if _, err := c.admin(leader).Chaos(ctx, &pb.ChaosRequest{LegacyAction: "heal"}); err != nil {
+		t.Fatalf("heal named the old way: %v", err)
+	}
+	if srv.isolated.remaining() > 0 || srv.stalled.remaining() > 0 || srv.paused.remaining() > 0 {
+		t.Fatal("the old heal left a fault running")
 	}
 }
 
@@ -476,15 +490,15 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 	follower := leader%3 + 1
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	kvOn := func(id raft.NodeID) pb.KVClient {
+	connTo := func(id raft.NodeID) *grpc.ClientConn {
 		conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { conn.Close() })
-		return pb.NewKVClient(conn)
+		return conn
 	}
-	kvc := kvOn(leader)
+	kvc := pb.NewKVClient(connTo(leader))
 	session, err := kvc.OpenSession(ctx, &pb.OpenSessionRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -492,7 +506,8 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 	if _, err := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient(), Seq: 2, Key: "k"}); err != nil {
 		t.Fatal(err)
 	}
-	_, notLeader := kvOn(follower).Put(ctx, &pb.PutRequest{Key: "k"})
+	_, notLeader := pb.NewKVClient(connTo(follower)).Put(ctx, &pb.PutRequest{Key: "k"})
+	_, noLease := pb.NewLeaseClient(connTo(leader)).TimeToLive(ctx, &pb.LeaseTimeToLiveRequest{Id: 404})
 	_, stale := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient(), Seq: 1, Key: "k"})
 	_, expired := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient() + 1000, Seq: 1, Key: "k"})
 	for _, tc := range []struct {
@@ -504,6 +519,7 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 		{notLeader, codes.Unavailable, "not the leader", pb.ErrorReason_ERROR_REASON_NOT_LEADER},
 		{stale, codes.FailedPrecondition, "stale sequence number", pb.ErrorReason_ERROR_REASON_STALE_SEQUENCE},
 		{expired, codes.FailedPrecondition, "session expired", pb.ErrorReason_ERROR_REASON_SESSION_EXPIRED},
+		{noLease, codes.NotFound, "lease not found", pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND},
 	} {
 		if s := status.Convert(tc.err); s.Code() != tc.code || s.Message() != tc.msg || client.Reason(tc.err) != tc.reason {
 			t.Errorf("got %v %q %v, want %v %q %v", s.Code(), s.Message(), client.Reason(tc.err), tc.code, tc.msg, tc.reason)

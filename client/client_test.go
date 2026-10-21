@@ -1,6 +1,24 @@
 package client
 
-import "testing"
+import (
+	"testing"
+
+	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
+)
+
+func TestRoleNamesAreTheOnesTheDashboardShows(t *testing.T) {
+	for role, want := range map[pb.Role]string{
+		pb.Role_ROLE_UNSPECIFIED:   "",
+		pb.Role_ROLE_FOLLOWER:      "follower",
+		pb.Role_ROLE_PRE_CANDIDATE: "precandidate",
+		pb.Role_ROLE_CANDIDATE:     "candidate",
+		pb.Role_ROLE_LEADER:        "leader",
+	} {
+		if got := RoleName(role); got != want {
+			t.Errorf("%v is shown as %q, want %q", role, got, want)
+		}
+	}
+}
 
 func TestOnlyKnownReadModesParse(t *testing.T) {
 	for s, want := range map[string]ReadMode{"index": ReadIndex, "lease": ReadLease, "log": ReadLog} {

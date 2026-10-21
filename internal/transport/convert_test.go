@@ -32,23 +32,26 @@ func TestConversionRoundTrip(t *testing.T) {
 }
 
 func TestEveryTypeAPeerSendsKeepsTheNumberThePreviousBuildSent(t *testing.T) {
+	previous := map[raft.MessageType]pb.MessageType{
+		raft.MsgApp: 1, raft.MsgAppResp: 2, raft.MsgHeartbeat: 3, raft.MsgHeartbeatResp: 4, raft.MsgPreVote: 5, raft.MsgPreVoteResp: 6,
+		raft.MsgVote: 7, raft.MsgVoteResp: 8, raft.MsgSnap: 10, raft.MsgReadIndex: 11, raft.MsgReadIndexResp: 12, raft.MsgTimeoutNow: 13,
+	}
 	for i := range 256 {
 		typ := raft.MessageType(i)
-		if strings.HasPrefix(typ.String(), "MessageType(") {
+		if strings.HasPrefix(typ.String(), "MessageType(") || typ == raft.MsgStorageAck {
+			if _, ok := wireTypes[typ]; ok {
+				t.Errorf("%v has a wire name, but no peer sends it", typ)
+			}
 			continue
 		}
-		wire, ok := wireTypes[typ]
-		switch {
-		case typ == raft.MsgStorageAck && ok:
-			t.Errorf("%v has a wire name, but only a node sends it to itself", typ)
-		case typ != raft.MsgStorageAck && (!ok || int(wire) != i):
-			t.Errorf("%v goes out as %v, want wire number %d", typ, wire, i)
+		if want, ok := previous[typ]; !ok || wireTypes[typ] != want {
+			t.Errorf("%v goes out as %v, and the previous build sent %v", typ, wireTypes[typ], want)
 		}
 	}
 	for i := range 256 {
 		typ := raft.EntryType(i)
 		if wire, ok := wireEntryTypes[typ]; ok != typ.Valid() || (ok && int(wire) != i) {
-			t.Errorf("entry type %d goes out as %v", i, wire)
+			t.Errorf("entry type %d goes out as %v, and the previous build sent %d", i, wire, i)
 		}
 	}
 }

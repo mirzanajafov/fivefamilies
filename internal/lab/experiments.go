@@ -265,7 +265,7 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 				}
 				before := maxElections(adm.statuses(lctx, time.Second))
 				cctx, cancel := context.WithTimeout(lctx, 5*time.Second)
-				_, err = adm.admin(n).Chaos(cctx, &pb.ChaosRequest{Kind: f.action, DurationMs: uint64(f.d / time.Millisecond)})
+				_, err = adm.admin(n).Chaos(cctx, &pb.ChaosRequest{Action: f.action, DurationMs: uint64(f.d / time.Millisecond)})
 				cancel()
 				if err != nil {
 					o.Log("chaos on %d: %v", n, err)
