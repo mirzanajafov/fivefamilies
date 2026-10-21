@@ -7,6 +7,8 @@ import (
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 )
 
+const watchSilence = 5 * time.Second
+
 type EventType int
 
 const (
@@ -56,14 +58,14 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 func (c *Client) watchTarget() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.addrs[c.next]
+	return c.addrs[c.watchAt]
 }
 
 func (c *Client) watchFailed(addr string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.addrs[c.next] == addr {
-		c.next = (c.next + 1) % len(c.addrs)
+	if c.addrs[c.watchAt] == addr {
+		c.watchAt = (c.watchAt + 1) % len(c.addrs)
 	}
 }
 
@@ -78,11 +80,14 @@ func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, n
 	if err != nil {
 		return false, false
 	}
+	idle := time.AfterFunc(watchSilence, cancel)
+	defer idle.Stop()
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
 			return got, false
 		}
+		idle.Reset(watchSilence)
 		got = true
 		r := WatchResponse{Rev: resp.GetRev(), Progress: resp.GetProgress(), CompactRev: resp.GetCompactRev()}
 		for _, ev := range resp.GetEvents() {

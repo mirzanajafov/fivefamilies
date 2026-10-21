@@ -83,6 +83,9 @@ func (w *watchService) Watch(req *pb.WatchRequest, stream pb.Watch_WatchServer) 
 		case <-w.s.stopped:
 		}
 	}()
+	beat := time.NewTicker(w.s.cfg.WatchProgress)
+	defer beat.Stop()
+	var rev uint64
 	for {
 		select {
 		case b := <-ch:
@@ -97,6 +100,12 @@ func (w *watchService) Watch(req *pb.WatchRequest, stream pb.Watch_WatchServer) 
 				resp.Events = append(resp.Events, toEvent(ev))
 			}
 			if err := stream.Send(resp); err != nil {
+				return err
+			}
+			rev = b.Rev
+			beat.Reset(w.s.cfg.WatchProgress)
+		case <-beat.C:
+			if err := stream.Send(&pb.WatchResponse{Rev: rev, Progress: true}); err != nil {
 				return err
 			}
 		case <-dropped:

@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
@@ -119,6 +118,7 @@ type Client struct {
 	conns   map[string]*grpc.ClientConn
 	leader  string
 	next    int
+	watchAt int
 	writing chan struct{}
 	session uint64
 	seq     uint64
@@ -136,7 +136,7 @@ func New(addrs []string, opts Options) (*Client, error) {
 	}
 	c := &Client{opts: opts, addrs: addrs, conns: map[string]*grpc.ClientConn{}, leader: addrs[0], writing: make(chan struct{}, 1)}
 	for _, a := range addrs {
-		conn, err := dial(a)
+		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			c.Close()
 			return nil, err
@@ -145,13 +145,6 @@ func New(addrs []string, opts Options) (*Client, error) {
 		c.conns[a] = conn
 	}
 	return c, nil
-}
-
-func dial(addr string) (*grpc.ClientConn, error) {
-	return grpc.NewClient(addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: 10 * time.Second, Timeout: time.Second}),
-	)
 }
 
 func (c *Client) Close() error {
@@ -172,7 +165,7 @@ func (c *Client) conn(addr string) (grpc.ClientConnInterface, error) {
 	conn, ok := c.conns[addr]
 	if !ok {
 		var err error
-		conn, err = dial(addr)
+		conn, err = grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			return nil, err
 		}

@@ -150,21 +150,6 @@ func (f *freezer) pipe(dst, src net.Conn) {
 	}
 }
 
-func firstEvent(events <-chan client.WatchResponse, within time.Duration) (client.Event, time.Duration, bool) {
-	start := time.Now()
-	timeout := time.After(within)
-	for {
-		select {
-		case r := <-events:
-			if len(r.Events) > 0 {
-				return r.Events[0], time.Since(start), true
-			}
-		case <-timeout:
-			return client.Event{}, within, false
-		}
-	}
-}
-
 func TestAWatchMovesOnFromANodeThatStoppedAnsweringAndTheNextOneStartsElsewhere(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
 	leader := c.leader(5 * time.Second)
@@ -202,11 +187,12 @@ func TestAWatchMovesOnFromANodeThatStoppedAnsweringAndTheNextOneStartsElsewhere(
 	if _, err := cl.Put(ctx, "a", []byte("1")); err != nil {
 		t.Fatal(err)
 	}
-	ev, took, ok := firstEvent(events, 20*time.Second)
-	if !ok || string(ev.KV.Value) != "1" {
-		t.Fatalf("no event within %v of the put, with the watch's node frozen", took)
+	hasEvents := func(r client.WatchResponse) bool { return len(r.Events) > 0 }
+	got, took := waitFor(t, events, 15*time.Second, hasEvents)
+	if string(got.Events[0].KV.Value) != "1" {
+		t.Fatalf("after the move the watch got %+v", got.Events)
 	}
-	if took < 5*time.Second {
+	if took < 2*time.Second {
 		t.Fatalf("the event came after %v, so the watch wasn't on the frozen node and this proves nothing", took)
 	}
 	t.Logf("the event came %v after the put, with the watch's node frozen", took)
@@ -214,7 +200,25 @@ func TestAWatchMovesOnFromANodeThatStoppedAnsweringAndTheNextOneStartsElsewhere(
 	if _, err := cl.Put(ctx, "b", []byte("2")); err != nil {
 		t.Fatal(err)
 	}
-	if _, took, ok := firstEvent(wcl.Watch(ctx, "b", false, 1), 3*time.Second); !ok {
-		t.Fatalf("a new watch got nothing within %v, so it started on the frozen node again", took)
+	waitFor(t, wcl.Watch(ctx, "b", false, 1), 3*time.Second, hasEvents)
+}
+
+func TestAQuietWatchHearsFromItsNodeEveryProgressInterval(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.WatchProgress = 50 * time.Millisecond })
+	c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cl, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	events := cl.Watch(ctx, "quiet", false, 0)
+	first := <-events
+	for range 5 {
+		r, _ := waitFor(t, events, time.Second, func(client.WatchResponse) bool { return true })
+		if !r.Progress || len(r.Events) != 0 || r.Rev < first.Rev {
+			t.Fatalf("a quiet watch got %+v after starting at %d", r, first.Rev)
+		}
 	}
 }

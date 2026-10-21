@@ -24,7 +24,6 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/snap"
 	"github.com/mirzanajafov/fivefamilies/internal/storage"
-	"github.com/mirzanajafov/fivefamilies/internal/transport"
 	"github.com/mirzanajafov/fivefamilies/internal/vfs"
 	"github.com/mirzanajafov/fivefamilies/internal/wal"
 )
@@ -103,7 +102,7 @@ func (c *testCluster) startOn(id raft.NodeID, ln net.Listener) {
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	g := grpc.NewServer(transport.ServerOptions()...)
+	g := grpc.NewServer()
 	srv.Register(g)
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &running{srv: srv, grpc: g, cancel: cancel, done: make(chan struct{})}
