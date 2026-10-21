@@ -109,6 +109,7 @@ func writeOpts(opts []WriteOption) writeOptions {
 type Options struct {
 	AttemptTimeout time.Duration
 	Backoff        time.Duration
+	WatchSilence   time.Duration
 }
 
 type Client struct {
@@ -133,6 +134,9 @@ func New(addrs []string, opts Options) (*Client, error) {
 	}
 	if opts.Backoff <= 0 {
 		opts.Backoff = 20 * time.Millisecond
+	}
+	if opts.WatchSilence <= 0 {
+		opts.WatchSilence = 5 * time.Second
 	}
 	c := &Client{opts: opts, addrs: addrs, conns: map[string]*grpc.ClientConn{}, leader: addrs[0], writing: make(chan struct{}, 1)}
 	for _, a := range addrs {

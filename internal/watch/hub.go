@@ -35,6 +35,7 @@ type watcher struct {
 	prefix bool
 	next   uint64
 	sent   uint64
+	spoke  bool
 	send   func(Batch) bool
 }
 
@@ -119,7 +120,7 @@ func (h *Hub) Publish(rev uint64, evs []kv.Event) {
 		if len(out) == 0 {
 			continue
 		}
-		w.sent = rev
+		w.sent, w.spoke = rev, true
 		if !w.send(Batch{Events: out, Rev: rev}) {
 			delete(h.watchers, id)
 		}
@@ -143,7 +144,7 @@ func (h *Hub) Watch(key string, prefix bool, from uint64, send func(Batch) bool)
 			first.Events = append(first.Events, e.ev)
 		}
 	}
-	w.next, w.sent = first.Rev+1, first.Rev
+	w.next, w.sent, w.spoke = first.Rev+1, first.Rev, true
 	if !send(first) {
 		return 0, nil
 	}
@@ -172,8 +173,11 @@ func (h *Hub) Progress() {
 func (h *Hub) Beat() {
 	for _, id := range h.ids() {
 		w := h.watchers[id]
-		w.sent = max(h.rev, w.next-1)
-		if !w.send(Batch{Rev: w.sent, Progress: true}) {
+		if w.spoke {
+			w.spoke = false
+			continue
+		}
+		if !w.send(Batch{Rev: max(h.rev, w.next-1), Progress: true}) {
 			delete(h.watchers, id)
 		}
 	}

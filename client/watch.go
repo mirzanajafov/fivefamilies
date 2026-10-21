@@ -4,13 +4,8 @@ import (
 	"context"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 )
-
-const watchSilence = 5 * time.Second
 
 type EventType int
 
@@ -39,16 +34,14 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 		backoff := c.opts.Backoff
 		for ctx.Err() == nil {
 			addr := c.watchTarget()
-			got, end := c.watchOnce(ctx, addr, key, prefix, &next, out)
-			if end == endCompacted || ctx.Err() != nil {
+			got, compacted := c.watchOnce(ctx, addr, key, prefix, &next, out)
+			if compacted || ctx.Err() != nil {
 				return
 			}
 			if got {
 				backoff = c.opts.Backoff
 			}
-			if end == endBroken {
-				c.watchFailed(addr)
-			}
+			c.watchFailed(addr)
 			select {
 			case <-ctx.Done():
 				return
@@ -74,35 +67,23 @@ func (c *Client) watchFailed(addr string) {
 	}
 }
 
-type watchEnd int
-
-const (
-	endBroken watchEnd = iota
-	endBehind
-	endCompacted
-)
-
-func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, next *uint64, out chan<- WatchResponse) (bool, watchEnd) {
+func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, next *uint64, out chan<- WatchResponse) (got, compacted bool) {
 	cc, err := c.conn(addr)
 	if err != nil {
-		return false, endBroken
+		return false, false
 	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	idle := time.AfterFunc(watchSilence, cancel)
+	idle := time.AfterFunc(c.opts.WatchSilence, cancel)
 	defer idle.Stop()
 	stream, err := pb.NewWatchClient(cc).Watch(sctx, &pb.WatchRequest{Key: key, Prefix: prefix, StartRev: *next})
 	if err != nil {
-		return false, endBroken
+		return false, false
 	}
-	got := false
 	for {
 		resp, err := stream.Recv()
-		if status.Code(err) == codes.ResourceExhausted {
-			return got, endBehind
-		}
 		if err != nil {
-			return got, endBroken
+			return got, false
 		}
 		idle.Stop()
 		got = true
@@ -118,13 +99,13 @@ func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, n
 			select {
 			case out <- r:
 			case <-ctx.Done():
-				return got, endBroken
+				return got, false
 			}
 		}
 		if r.CompactRev != 0 {
-			return got, endCompacted
+			return got, true
 		}
 		*next = r.Rev + 1
-		idle.Reset(watchSilence)
+		idle.Reset(c.opts.WatchSilence)
 	}
 }

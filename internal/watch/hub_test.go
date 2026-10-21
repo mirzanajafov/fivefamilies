@@ -132,31 +132,37 @@ func TestProgressGoesOnlyToWatchersThatHaveNotHeardTheLatestRevision(t *testing.
 	}
 }
 
-func TestABeatReachesEveryWatcherAtTheRevisionItHasSeen(t *testing.T) {
+func TestABeatGoesToEveryWatcherThatHeardNothingSinceTheLastOne(t *testing.T) {
 	h := New(100, 0, 0)
-	current, future := &sink{}, &sink{}
-	watch(t, h, "/a/", true, current.send)
-	feed(h, 1, 2)
-	if _, err := h.Watch("/b/", true, 10, future.send); err != nil {
+	busy, quiet, future := &sink{}, &sink{}, &sink{}
+	watch(t, h, "/a/", true, busy.send)
+	watch(t, h, "/q/", true, quiet.send)
+	if _, err := h.Watch("/f/", true, 10, future.send); err != nil {
 		t.Fatal(err)
 	}
 	h.Beat()
+	feed(h, 1, 2)
 	h.Beat()
-	for name, s := range map[string]*sink{"current": current, "future": future} {
-		if n := len(s.got); n < 2 {
-			t.Fatalf("%s watcher got %d batches", name, n)
+	if n := len(busy.got); n != 3 {
+		t.Fatalf("a watcher that just got events got %d batches, want the start and two event batches", n)
+	}
+	for name, s := range map[string]*sink{"quiet": quiet, "future": future} {
+		if n := len(s.got); n != 2 {
+			t.Fatalf("%s watcher got %d batches, want the start and one beat", name, n)
 		}
-		for _, b := range s.got[len(s.got)-2:] {
-			if !b.Progress || len(b.Events) != 0 {
-				t.Fatalf("%s watcher got %+v from a beat", name, b)
-			}
+		if b := s.got[1]; !b.Progress || len(b.Events) != 0 {
+			t.Fatalf("%s watcher got %+v from a beat", name, b)
 		}
 	}
-	if rev := current.got[len(current.got)-1].Rev; rev != 2 {
+	if rev := quiet.got[1].Rev; rev != 2 {
 		t.Fatalf("a caught-up watcher heard revision %d, want 2", rev)
 	}
-	if rev := future.got[len(future.got)-1].Rev; rev != 9 {
+	if rev := future.got[1].Rev; rev != 9 {
 		t.Fatalf("a watcher from revision 10 heard revision %d, want 9", rev)
+	}
+	h.Beat()
+	if n := len(busy.got); n != 4 || !busy.got[3].Progress {
+		t.Fatalf("the busy watcher got no beat once it went quiet: %d batches", n)
 	}
 }
 
