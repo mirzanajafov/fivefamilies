@@ -31,12 +31,9 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 	go func() {
 		defer close(out)
 		next := startRev
-		c.mu.Lock()
-		at := c.next
-		c.mu.Unlock()
 		backoff := c.opts.Backoff
 		for ctx.Err() == nil {
-			addr := c.addrs[at%len(c.addrs)]
+			addr := c.watchTarget()
 			got, compacted := c.watchOnce(ctx, addr, key, prefix, &next, out)
 			if compacted || ctx.Err() != nil {
 				return
@@ -44,7 +41,7 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 			if got {
 				backoff = c.opts.Backoff
 			}
-			at++
+			c.watchFailed(addr)
 			select {
 			case <-ctx.Done():
 				return
@@ -56,6 +53,24 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 	return out
 }
 
+func (c *Client) watchTarget() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.addrs[c.watchAt]
+}
+
+func (c *Client) watchFailed(addr string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.skipWatchLocked(addr)
+}
+
+func (c *Client) skipWatchLocked(addr string) {
+	if c.addrs[c.watchAt] == addr {
+		c.watchAt = (c.watchAt + 1) % len(c.addrs)
+	}
+}
+
 func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, next *uint64, out chan<- WatchResponse) (got, compacted bool) {
 	cc, err := c.conn(addr)
 	if err != nil {
@@ -63,6 +78,8 @@ func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, n
 	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	idle := time.AfterFunc(c.opts.WatchSilence, cancel)
+	defer idle.Stop()
 	stream, err := pb.NewWatchClient(cc).Watch(sctx, &pb.WatchRequest{Key: key, Prefix: prefix, StartRev: *next})
 	if err != nil {
 		return false, false
@@ -72,6 +89,7 @@ func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, n
 		if err != nil {
 			return got, false
 		}
+		idle.Stop()
 		got = true
 		r := WatchResponse{Rev: resp.GetRev(), Progress: resp.GetProgress(), CompactRev: resp.GetCompactRev()}
 		for _, ev := range resp.GetEvents() {
@@ -81,14 +99,17 @@ func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, n
 			}
 			r.Events = append(r.Events, Event{Type: t, KV: fromPB(ev.GetKv())})
 		}
-		select {
-		case out <- r:
-		case <-ctx.Done():
-			return got, false
+		if !r.Progress || r.Rev >= *next {
+			select {
+			case out <- r:
+			case <-ctx.Done():
+				return got, false
+			}
 		}
 		if r.CompactRev != 0 {
 			return got, true
 		}
 		*next = r.Rev + 1
+		idle.Reset(c.opts.WatchSilence)
 	}
 }

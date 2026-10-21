@@ -132,6 +132,53 @@ func TestProgressGoesOnlyToWatchersThatHaveNotHeardTheLatestRevision(t *testing.
 	}
 }
 
+func TestABeatGoesToEveryWatcherThatHeardNothingSinceTheLastOne(t *testing.T) {
+	h := New(100, 0, 0)
+	busy, quiet, future := &sink{}, &sink{}, &sink{}
+	watch(t, h, "/a/", true, busy.send)
+	watch(t, h, "/q/", true, quiet.send)
+	if _, err := h.Watch("/f/", true, 10, future.send); err != nil {
+		t.Fatal(err)
+	}
+	h.Beat()
+	feed(h, 1, 2)
+	h.Beat()
+	if n := len(busy.got); n != 3 {
+		t.Fatalf("a watcher that just got events got %d batches, want the start and two event batches", n)
+	}
+	for name, s := range map[string]*sink{"quiet": quiet, "future": future} {
+		if n := len(s.got); n != 2 {
+			t.Fatalf("%s watcher got %d batches, want the start and one beat", name, n)
+		}
+		if b := s.got[1]; !b.Progress || len(b.Events) != 0 {
+			t.Fatalf("%s watcher got %+v from a beat", name, b)
+		}
+	}
+	if rev := quiet.got[1].Rev; rev != 2 {
+		t.Fatalf("a caught-up watcher heard revision %d, want 2", rev)
+	}
+	if rev := future.got[1].Rev; rev != 9 {
+		t.Fatalf("a watcher from revision 10 heard revision %d, want 9", rev)
+	}
+	h.Beat()
+	if n := len(busy.got); n != 4 || !busy.got[3].Progress {
+		t.Fatalf("the busy watcher got no beat once it went quiet: %d batches", n)
+	}
+}
+
+func TestAWatcherThatCannotTakeABeatIsDroppedAndTheOthersStay(t *testing.T) {
+	h := New(100, 0, 0)
+	full, fine := &sink{}, &sink{}
+	watch(t, h, "/z/", true, full.send)
+	watch(t, h, "/y/", true, fine.send)
+	h.Beat()
+	full.full = true
+	h.Beat()
+	if h.Len() != 1 || !fine.got[len(fine.got)-1].Progress {
+		t.Fatalf("%d watchers after a beat one could not take, want the other one, which got the beat", h.Len())
+	}
+}
+
 func TestInstallingASnapshotEndsEveryWatch(t *testing.T) {
 	h := New(100, 0, 0)
 	feed(h, 1, 2)

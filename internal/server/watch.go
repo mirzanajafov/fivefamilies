@@ -34,7 +34,7 @@ func (s *Server) tendWatches() {
 	}
 	if time.Since(s.lastWatch) >= s.cfg.WatchProgress {
 		s.lastWatch = time.Now()
-		s.sm.Hub.Progress()
+		s.sm.Hub.Beat()
 	}
 }
 
