@@ -27,6 +27,7 @@ type demo struct {
 	busy      sync.WaitGroup
 	gate      *sync.Cond
 	ops       []check.Op
+	checks    sync.WaitGroup
 	inherited bool
 	initial   map[string]check.Output
 	from      time.Time
@@ -43,9 +44,7 @@ func (c *Controller) drive(ctx context.Context) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for {
-		c.mu.Lock()
-		want := c.viewers > 0 || time.Since(c.lastSeen) < c.cfg.Idle
-		c.mu.Unlock()
+		want := c.viewed.seenWithin(c.cfg.Idle, time.Now())
 		switch {
 		case want && cancel == nil:
 			var lctx context.Context
@@ -72,18 +71,9 @@ func (c *Controller) drive(ctx context.Context) {
 	}
 }
 
-func (c *Controller) setLoad(on bool) {
-	c.mu.Lock()
-	c.loadOn = on
-	if !on {
-		c.opsRate = 0
-	}
-	c.mu.Unlock()
-}
-
 func (c *Controller) runDemo(ctx context.Context) {
-	c.setLoad(true)
-	defer c.setLoad(false)
+	c.load.setActive(true)
+	defer c.load.setActive(false)
 	d := &demo{c: c, initial: map[string]check.Output{}}
 	d.gate = sync.NewCond(&d.mu)
 	for range c.cfg.Clients + 1 {
@@ -116,6 +106,7 @@ func (c *Controller) runDemo(ctx context.Context) {
 	d.gate.Broadcast()
 	d.mu.Unlock()
 	wg.Wait()
+	d.checks.Wait()
 }
 
 func (d *demo) worker(ctx context.Context, id int) {
@@ -163,12 +154,7 @@ func (d *demo) do(ctx context.Context, cl *client.Client, id int, in check.Input
 	out, err := live.Execute(octx, cl, in, client.ReadIndex)
 	op := check.Op{Client: id, Input: in, Output: out, Call: call, Return: d.c.now()}
 	if err == nil && in.Kind != check.Get {
-		d.c.mu.Lock()
-		d.c.acks = append(d.c.acks, time.Now())
-		if cut := len(d.c.acks) - 20000; cut > 0 {
-			d.c.acks = d.c.acks[cut:]
-		}
-		d.c.mu.Unlock()
+		d.c.load.ack(time.Now())
 	}
 	return op
 }
@@ -194,6 +180,10 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 			kv, found, err := reader.Get(octx, key, client.ReadLog)
 			cancel()
 			if err != nil {
+				select {
+				case <-ctx.Done():
+				case <-time.After(100 * time.Millisecond):
+				}
 				continue
 			}
 			out := check.Output{Found: found, Value: string(kv.Value)}
@@ -215,14 +205,9 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 	d.cutting = false
 	d.gate.Broadcast()
 	d.mu.Unlock()
-	d.c.mu.Lock()
-	if since := time.Since(d.c.opsAt).Seconds(); !d.c.opsAt.IsZero() && since > 0 {
-		d.c.opsRate = float64(clientOps) / since
-	}
-	d.c.opsAt = time.Now()
-	d.c.mu.Unlock()
+	d.c.load.measured(clientOps, time.Now())
 	if verify {
-		go d.c.checkWindow(index, from, hist, initial, unchecked)
+		d.checks.Go(func() { d.c.checkWindow(index, from, hist, initial, unchecked) })
 	}
 	return true
 }

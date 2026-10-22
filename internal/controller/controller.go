@@ -90,27 +90,23 @@ type Controller struct {
 	conns  []*grpc.ClientConn
 	admins []pb.AdminClient
 	start  time.Time
+	load   loadMeter
+	viewed audience
 
-	mu       sync.Mutex
-	nodes    []NodeView
-	silent   []time.Time
-	prev     []*pb.StatusResponse
-	prevAt   time.Time
-	leader   int
-	term     uint64
-	voters   string
-	events   []Event
-	windows  []Window
-	fault    *Fault
-	last     *Fault
-	faults   int
-	viewers  int
-	lastSeen time.Time
-	byAddr   map[string][]time.Time
-	acks     []time.Time
-	opsAt    time.Time
-	opsRate  float64
-	loadOn   bool
+	mu      sync.Mutex
+	nodes   []NodeView
+	silent  []time.Time
+	prev    []*pb.StatusResponse
+	prevAt  time.Time
+	leader  int
+	term    uint64
+	voters  string
+	events  []Event
+	windows []Window
+	fault   *Fault
+	last    *Fault
+	faults  int
+	byAddr  map[string][]time.Time
 }
 
 func New(cfg Config) (*Controller, error) {
@@ -157,6 +153,8 @@ func (c *Controller) event(kind string, node int, term uint64, text string) {
 }
 
 func (c *Controller) Snapshot() Snapshot {
+	active, rate := c.load.view()
+	viewers := c.viewed.count()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	s := Snapshot{
@@ -166,7 +164,7 @@ func (c *Controller) Snapshot() Snapshot {
 		Term:    c.term,
 		Events:  append([]Event{}, c.events[max(0, len(c.events)-50):]...),
 		Windows: append([]Window{}, c.windows[max(0, len(c.windows)-20):]...),
-		Load:    Load{Active: c.loadOn, OpsPerS: c.opsRate, Viewers: c.viewers},
+		Load:    Load{Active: active, OpsPerS: rate, Viewers: viewers},
 		Limits:  Limits{MaxSeconds: int(c.cfg.VisitorMax / time.Second), CooldownSeconds: int(c.cfg.Cooldown / time.Second)},
 	}
 	if c.fault != nil {
@@ -246,15 +244,8 @@ func (c *Controller) serveEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
-	c.mu.Lock()
-	c.viewers++
-	c.mu.Unlock()
-	defer func() {
-		c.mu.Lock()
-		c.viewers--
-		c.lastSeen = time.Now()
-		c.mu.Unlock()
-	}()
+	c.viewed.join()
+	defer func() { c.viewed.leave(time.Now()) }()
 	t := time.NewTicker(250 * time.Millisecond)
 	defer t.Stop()
 	for {

@@ -340,11 +340,12 @@ func TestThePollerSlowsDownWithNobodyWatching(t *testing.T) {
 	if got := c.pollEvery(); got != time.Second {
 		t.Fatalf("idle: %v", got)
 	}
-	c.viewers = 1
+	c.viewed.join()
 	if got := c.pollEvery(); got != 100*time.Millisecond {
 		t.Fatalf("watched: %v", got)
 	}
-	c.viewers, c.fault = 0, &Fault{}
+	c.viewed.leave(time.Now())
+	c.fault = &Fault{}
 	if got := c.pollEvery(); got != 100*time.Millisecond {
 		t.Fatalf("during a fault: %v", got)
 	}
