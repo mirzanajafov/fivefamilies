@@ -220,6 +220,9 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 				if !last {
 					return nil, raft.Restore{}, rec, corrupt("segment %s has a bad record at offset %d", name, off)
 				}
+				if at, found := nextRecord(data, off+1, salt); found {
+					return nil, raft.Restore{}, rec, corrupt("segment %s has a bad record at offset %d and a good one after it at %d", name, off, at)
+				}
 				rec.TornBytes += int64(len(data) - off)
 				if err := truncateTail(fs, name, int64(off)); err != nil {
 					return nil, raft.Restore{}, rec, err
@@ -287,6 +290,15 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 	hs := r.hs
 	hs.Commit = max(min(hs.Commit, r.last()), r.off)
 	return l, raft.Restore{HardState: hs, Snapshot: r.snap, Entries: r.ents}, rec, nil
+}
+
+func nextRecord(data []byte, from int, salt uint64) (int, bool) {
+	for at := from; at < len(data); at++ {
+		if _, _, _, ok := readRecord(data[at:], salt); ok {
+			return at, true
+		}
+	}
+	return 0, false
 }
 
 func truncateTail(fs vfs.FS, name string, size int64) error {

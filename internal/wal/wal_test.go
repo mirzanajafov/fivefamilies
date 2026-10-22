@@ -187,7 +187,7 @@ func TestTornTailAtEveryByte(t *testing.T) {
 	}
 }
 
-func TestGarbageInTheTailIsCut(t *testing.T) {
+func TestGarbageToTheEndOfTheTailIsCut(t *testing.T) {
 	rng := rand.New(rand.NewPCG(3, 4))
 	for range 300 {
 		fs := vfs.NewMem()
@@ -199,19 +199,42 @@ func TestGarbageInTheTailIsCut(t *testing.T) {
 		full, _ := fs.ReadFile(names[0])
 		pos := len(synced) + rng.IntN(len(full)-len(synced))
 		tail := slices.Clone(full[len(synced):])
-		tail[pos-len(synced)] ^= byte(1 + rng.IntN(255))
+		for i := pos - len(synced); i < len(tail); i++ {
+			tail[i] = byte(rng.Uint32())
+		}
 		if err := fs.Truncate(names[0], int64(len(synced))); err != nil {
 			t.Fatal(err)
 		}
 		appendTo(t, fs, names[0], tail)
 		_, st, _, err := Open(fs, Options{Salt: saltSource(2)})
 		if err != nil {
-			t.Fatalf("flipped byte %d: %v", pos, err)
+			t.Fatalf("garbage from byte %d: %v", pos, err)
 		}
 		candidates := prefixes(state{hs: raft.HardState{Term: 1}, ents: entries(1, 1, 3)}, entries(2, 2, 5), raft.HardState{Term: 2})
 		if !matchesOne(st, candidates) {
-			t.Fatalf("flipped byte %d: restored %+v", pos, st)
+			t.Fatalf("garbage from byte %d: restored %+v", pos, st)
 		}
+	}
+}
+
+func TestABadRecordWithAGoodOneAfterItRefusesToOpen(t *testing.T) {
+	fs := vfs.NewMem()
+	l, _, _ := open(t, fs, 0)
+	mustWrite(t, l, raft.HardState{Term: 1, Vote: 1, Commit: 1}, entries(1, 1, 1), true)
+	names, _ := fs.List()
+	first, _ := fs.ReadFile(names[0])
+	mustWrite(t, l, raft.HardState{Term: 2, Vote: 2, Commit: 2}, entries(2, 2, 4), true)
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := fs.ReadFile(names[0])
+	data[len(first)+recordHeader] ^= 0xff
+	if err := fs.Truncate(names[0], 0); err != nil {
+		t.Fatal(err)
+	}
+	appendTo(t, fs, names[0], data)
+	if _, _, _, err := Open(fs, Options{Salt: saltSource(2)}); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("a flipped byte in a synced record with good ones after it: %v, want ErrCorrupt", err)
 	}
 }
 
