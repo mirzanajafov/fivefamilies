@@ -285,7 +285,7 @@ func buildEtcd(ctx context.Context) error {
 }
 
 func buildImage(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "docker", "build", "-q", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", ".")
+	cmd := exec.CommandContext(ctx, "docker", "build", "-q", "--target", "lab", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", ".")
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build: %w", err)

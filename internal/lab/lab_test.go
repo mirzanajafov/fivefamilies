@@ -21,7 +21,7 @@ func TestLabSurvivesFaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	build := exec.Command("docker", "build", "-q", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", root)
+	build := exec.Command("docker", "build", "-q", "--target", "lab", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", root)
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("building the node image: %v\n%s", err, out)
 	}
