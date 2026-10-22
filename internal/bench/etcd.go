@@ -1,4 +1,4 @@
-package lab
+package bench
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
+	"github.com/mirzanajafov/fivefamilies/internal/lab"
 )
 
 const (
@@ -17,14 +18,14 @@ const (
 	etcdProject  = "ffetcd"
 )
 
-type EtcdCluster struct {
+type etcdCluster struct {
 	Nodes    int
 	NodeCPUs []string
 	Procs    int
 	composeCluster
 }
 
-func (e *EtcdCluster) endpoints() []string {
+func (e *etcdCluster) endpoints() []string {
 	var out []string
 	for i := 1; i <= e.Nodes; i++ {
 		out = append(out, fmt.Sprintf("e%d:2379", i))
@@ -32,7 +33,7 @@ func (e *EtcdCluster) endpoints() []string {
 	return out
 }
 
-func (e *EtcdCluster) services() []service {
+func (e *etcdCluster) services() []service {
 	var initial []string
 	for i := 1; i <= e.Nodes; i++ {
 		initial = append(initial, fmt.Sprintf("e%d=http://e%d:2380", i, i))
@@ -55,12 +56,12 @@ func (e *EtcdCluster) services() []service {
 	return out
 }
 
-func (e *EtcdCluster) Up(ctx context.Context) error {
+func (e *etcdCluster) Up(ctx context.Context) error {
 	if err := e.start(ctx, etcdProject, e.services()); err != nil {
 		return err
 	}
 	var last error
-	err := poll(ctx, 500*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
+	err := lab.Poll(ctx, 500*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
 		pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		_, probeErr := e.Leader(pctx)
 		cancel()
@@ -69,7 +70,7 @@ func (e *EtcdCluster) Up(ctx context.Context) error {
 		}
 		return probeErr == nil, nil
 	})
-	if errors.Is(err, errGaveUp) && last != nil {
+	if errors.Is(err, lab.ErrGaveUp) && last != nil {
 		err = fmt.Errorf("%w, the last probe said: %w", err, last)
 	}
 	if err != nil {
@@ -90,8 +91,8 @@ type etcdStatus struct {
 	} `json:"Status"`
 }
 
-func (e *EtcdCluster) statuses(ctx context.Context) ([]etcdStatus, error) {
-	out, err := e.d.cmd(ctx, nil, "exec", e.d.container("e1"), "etcdctl", "--endpoints", strings.Join(e.endpoints(), ","), "endpoint", "status", "-w", "json")
+func (e *etcdCluster) statuses(ctx context.Context) ([]etcdStatus, error) {
+	out, err := e.d.Cmd(ctx, nil, "exec", e.d.Container("e1"), "etcdctl", "--endpoints", strings.Join(e.endpoints(), ","), "endpoint", "status", "-w", "json")
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +103,7 @@ func (e *EtcdCluster) statuses(ctx context.Context) ([]etcdStatus, error) {
 	return sts, nil
 }
 
-func (e *EtcdCluster) Quiet(ctx context.Context) error {
+func (e *etcdCluster) Quiet(ctx context.Context) error {
 	return settle(ctx, func(ctx context.Context) (uint64, bool) {
 		sts, err := e.statuses(ctx)
 		if err != nil || len(sts) != e.Nodes {
@@ -121,7 +122,7 @@ func (e *EtcdCluster) Quiet(ctx context.Context) error {
 	})
 }
 
-func (e *EtcdCluster) Leader(ctx context.Context) (string, error) {
+func (e *etcdCluster) Leader(ctx context.Context) (string, error) {
 	sts, err := e.statuses(ctx)
 	if err != nil {
 		return "", err
@@ -134,6 +135,6 @@ func (e *EtcdCluster) Leader(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no member reports itself as leader")
 }
 
-func (e *EtcdCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
+func (e *etcdCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
 	return e.runGenerator(ctx, genCPUs, []string{EtcdGenImage, "-endpoints", strings.Join(e.endpoints(), ",")}, args)
 }

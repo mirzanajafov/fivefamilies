@@ -60,7 +60,7 @@ type FaultRecord struct {
 
 type nemesis struct {
 	d      *Docker
-	adm    *cluster
+	adm    *Admin
 	rng    *rand.Rand
 	kinds  []FaultKind
 	mean   time.Duration
@@ -80,13 +80,13 @@ func (n *nemesis) between(lo, hi time.Duration) time.Duration {
 func (n *nemesis) run(ctx context.Context) {
 	for {
 		gap := time.Duration(-float64(n.mean) * math.Log(1-n.rng.Float64()))
-		if !wait(ctx, gap) {
+		if !Wait(ctx, gap) {
 			return
 		}
 		kind := n.kinds[n.rng.IntN(len(n.kinds))]
 		rec := n.inject(ctx, kind)
 		if rec.Err == "" {
-			wait(ctx, rec.duration)
+			Wait(ctx, rec.duration)
 		}
 		if err := n.clear(context.Background(), &rec); err != nil && rec.Err == "" {
 			rec.Err = err.Error()
