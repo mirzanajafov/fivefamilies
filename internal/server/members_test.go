@@ -91,6 +91,9 @@ func TestMembersChangeAndLeadershipMovesOverTheWire(t *testing.T) {
 		t.Logf("transfer %d to node 4 left node %d leading (%v), so it goes again", attempt, moved.GetLeader(), err)
 		time.Sleep(50 * time.Millisecond)
 	}
+	if lead := c.leader(time.Second); lead != 4 {
+		t.Fatalf("node %d leads after the transfer, want 4", lead)
+	}
 	if _, err := c.admin(4).ChangeMembers(ctx, &pb.ChangeMembersRequest{Change: pb.MemberChange_MEMBER_CHANGE_REMOVE, Node: 4}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("the leader removing itself: %v", err)
 	}

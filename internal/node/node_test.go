@@ -77,7 +77,12 @@ func testRaftConfig(id raft.NodeID, voters []raft.NodeID) raft.Config {
 
 func newTestNodeConfig(t *testing.T, id raft.NodeID, voters []raft.NodeID, cfg Config) (*Node, *recEnv, *recApp) {
 	t.Helper()
-	r, err := raft.New(testRaftConfig(id, voters), raft.Restore{})
+	return newTestNodeRaft(t, testRaftConfig(id, voters), cfg)
+}
+
+func newTestNodeRaft(t *testing.T, rcfg raft.Config, cfg Config) (*Node, *recEnv, *recApp) {
+	t.Helper()
+	r, err := raft.New(rcfg, raft.Restore{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,11 +498,11 @@ func (o *transferOutcome) done(leader raft.NodeID, term uint64, err error) {
 func leaderOfThree(t *testing.T) (*Node, *recEnv) {
 	t.Helper()
 	n, env, _ := newTestNode(t, 1, []raft.NodeID{1, 2, 3})
-	becomeLeader(t, n, env)
+	electNode1(t, n, env)
 	return n, env
 }
 
-func becomeLeader(t *testing.T, n *Node, env *recEnv) {
+func electNode1(t *testing.T, n *Node, env *recEnv) {
 	t.Helper()
 	n.Raft().Campaign()
 	settle(t, n, env)
@@ -556,10 +561,15 @@ func TestATransferTheCoreGivesUpOnFailsAndNamesTheTarget(t *testing.T) {
 
 func TestATransferAnswersAtOnceWhenItCannotStartOrHasNothingToDo(t *testing.T) {
 	n, _ := leaderOfThree(t)
-	var self transferOutcome
+	var pending, self transferOutcome
+	n.TransferLeadership(2, pending.done)
 	n.TransferLeadership(1, self.done)
 	if self.calls != 1 || self.err != nil || self.leader != 1 {
 		t.Fatalf("a transfer to the leader itself: %+v", self)
+	}
+	process(t, n)
+	if pending.calls != 1 || !errors.Is(pending.err, ErrTransferAborted) {
+		t.Fatalf("the transfer it cancelled: %+v", pending)
 	}
 	var refused transferOutcome
 	n.TransferLeadership(9, refused.done)
@@ -577,15 +587,10 @@ func TestATransferAnswersAtOnceWhenItCannotStartOrHasNothingToDo(t *testing.T) {
 }
 
 func TestATransferWaitsThroughALostQuorumForTheNextLeader(t *testing.T) {
-	cfg := testRaftConfig(1, []raft.NodeID{1, 2, 3})
-	cfg.CheckQuorum = true
-	r, err := raft.New(cfg, raft.Restore{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	env := &recEnv{}
-	n := New(r, env, &recApp{}, Config{})
-	becomeLeader(t, n, env)
+	rcfg := testRaftConfig(1, []raft.NodeID{1, 2, 3})
+	rcfg.CheckQuorum = true
+	n, env, _ := newTestNodeRaft(t, rcfg, Config{})
+	electNode1(t, n, env)
 	var o transferOutcome
 	n.TransferLeadership(2, o.done)
 	n.Advance(20 * n.cfg.Tick)
@@ -604,7 +609,6 @@ func TestATransferThatAnotherTransferReplacedFails(t *testing.T) {
 	n, env := leaderOfThree(t)
 	var first, second transferOutcome
 	n.TransferLeadership(2, first.done)
-	n.Advance(20 * n.cfg.Tick)
 	n.TransferLeadership(3, second.done)
 	settle(t, n, env)
 	if first.calls != 1 || !errors.Is(first.err, ErrTransferAborted) || !strings.Contains(first.err.Error(), "node 2") || second.calls != 0 {

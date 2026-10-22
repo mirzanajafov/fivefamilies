@@ -264,6 +264,7 @@ func (r *Raft) TransferLeadership(to NodeID) error {
 		return ErrNotLeader
 	}
 	if to == r.id {
+		r.transferee, r.transferElapsed = None, 0
 		return nil
 	}
 	if !r.conf().IsVoter(to) {

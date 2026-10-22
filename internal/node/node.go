@@ -355,11 +355,7 @@ func (n *Node) TransferLeadership(to raft.NodeID, done Transferred) {
 		done(n.r.Leader(), n.r.Term(), &NotLeaderError{Leader: n.r.Leader()})
 		return
 	}
-	if to == n.r.ID() {
-		done(n.r.ID(), n.r.Term(), nil)
-		return
-	}
-	if err := n.r.TransferLeadership(to); err != nil {
+	if err := n.r.TransferLeadership(to); err != nil || to == n.r.ID() {
 		done(n.r.Leader(), n.r.Term(), err)
 		return
 	}
@@ -378,7 +374,7 @@ func (n *Node) settleTransfers() {
 		moved := term > w.term && lead != raft.None
 		gaveUp := term == w.term && leading && n.r.Transferring() != w.to
 		switch {
-		case moved && lead != n.r.ID():
+		case moved && !leading:
 			w.done(lead, term, nil)
 		case moved, gaveUp:
 			w.done(lead, term, fmt.Errorf("%w: node %d did not take over", ErrTransferAborted, w.to))
