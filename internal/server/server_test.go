@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -539,30 +540,29 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 	}
 }
 
-func TestAFollowersRefusalPointsTheRouterAtTheLeader(t *testing.T) {
+func TestAFollowersRefusalNamesTheLeader(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
+	follower := c.leader(5*time.Second)%3 + 1
+	conn, err := grpc.NewClient(c.nodes[follower], grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	var err error
-	var target int
+	var got []string
 	for range 3 {
-		leader := c.leader(5 * time.Second)
-		follower := leader%3 + 1
-		for c.status(follower).GetLeader() != uint64(leader) && ctx.Err() == nil {
-			time.Sleep(10 * time.Millisecond)
-		}
-		conn, dialErr := grpc.NewClient(c.nodes[follower], grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if dialErr != nil {
-			t.Fatal(dialErr)
-		}
 		var md metadata.MD
 		_, err = pb.NewKVClient(conn).Put(ctx, &pb.PutRequest{Key: "k"}, grpc.Header(&md))
-		conn.Close()
-		r := route.NewRouter([]string{c.nodes[follower], c.nodes[6-leader-follower], c.nodes[leader]})
-		r.MoveOn(0, md)
-		if target = r.Target(); client.Reason(err) == pb.ErrorReason_ERROR_REASON_NOT_LEADER && target == 2 {
+		got = md.Get(route.LeaderHeader)
+		st, statusErr := pb.NewAdminClient(conn).Status(ctx, &pb.StatusRequest{})
+		if statusErr != nil {
+			t.Fatal(statusErr)
+		}
+		if client.Reason(err) == pb.ErrorReason_ERROR_REASON_NOT_LEADER && slices.Equal(got, []string{c.nodes[raft.NodeID(st.GetLeader())]}) {
 			return
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("three writes to a follower, the last got %v and moved the router to %d, want a refusal that points at the leader, 2", err, target)
+	t.Fatalf("three writes to a follower, the last got %v with the hint %v, want a refusal naming the leader", err, got)
 }
