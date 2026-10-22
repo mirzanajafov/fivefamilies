@@ -110,32 +110,40 @@ func TestMembersChangeAndLeadershipMovesOverTheWire(t *testing.T) {
 	}
 }
 
-func TestATransferEndsWhenANodeOtherThanTheTargetTakesOver(t *testing.T) {
-	c := newTestCluster(t, 5, func(cfg *Config) { cfg.Chaos = true })
+func TestATransferEndsWithTheNewLeaderWhenANodeOtherThanTheTargetTakesOver(t *testing.T) {
+	c := newTestCluster(t, 5, func(cfg *Config) { cfg.Chaos, cfg.ElectionTick = true, 60 })
 	old := c.leader(5 * time.Second)
 	target := old%5 + 1
 	chaos(t, c, target, pb.ChaosAction_CHAOS_ACTION_ISOLATE, time.Minute)
 	admin := c.admin(old)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	done := make(chan error, 1)
+	type result struct {
+		resp *pb.TransferLeadershipResponse
+		err  error
+	}
+	done := make(chan result, 1)
 	go func() {
-		_, err := admin.TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: uint64(target)})
-		done <- err
+		resp, err := admin.TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: uint64(target)})
+		done <- result{resp, err}
 	}()
 	for c.running[old].srv.Status().GetTransferee() != uint64(target) {
-		if ctx.Err() != nil {
+		select {
+		case r := <-done:
+			t.Fatalf("the transfer ended with %v before it was seen to start", r.err)
+		case <-ctx.Done():
 			t.Fatal("the transfer never started")
+		case <-time.After(time.Millisecond):
 		}
-		time.Sleep(time.Millisecond)
 	}
-	chaos(t, c, old, pb.ChaosAction_CHAOS_ACTION_PAUSE, time.Second)
-	start := time.Now()
-	err := <-done
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("the transfer ended with %v after %v, want FailedPrecondition once another node leads", err, time.Since(start).Round(time.Millisecond))
+	if _, err := admin.Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_PAUSE, DurationMs: 3000}); err != nil {
+		t.Fatal(err)
 	}
-	if lead := c.leader(5 * time.Second); lead == old || lead == target {
-		t.Fatalf("node %d leads, want one of the nodes that were neither paused nor isolated", lead)
+	r := <-done
+	if r.err != nil {
+		t.Fatalf("the transfer ended with %v, want it to end once another node leads", r.err)
+	}
+	if lead := raft.NodeID(r.resp.GetLeader()); lead == old || lead == target || lead == raft.None {
+		t.Fatalf("the transfer reports node %d as leader, want one of the nodes that were neither paused nor isolated", lead)
 	}
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
@@ -12,7 +13,7 @@ import (
 )
 
 var (
-	ErrTransferAborted = errors.New("server: the transfer ended without the target taking over")
+	ErrTransferAborted = errors.New("server: the transfer gave up")
 	errLeaseNotFound   = errors.New("server: lease not found")
 )
 
@@ -49,13 +50,12 @@ func (s *Server) TransferLeadership(ctx context.Context, to raft.NodeID) error {
 	for {
 		st := s.Status()
 		switch {
-		case raft.NodeID(st.GetLeader()) == to && to != s.cfg.ID:
+		case st.GetRole() == pb.Role_ROLE_LEADER && to == s.cfg.ID:
 			return nil
-		case to == s.cfg.ID && st.GetRole() == pb.Role_ROLE_LEADER:
+		case st.GetRole() == pb.Role_ROLE_LEADER && st.GetTransferee() == 0:
+			return fmt.Errorf("%w: node %d did not take over within an election timeout", ErrTransferAborted, to)
+		case st.GetRole() != pb.Role_ROLE_LEADER && st.GetLeader() != 0:
 			return nil
-		case st.GetRole() == pb.Role_ROLE_LEADER && st.GetTransferee() == 0,
-			st.GetRole() != pb.Role_ROLE_LEADER && st.GetLeader() != 0:
-			return ErrTransferAborted
 		}
 		select {
 		case <-t.C:
