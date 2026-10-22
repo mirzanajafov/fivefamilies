@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
+	"github.com/mirzanajafov/fivefamilies/internal/supervisor"
 )
 
 type chaosRequest struct {
@@ -20,6 +21,65 @@ type chaosRequest struct {
 
 var actions = []string{"kill", "pause", "isolate", "stall-disk", "step-down"}
 
+type failure int
+
+const (
+	badRequest failure = iota + 1
+	unsupported
+	conflict
+	limited
+	notStarted
+)
+
+func (f failure) status() int {
+	switch f {
+	case badRequest:
+		return http.StatusBadRequest
+	case unsupported:
+		return http.StatusNotImplemented
+	case conflict:
+		return http.StatusConflict
+	case limited:
+		return http.StatusTooManyRequests
+	case notStarted:
+		return http.StatusBadGateway
+	}
+	return http.StatusInternalServerError
+}
+
+type refusal struct {
+	failure failure
+	msg     string
+}
+
+func refuse(f failure, format string, args ...any) *refusal {
+	return &refusal{failure: f, msg: fmt.Sprintf(format, args...)}
+}
+
+type limiter struct {
+	per    int
+	window time.Duration
+	byAddr map[string][]time.Time
+}
+
+func (l *limiter) allow(addr string, now time.Time) bool {
+	for a, times := range l.byAddr {
+		if times = slices.DeleteFunc(times, func(t time.Time) bool { return now.Sub(t) > l.window }); len(times) == 0 {
+			delete(l.byAddr, a)
+		} else {
+			l.byAddr[a] = times
+		}
+	}
+	if len(l.byAddr[addr]) >= l.per {
+		return false
+	}
+	if l.byAddr == nil {
+		l.byAddr = map[string][]time.Time{}
+	}
+	l.byAddr[addr] = append(l.byAddr[addr], now)
+	return true
+}
+
 func (c *Controller) serveChaos(w http.ResponseWriter, r *http.Request) {
 	var req chaosRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
@@ -29,76 +89,88 @@ func (c *Controller) serveChaos(w http.ResponseWriter, r *http.Request) {
 	if req.Action == "slow-disk" {
 		req.Action = "stall-disk"
 	}
-	admin := c.admin(r)
-	addr := c.clientAddr(r)
-	f, code, err := c.chaos(r.Context(), req, admin, addr)
-	if err != nil {
-		writeJSON(w, code, map[string]string{"error": err.Error()})
+	f, refused := c.chaos(r.Context(), req, c.admin(r), c.clientAddr(r))
+	if refused != nil {
+		writeJSON(w, refused.failure.status(), map[string]string{"error": refused.msg})
 		return
 	}
 	writeJSON(w, http.StatusOK, f)
 }
 
-func (c *Controller) chaos(ctx context.Context, req chaosRequest, admin bool, addr string) (*Fault, int, error) {
+func (c *Controller) chaos(ctx context.Context, req chaosRequest, admin bool, addr string) (*Fault, *refusal) {
+	d, refused := c.validate(req, admin)
+	if refused != nil {
+		return nil, refused
+	}
+	f, refused := c.admit(req.Action, req.Node, d, admin, addr)
+	if refused != nil {
+		return nil, refused
+	}
+	if err := c.inject(ctx, f.Action, f.Node, f.Duration); err != nil {
+		c.cfg.Logger.Warn("chaos", "action", f.Action, "node", f.Node, "err", err)
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.fault == f {
+			c.fault = nil
+		}
+		return nil, refuse(notStarted, "%s on node %d could not be started", f.Action, f.Node)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.event("fault", f.Node, 0, fmt.Sprintf("%s on node %d for %v (%s)", f.Action, f.Node, f.Duration, f.By))
+	return f.clone(), nil
+}
+
+func (c *Controller) validate(req chaosRequest, admin bool) (time.Duration, *refusal) {
 	limit := c.cfg.VisitorMax
 	if admin {
-		limit = time.Minute
+		limit = supervisor.MaxFault
 	}
 	d := time.Duration(req.Seconds) * time.Second
 	switch {
 	case !slices.Contains(actions, req.Action):
-		return nil, http.StatusBadRequest, fmt.Errorf("unknown action %q", req.Action)
-	case req.Action != "step-down" && (req.Node < 1 || req.Node > len(c.cfg.Nodes)):
-		return nil, http.StatusBadRequest, fmt.Errorf("node must be between 1 and %d", len(c.cfg.Nodes))
-	case req.Action != "step-down" && (d <= 0 || d > limit):
-		return nil, http.StatusBadRequest, fmt.Errorf("a fault lasts between 1 and %d seconds", int(limit/time.Second))
+		return 0, refuse(badRequest, "unknown action %q", req.Action)
+	case req.Action == "step-down":
+		return 0, nil
+	case req.Node < 1 || req.Node > len(c.cfg.Nodes):
+		return 0, refuse(badRequest, "node must be between 1 and %d", len(c.cfg.Nodes))
+	case d <= 0 || d > limit:
+		return 0, refuse(badRequest, "a fault lasts between 1 and %d seconds", int(limit/time.Second))
 	case (req.Action == "kill" || req.Action == "pause") && len(c.cfg.Supervisors) == 0:
-		return nil, http.StatusNotImplemented, fmt.Errorf("%s needs the supervisors, which this cluster runs without", req.Action)
+		return 0, refuse(unsupported, "%s needs the supervisors, which this cluster runs without", req.Action)
 	}
+	return d, nil
+}
+
+func (c *Controller) admit(action string, node int, d time.Duration, admin bool, addr string) (*Fault, *refusal) {
 	now := time.Now()
 	c.mu.Lock()
-	if c.fault != nil {
-		c.mu.Unlock()
-		return nil, http.StatusConflict, fmt.Errorf("one fault at a time: %s on node %d is still running", c.fault.Action, c.fault.Node)
+	defer c.mu.Unlock()
+	switch {
+	case c.fault != nil:
+		return nil, refuse(conflict, "one fault at a time: %s on node %d is still running", c.fault.Action, c.fault.Node)
+	case action == "step-down" && c.leader == 0:
+		return nil, refuse(conflict, "there is no leader to step down")
 	}
 	if !admin {
 		if wait := c.cooldownLeftLocked(now); wait > 0 {
-			c.mu.Unlock()
-			return nil, http.StatusTooManyRequests, fmt.Errorf("the Commission is still settling, so try again in %d s", int(math.Ceil(wait.Seconds())))
+			return nil, refuse(limited, "the Commission is still settling, so try again in %d s", int(math.Ceil(wait.Seconds())))
 		}
-		recent := slices.DeleteFunc(c.byAddr[addr], func(t time.Time) bool { return now.Sub(t) > c.cfg.PerWindow })
-		if len(recent) >= c.cfg.PerAddress {
-			c.byAddr[addr] = recent
-			c.mu.Unlock()
-			return nil, http.StatusTooManyRequests, fmt.Errorf("%d faults per %v from one address", c.cfg.PerAddress, c.cfg.PerWindow)
+		if !c.perAddress.allow(addr, now) {
+			return nil, refuse(limited, "%d faults per %v from one address", c.cfg.PerAddress, c.cfg.PerWindow)
 		}
-		c.byAddr[addr] = append(recent, now)
 	}
-	leader, term := c.leader, c.term
+	if action == "step-down" {
+		node = c.leader
+	}
 	c.faults++
-	f := &Fault{ID: c.faults, Action: req.Action, Node: req.Node, Duration: d, Started: now, Ends: now.Add(d), OldLeader: leader, OldTerm: term}
+	f := &Fault{ID: c.faults, Action: action, Node: node, Duration: d, Started: now, Ends: now.Add(d), By: "visitor", OldLeader: c.leader, OldTerm: c.term}
 	if admin {
 		f.By = "admin"
-	} else {
-		f.By = "visitor"
 	}
-	if req.Action == "step-down" {
-		f.Node, f.Duration, f.Ends = leader, 0, now
-	}
-	f.OnLeader = f.Node == leader && req.Action != "stall-disk"
+	f.OnLeader = f.Node == c.leader && action != "stall-disk"
 	c.fault = f
-	c.mu.Unlock()
-	if err := c.inject(ctx, req.Action, f.Node, d, leader); err != nil {
-		c.mu.Lock()
-		c.fault = nil
-		c.mu.Unlock()
-		return nil, http.StatusBadGateway, err
-	}
-	c.mu.Lock()
-	c.event("fault", f.Node, 0, fmt.Sprintf("%s on node %d for %v (%s)", f.Action, f.Node, d, f.By))
-	out := *f
-	c.mu.Unlock()
-	return &out, http.StatusOK, nil
+	return f, nil
 }
 
 func (c *Controller) cooldownLeftLocked(now time.Time) time.Duration {
@@ -125,7 +197,7 @@ func (c *Controller) supervisor(ctx context.Context, node int, path string) erro
 	return nil
 }
 
-func (c *Controller) inject(ctx context.Context, action string, node int, d time.Duration, leader int) error {
+func (c *Controller) inject(ctx context.Context, action string, node int, d time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	ms := d.Milliseconds()
@@ -139,11 +211,8 @@ func (c *Controller) inject(ctx context.Context, action string, node int, d time
 		_, err := c.admins[node-1].Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_STALL_DISK, DurationMs: uint64(ms)})
 		return err
 	case "step-down":
-		if leader == 0 {
-			return fmt.Errorf("there is no leader to step down")
-		}
-		to := leader%len(c.cfg.Nodes) + 1
-		_, err := c.admins[leader-1].TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: uint64(to)})
+		to := node%len(c.cfg.Nodes) + 1
+		_, err := c.admins[node-1].TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: uint64(to)})
 		return err
 	}
 	return fmt.Errorf("unknown action %q", action)

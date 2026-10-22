@@ -66,6 +66,15 @@ type Fault struct {
 	Failover  *Failover     `json:"failover,omitempty"`
 }
 
+func (f *Fault) clone() *Fault {
+	c := *f
+	if f.Failover != nil {
+		fo := *f.Failover
+		c.Failover = &fo
+	}
+	return &c
+}
+
 type Load struct {
 	Active  bool    `json:"active"`
 	OpsPerS float64 `json:"ops_per_s"`
@@ -103,9 +112,11 @@ func (c *Controller) poll(ctx context.Context) {
 }
 
 func (c *Controller) pollEvery() time.Duration {
+	active, _ := c.load.view()
+	watched := c.viewers.count() > 0
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.viewers > 0 || c.loadOn || c.fault != nil {
+	if watched || active || c.fault != nil {
 		return c.cfg.Poll
 	}
 	return c.cfg.IdlePoll
@@ -207,24 +218,8 @@ func (c *Controller) closeFault(f *Fault) {
 		if f.Failover == nil {
 			f.Failover = &Failover{}
 		}
-		f.Failover.Gap = widestGap(c.acks, f.Started.Add(-2*time.Second), f.Ends.Add(5*time.Second))
+		f.Failover.Gap = c.load.widestGap(f.Started.Add(-2*time.Second), f.Ends.Add(5*time.Second))
 	}
 	c.event("healed", f.Node, 0, fmt.Sprintf("%s on node %d is over", f.Action, f.Node))
 	c.last, c.fault = f, nil
-}
-
-func widestGap(acks []time.Time, from, to time.Time) time.Duration {
-	var gap time.Duration
-	prev := from
-	for _, a := range acks {
-		if a.Before(from) {
-			continue
-		}
-		if a.After(to) {
-			break
-		}
-		gap = max(gap, a.Sub(prev))
-		prev = a
-	}
-	return max(gap, to.Sub(prev))
 }
