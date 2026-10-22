@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -50,14 +51,19 @@ func (f *fakeCluster) Quiet(context.Context) error {
 	return nil
 }
 
-func (f *fakeCluster) sweep(opts SweepOptions) Curve {
+func (f *fakeCluster) sweep(t *testing.T, opts SweepOptions) Curve {
+	t.Helper()
 	opts.Factor, opts.Max, opts.MaxP99 = 2, 64000, time.Second
-	return sweep(context.Background(), f, Curve{Name: "fake"}, opts)
+	c, err := sweep(context.Background(), f, Curve{Name: "fake"}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }
 
 func TestTheSweepStopsAtTheKneeAndMeasuresBelowIt(t *testing.T) {
 	f := &fakeCluster{capacity: 3000}
-	c := f.sweep(SweepOptions{Start: 500})
+	c := f.sweep(t, SweepOptions{Start: 500})
 	if c.Knee != 2000 {
 		t.Fatalf("knee %.0f: 4000/s achieved only 3000, so the last rate that kept up was 2000", c.Knee)
 	}
@@ -74,7 +80,7 @@ func TestTheSweepStopsAtTheKneeAndMeasuresBelowIt(t *testing.T) {
 
 func TestTheSweepNarrowsTheKneeBetweenTheLastGoodAndFirstBadRate(t *testing.T) {
 	f := &fakeCluster{capacity: 3000}
-	c := f.sweep(SweepOptions{Start: 500, Refine: 2})
+	c := f.sweep(t, SweepOptions{Start: 500, Refine: 2})
 	if got := strings.Join(f.rates, " "); got != "500 1000 2000 4000 3000 3500 1500 2400" {
 		t.Fatalf("rates run: %s", got)
 	}
@@ -85,7 +91,7 @@ func TestTheSweepNarrowsTheKneeBetweenTheLastGoodAndFirstBadRate(t *testing.T) {
 
 func TestTheSweepStepsDownWhenTheFirstRateIsAlreadyTooMuch(t *testing.T) {
 	f := &fakeCluster{capacity: 100}
-	c := f.sweep(SweepOptions{Start: 500, Floor: 30, Refine: 2})
+	c := f.sweep(t, SweepOptions{Start: 500, Floor: 30, Refine: 2})
 	if got := strings.Join(f.rates, " "); got != "500 250 125 62.5 94 110 55 88" {
 		t.Fatalf("rates run: %s", got)
 	}
@@ -93,7 +99,7 @@ func TestTheSweepStepsDownWhenTheFirstRateIsAlreadyTooMuch(t *testing.T) {
 		t.Fatalf("knee %.0f", c.Knee)
 	}
 	f = &fakeCluster{capacity: 10}
-	c = f.sweep(SweepOptions{Start: 500, Floor: 30, Refine: 2})
+	c = f.sweep(t, SweepOptions{Start: 500, Floor: 30, Refine: 2})
 	if got := strings.Join(f.rates, " "); got != "500 250 125 62.5 31.25" || c.Knee != 0 || c.At80 != nil {
 		t.Fatalf("below the floor: rates %s, knee %.0f, at 80%% %+v", got, c.Knee, c.At80)
 	}
@@ -101,7 +107,7 @@ func TestTheSweepStepsDownWhenTheFirstRateIsAlreadyTooMuch(t *testing.T) {
 
 func TestTheSweepStopsWhenTheClusterNeverSettles(t *testing.T) {
 	f := &fakeCluster{capacity: 3000, busy: true}
-	c := f.sweep(SweepOptions{Start: 500, Floor: 30, Refine: 2})
+	c := f.sweep(t, SweepOptions{Start: 500, Floor: 30, Refine: 2})
 	if len(f.rates) != 0 || len(c.Steps) != 1 || c.Steps[0].Err == "" || c.Knee != 0 || c.At80 != nil {
 		t.Fatalf("rates %v, steps %+v", f.rates, c.Steps)
 	}
@@ -163,8 +169,8 @@ func TestTheClusterIsQuietOnlyWhenIdleTwiceAtTheSameIndex(t *testing.T) {
 
 func TestRepeatsAreInterleavedAndRotated(t *testing.T) {
 	var got []string
-	for r, name := range rounds(3, []string{"a", "b", "c"}) {
-		got = append(got, fmt.Sprint(r, name))
+	for r, sp := range rounds(3, []curveSpec{{name: "a"}, {name: "b"}, {name: "c"}}) {
+		got = append(got, fmt.Sprint(r, sp.name))
 	}
 	if s := strings.Join(got, " "); s != "1a 1b 1c 2b 2c 2a 3c 3a 3b" {
 		t.Fatalf("order %s", s)
@@ -192,5 +198,27 @@ func TestAQuickRunTakesTheFirstOfTheChosenCurvesOfEachSystem(t *testing.T) {
 		if got := names(tc.o.pick(specs)); got != tc.want {
 			t.Errorf("quick %v, only %v: picked %s, want %s", tc.o.Quick, tc.o.Only, got, tc.want)
 		}
+	}
+}
+
+func TestAReportFromAnOlderGeneratorIsRefused(t *testing.T) {
+	if _, err := decodeReport(`{"summary": {"config": {"rate": 500}}, "nodes": 5}`); err != nil {
+		t.Fatalf("a current report: %v", err)
+	}
+	_, err := decodeReport(`{"summary": {"config": {"Rate": 500, "Duration": 10000000000}}, "per_node_delta": [{"Batches": 3}], "entries_per_fsync": 2}`)
+	if !errors.Is(err, errUnreadableReport) {
+		t.Fatalf("a report with the old field names came back as %v, want it refused", err)
+	}
+}
+
+func TestEveryCurveExperimentNamesItsCurves(t *testing.T) {
+	for _, e := range []string{"e2", "e3", "e4", "e5"} {
+		names := CurveNames(e)
+		if len(names) == 0 || len(slices.Compact(slices.Sorted(slices.Values(names)))) != len(names) {
+			t.Errorf("%s names %v, want at least one curve and no name twice", e, names)
+		}
+	}
+	if CurveNames("e1b") != nil {
+		t.Error("e1b has no curves")
 	}
 }

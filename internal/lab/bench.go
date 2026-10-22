@@ -60,7 +60,7 @@ type composeCluster struct {
 	gens int
 }
 
-func (c *composeCluster) up(ctx context.Context, project string, services []service) error {
+func (c *composeCluster) start(ctx context.Context, project string, services []service) error {
 	dir, err := os.MkdirTemp("", project)
 	if err != nil {
 		return err
@@ -93,15 +93,21 @@ func (c *composeCluster) runGenerator(ctx context.Context, genCPUs string, comma
 	name := fmt.Sprintf("%s-gen-%d", c.d.Project, c.gens)
 	run := append([]string{"run", "--rm", "--name", name, "--network", c.d.Project + "_bench", "--cpuset-cpus", genCPUs}, command...)
 	out, err := c.d.cmd(ctx, nil, append(run, args...)...)
-	var r loadgen.Report
 	if err != nil {
 		_, rmErr := c.d.cmd(context.Background(), nil, "rm", "-f", name)
-		return r, errors.Join(err, rmErr)
+		return loadgen.Report{}, errors.Join(err, rmErr)
 	}
+	return decodeReport(out)
+}
+
+var errUnreadableReport = errors.New("lab: the generator's report can't be read (an image older than the harness?)")
+
+func decodeReport(out string) (loadgen.Report, error) {
+	var r loadgen.Report
 	dec := json.NewDecoder(strings.NewReader(out))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&r); err != nil {
-		return r, fmt.Errorf("generator output (an image older than the harness?): %w: %.200s", err, out)
+		return r, fmt.Errorf("%w: %w: %.200s", errUnreadableReport, err, out)
 	}
 	return r, nil
 }
@@ -156,7 +162,7 @@ func (b *BenchCluster) Up(ctx context.Context) error {
 	if b.Image == "" {
 		b.Image = "fivefamilies-lab-node"
 	}
-	if err := b.up(ctx, benchProject, b.services()); err != nil {
+	if err := b.start(ctx, benchProject, b.services()); err != nil {
 		return err
 	}
 	adm, err := dialAdmin(b.addrs())
@@ -212,8 +218,9 @@ type sweepable interface {
 	Quiet(ctx context.Context) error
 }
 
-func sweep(ctx context.Context, sys sweepable, c Curve, opts SweepOptions) Curve {
+func sweep(ctx context.Context, sys sweepable, c Curve, opts SweepOptions) (Curve, error) {
 	stopped := false
+	var broken error
 	run := func(rate float64) Step {
 		s := Step{Rate: rate}
 		if err := sys.Quiet(ctx); err != nil {
@@ -225,6 +232,9 @@ func sweep(ctx context.Context, sys sweepable, c Curve, opts SweepOptions) Curve
 		s.Report = r
 		if err != nil {
 			s.Err = err.Error()
+		}
+		if errors.Is(err, errUnreadableReport) {
+			broken, stopped = err, true
 		}
 		return s
 	}
@@ -256,7 +266,7 @@ func sweep(ctx context.Context, sys sweepable, c Curve, opts SweepOptions) Curve
 		s80 := run(math.Round(0.8 * lo))
 		c.At50, c.At80 = &s50, &s80
 	}
-	return c
+	return c, broken
 }
 
 func settle(ctx context.Context, probe func(context.Context) (uint64, bool)) error {

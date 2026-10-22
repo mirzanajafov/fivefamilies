@@ -24,8 +24,8 @@ type ExperimentOptions struct {
 	Log      func(format string, args ...any)
 }
 
-func rounds[T any](repeat int, specs []T) iter.Seq2[int, T] {
-	return func(yield func(int, T) bool) {
+func rounds(repeat int, specs []curveSpec) iter.Seq2[int, curveSpec] {
+	return func(yield func(int, curveSpec) bool) {
 		for r := range max(1, repeat) {
 			for i := range specs {
 				if !yield(r+1, specs[(i+r)%len(specs)]) {
@@ -107,6 +107,28 @@ func (o ExperimentOptions) pick(specs []curveSpec) []curveSpec {
 	return picked
 }
 
+var curveExperiments = map[string]func() []curveSpec{"e2": e2Specs, "e3": e3Specs, "e4": e4Specs, "e5": e5Specs}
+
+func CurveNames(experiment string) []string {
+	specs, ok := curveExperiments[experiment]
+	if !ok {
+		return nil
+	}
+	var names []string
+	for _, sp := range specs() {
+		names = append(names, sp.name)
+	}
+	return names
+}
+
+func Curves(ctx context.Context, o ExperimentOptions, experiment string) ([]Curve, error) {
+	specs, ok := curveExperiments[experiment]
+	if !ok {
+		return nil, fmt.Errorf("no curve experiment %q", experiment)
+	}
+	return runCurves(ctx, o, experiment+".json", specs())
+}
+
 func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []curveSpec) ([]Curve, error) {
 	var curves []Curve
 	for round, sp := range rounds(o.Repeat, o.pick(specs)) {
@@ -116,12 +138,12 @@ func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []cu
 			o.tearDown(sp.name, sys.Down)
 			return curves, fmt.Errorf("%s: %w", sp.name, err)
 		}
-		c := sweep(ctx, sys, Curve{Name: sp.name, Nodes: sp.nodes, NodeFlags: sp.node, GenFlags: gen}, o.sweep())
+		c, err := sweep(ctx, sys, Curve{Name: sp.name, Nodes: sp.nodes, NodeFlags: sp.node, GenFlags: gen}, o.sweep())
 		c.Round = round
 		cut := ctx.Err()
 		o.tearDown(sp.name, sys.Down)
-		if cut != nil {
-			return curves, cut
+		if err = cmp.Or(cut, err); err != nil {
+			return curves, fmt.Errorf("%s: %w", sp.name, err)
 		}
 		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
@@ -132,9 +154,9 @@ func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []cu
 	return curves, nil
 }
 
-func E2(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
+func e2Specs() []curveSpec {
 	writes := []string{"-reads", "0", "-value-bytes", "128"}
-	return runCurves(ctx, o, "e2.json", []curveSpec{
+	return []curveSpec{
 		{name: "5 nodes", nodes: 5, node: withBase(), gen: writes},
 		{name: "3 nodes", nodes: 3, node: withBase(), gen: writes},
 		{name: "7 nodes", nodes: 7, node: withBase(), gen: writes},
@@ -148,21 +170,21 @@ func E2(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		{name: "5 nodes, 16 appends in flight", nodes: 5, node: withBase("-max-inflight", "16"), gen: writes},
 		{name: "5 nodes, one Go processor", nodes: 5, node: withBase("-gomaxprocs", "1"), gen: writes},
 		{name: "5 nodes, 1 KiB values", nodes: 5, node: withBase(), gen: []string{"-reads", "0", "-value-bytes", "1024"}},
-	})
+	}
 }
 
-func E3(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
+func e3Specs() []curveSpec {
 	writes := []string{"-reads", "0", "-value-bytes", "128"}
-	return runCurves(ctx, o, "e3.json", []curveSpec{
+	return []curveSpec{
 		{name: "group commit", nodes: 5, node: withBase("-fsync", "group"), gen: writes},
 		{name: "one fsync per write", nodes: 5, node: withBase("-fsync", "ready"), gen: writes},
 		{name: "one fsync per entry", nodes: 5, node: withBase("-fsync", "entry"), gen: writes},
 		{name: "no fsync (unsafe)", nodes: 5, node: withBase("-fsync", "off"), gen: writes},
 		{name: "group commit, leader writes before sending", nodes: 5, node: withBase("-fsync", "group", "-write-before-send"), gen: writes},
-	})
+	}
 }
 
-func E4(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
+func e4Specs() []curveSpec {
 	lease := withBase("-lease", "800ms")
 	var specs []curveSpec
 	for _, share := range []string{"0.95", "0.5"} {
@@ -172,12 +194,12 @@ func E4(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		specs = append(specs, curveSpec{name: fmt.Sprintf("index reads, %s, one event per Ready", share), nodes: 5, node: append(slices.Clone(lease), "-batch", "1"), gen: []string{"-reads", share, "-read-mode", "index"}})
 		specs = append(specs, curveSpec{name: fmt.Sprintf("local reads (unsafe), %s", share), nodes: 5, node: append(slices.Clone(lease), "-bug", "followerread"), gen: []string{"-reads", share, "-read-mode", "follower"}})
 	}
-	return runCurves(ctx, o, "e4.json", specs)
+	return specs
 }
 
-func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
+func e5Specs() []curveSpec {
 	writes := []string{"-reads", "0", "-value-bytes", "128"}
-	return runCurves(ctx, o, "e5.json", []curveSpec{
+	return []curveSpec{
 		{name: "fivefamilies, 3 nodes, writes", nodes: 3, node: withBase(), gen: writes},
 		{name: "etcd, 3 nodes, writes", nodes: 3, gen: writes, etcd: true},
 		{name: "fivefamilies, 5 nodes, writes", nodes: 5, node: withBase(), gen: writes},
@@ -188,7 +210,7 @@ func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 		{name: "etcd, 5 nodes, linearizable reads 0.95", nodes: 5, gen: []string{"-reads", "0.95", "-read-mode", "linearizable"}, etcd: true},
 		{name: "fivefamilies, 5 nodes, local reads (unsafe) 0.95", nodes: 5, node: withBase("-bug", "followerread"), gen: []string{"-reads", "0.95", "-read-mode", "follower"}},
 		{name: "etcd, 5 nodes, serializable reads 0.95", nodes: 5, gen: []string{"-reads", "0.95", "-read-mode", "serializable"}, etcd: true},
-	})
+	}
 }
 
 type FaultOutcome struct {

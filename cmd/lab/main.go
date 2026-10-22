@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -231,6 +232,14 @@ func bench(ctx context.Context, args []string) error {
 	if err := parse(fs, args); err != nil {
 		return err
 	}
+	exps := strings.Split(*experiments, ",")
+	var onlyNames []string
+	if *only != "" {
+		onlyNames = strings.Split(*only, ";")
+	}
+	if err := checkBench(exps, onlyNames); err != nil {
+		return usageError{error: err}
+	}
 	if *label == "" {
 		suffix := "-laptop"
 		if *quick {
@@ -248,30 +257,35 @@ func bench(ctx context.Context, args []string) error {
 			}
 		}
 	}
-	for e := range strings.SplitSeq(*experiments, ",") {
-		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Repeat: *repeat, Log: logf}
-		if *only != "" {
-			o.Only = strings.Split(*only, ";")
-		}
+	for _, e := range exps {
+		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Repeat: *repeat, Only: onlyNames, Log: logf}
 		var err error
-		switch e {
-		case "e1b":
+		if e == "e1b" {
 			_, err = lab.E1b(ctx, o)
-		case "e2":
-			_, err = lab.E2(ctx, o)
-		case "e3":
-			_, err = lab.E3(ctx, o)
-		case "e4":
-			_, err = lab.E4(ctx, o)
-		case "e5":
-			_, err = lab.E5(ctx, o)
-		default:
-			err = fmt.Errorf("unknown experiment %q", e)
+		} else {
+			_, err = lab.Curves(ctx, o, e)
 		}
 		if err != nil {
 			return fmt.Errorf("%s: %w", e, err)
 		}
 		logf("%s done: %s", e, o.Out)
+	}
+	return nil
+}
+
+func checkBench(experiments, only []string) error {
+	var names []string
+	for _, e := range experiments {
+		curves := lab.CurveNames(e)
+		if e != "e1b" && curves == nil {
+			return fmt.Errorf("-experiment: unknown experiment %q", e)
+		}
+		names = append(names, curves...)
+	}
+	for _, name := range only {
+		if !slices.Contains(names, name) {
+			return fmt.Errorf("-only: none of %s has a curve named %q", strings.Join(experiments, ", "), name)
+		}
 	}
 	return nil
 }

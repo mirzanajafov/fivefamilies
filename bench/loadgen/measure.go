@@ -71,6 +71,9 @@ func Measure(ctx context.Context, t Target, cfg Config, probe Probe) (Report, er
 	if err := errors.Join(b.err, err); err != nil {
 		return Report{}, fmt.Errorf("counters: %w", err)
 	}
+	if len(b.c) != len(after) {
+		return Report{}, fmt.Errorf("counters: %d nodes after the warmup and %d at the end", len(b.c), len(after))
+	}
 	r := Report{Summary: s, Nodes: len(after)}
 	var fsyncs, sent, entries uint64
 	for i := range after {

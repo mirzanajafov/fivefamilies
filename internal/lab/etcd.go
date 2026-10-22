@@ -56,7 +56,7 @@ func (e *EtcdCluster) services() []service {
 }
 
 func (e *EtcdCluster) Up(ctx context.Context) error {
-	if err := e.up(ctx, etcdProject, e.services()); err != nil {
+	if err := e.start(ctx, etcdProject, e.services()); err != nil {
 		return err
 	}
 	var last error
