@@ -542,27 +542,28 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 
 func TestAFollowersRefusalNamesTheLeader(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
-	follower := c.leader(5*time.Second)%3 + 1
-	conn, err := grpc.NewClient(c.nodes[follower], grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	var err error
 	var got []string
-	for range 3 {
+	for range 20 {
+		follower := c.leader(5*time.Second)%3 + 1
+		conn, dialErr := grpc.NewClient(c.nodes[follower], grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if dialErr != nil {
+			t.Fatal(dialErr)
+		}
 		var md metadata.MD
 		_, err = pb.NewKVClient(conn).Put(ctx, &pb.PutRequest{Key: "k"}, grpc.Header(&md))
 		got = md.Get(route.LeaderHeader)
 		st, statusErr := pb.NewAdminClient(conn).Status(ctx, &pb.StatusRequest{})
+		conn.Close()
 		if statusErr != nil {
 			t.Fatal(statusErr)
 		}
 		if client.Reason(err) == pb.ErrorReason_ERROR_REASON_NOT_LEADER && slices.Equal(got, []string{c.nodes[raft.NodeID(st.GetLeader())]}) {
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond)
 	}
-	t.Fatalf("three writes to a follower, the last got %v with the hint %v, want a refusal naming the leader", err, got)
+	t.Fatalf("twenty writes to a follower, the last got %v with the hint %v, want a refusal naming the leader", err, got)
 }

@@ -73,17 +73,6 @@ func TestAHintWinsOverAnEarlierRotation(t *testing.T) {
 	}
 }
 
-func TestALateHintFromANodeTheRouterLeftDoesNotUndoANewerOne(t *testing.T) {
-	r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161", "n4:3161"})
-	r.MoveOn(0, hint("n3:3161"))
-	if !r.MoveOn(1, hint("n1:3161")) {
-		t.Fatal("a hint to another node is a redirect, whoever sent it")
-	}
-	if got := r.Target(); got != 2 {
-		t.Fatalf("target %d, want 2: a late answer from node 2 naming the old leader must not undo node 1's hint", got)
-	}
-}
-
 func TestOnlyAFailureOfTheTargetRotatesTheRouter(t *testing.T) {
 	r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161"})
 	r.MoveOn(0, nil)

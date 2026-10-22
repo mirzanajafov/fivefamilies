@@ -23,8 +23,7 @@ type workload struct {
 	seed      uint64
 	start     time.Time
 	mu        sync.Mutex
-	ops       []check.Op
-	errs      []string
+	ops       []record
 }
 
 func (w *workload) now() int64 {
@@ -72,12 +71,12 @@ func (w *workload) worker(id int, stop <-chan struct{}) {
 			in.Kind = check.Delete
 		}
 		op, err := w.do(c, id, in)
-		var msg string
+		r := record{Op: op}
 		if err != nil {
-			msg = err.Error()
+			r.Err = err.Error()
 		}
 		w.mu.Lock()
-		w.ops, w.errs = append(w.ops, op), append(w.errs, msg)
+		w.ops = append(w.ops, r)
 		w.mu.Unlock()
 		if err != nil {
 			continue
@@ -105,6 +104,10 @@ func (w *workload) do(c *client.Client, id int, in check.Input) (check.Op, error
 func (w *workload) history() ([]porcupine.Operation, int, int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	hist, unknown := check.History(w.ops)
-	return hist, unknown, len(w.ops) - len(hist)
+	ops := make([]check.Op, len(w.ops))
+	for i, r := range w.ops {
+		ops[i] = r.Op
+	}
+	hist, unknown := check.History(ops)
+	return hist, unknown, len(ops) - len(hist)
 }
