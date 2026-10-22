@@ -82,9 +82,9 @@ func (c *cluster) restoreVoter(ctx context.Context, node int) error {
 	}, 30*time.Second)
 }
 
-func (c *cluster) transfer(ctx context.Context, from, to int) (uint64, error) {
+func (c *cluster) transfer(ctx context.Context, from, to int) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	resp, err := c.admin(from).TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: uint64(to)})
-	return resp.GetLeader(), err
+	return int(resp.GetLeader()), err
 }

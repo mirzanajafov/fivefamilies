@@ -43,8 +43,9 @@ type Config struct {
 }
 
 var (
-	ErrLost     = errors.New("node: the entry was replaced before it committed")
-	ErrNotReady = errors.New("node: the read could not be confirmed, try again")
+	ErrLost            = errors.New("node: the entry was replaced before it committed")
+	ErrNotReady        = errors.New("node: the read could not be confirmed, try again")
+	ErrTransferAborted = errors.New("node: the transfer gave up")
 )
 
 const (
@@ -61,6 +62,14 @@ func (e *NotLeaderError) Error() string {
 }
 
 type Done func(kv.Result, error)
+
+type Transferred func(leader raft.NodeID, term uint64, err error)
+
+type transferWaiter struct {
+	to   raft.NodeID
+	term uint64
+	done Transferred
+}
 
 type pendingWrite struct {
 	seq     uint64
@@ -107,6 +116,7 @@ type Node struct {
 	nextCtx  uint64
 	reads    map[uint64]readWaiter
 	ready    []confirmedRead
+	moves    []transferWaiter
 
 	leases     map[uint64]*leaseClock
 	leaseTerm  uint64
@@ -340,11 +350,32 @@ func (n *Node) ProposeConfChange(cc raft.ConfChange, done Done) {
 	n.waiters[idx] = waiter{term: n.r.Term(), done: done}
 }
 
-func (n *Node) TransferLeadership(to raft.NodeID) error {
+func (n *Node) TransferLeadership(to raft.NodeID, done Transferred) {
 	if n.r.State() != raft.StateLeader {
-		return &NotLeaderError{Leader: n.r.Leader()}
+		done(n.r.Leader(), n.r.Term(), &NotLeaderError{Leader: n.r.Leader()})
+		return
 	}
-	return n.r.TransferLeadership(to)
+	if err := n.r.TransferLeadership(to); err != nil || to == n.r.ID() {
+		done(n.r.Leader(), n.r.Term(), err)
+		return
+	}
+	n.moves = append(n.moves, transferWaiter{to: to, term: n.r.Term(), done: done})
+}
+
+func (n *Node) settleTransfers() {
+	term, lead := n.r.Term(), n.r.Leader()
+	waiting := n.moves[:0]
+	for _, w := range n.moves {
+		switch {
+		case term > w.term && lead != raft.None && lead != n.r.ID():
+			w.done(lead, term, nil)
+		case term > w.term && lead == n.r.ID(), term == w.term && n.r.State() == raft.StateLeader && n.r.Transferring() == raft.None:
+			w.done(lead, term, fmt.Errorf("%w: node %d did not take over", ErrTransferAborted, w.to))
+		default:
+			waiting = append(waiting, w)
+		}
+	}
+	n.moves = waiting
 }
 
 func (n *Node) Waiting() int {
@@ -452,6 +483,7 @@ func (n *Node) Process() error {
 	if term := n.r.Term(); len(n.reads) > 0 {
 		n.expireReads(func(w readWaiter) bool { return w.term != term })
 	}
+	n.settleTransfers()
 	return nil
 }
 

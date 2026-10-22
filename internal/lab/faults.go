@@ -160,9 +160,11 @@ func (n *nemesis) inject(ctx context.Context, kind FaultKind) FaultRecord {
 		rec.leader = target
 		if kind == FaultTransfer {
 			rec.duration = n.between(500*time.Millisecond, 2*time.Second)
-			var lead uint64
-			lead, err = n.adm.transfer(ctx, l, target)
-			rec.Detail = fmt.Sprintf("hand leadership from node %d to %d (node %d leads after it)", l, target, lead)
+			rec.Detail = fmt.Sprintf("hand leadership from node %d to %d", l, target)
+			var lead int
+			if lead, err = n.adm.transfer(ctx, l, target); err == nil {
+				rec.Detail += fmt.Sprintf(" (node %d leads after it)", lead)
+			}
 			break
 		}
 		rec.duration = n.between(time.Second, 6*time.Second)

@@ -58,7 +58,7 @@ func fail(ctx context.Context, s *Server, err error) error {
 	case errors.Is(err, node.ErrLost), errors.Is(err, node.ErrNotReady), errors.Is(err, raft.ErrNotLeader),
 		errors.Is(err, raft.ErrTransferring), errors.Is(err, raft.ErrConfNotReady):
 		return status.Error(codes.Unavailable, err.Error())
-	case errors.Is(err, raft.ErrConfPending), errors.Is(err, raft.ErrLearnerBehind), errors.Is(err, ErrTransferAborted):
+	case errors.Is(err, raft.ErrConfPending), errors.Is(err, raft.ErrLearnerBehind), errors.Is(err, node.ErrTransferAborted):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, raft.ErrBusy):
 		return status.Error(codes.ResourceExhausted, "too many writes waiting to commit; retry later")
@@ -295,11 +295,11 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 }
 
 func (a *adminService) TransferLeadership(ctx context.Context, req *pb.TransferLeadershipRequest) (*pb.TransferLeadershipResponse, error) {
-	st, err := a.s.TransferLeadership(ctx, raft.NodeID(req.GetTo()))
+	leader, term, err := a.s.TransferLeadership(ctx, raft.NodeID(req.GetTo()))
 	if err != nil {
 		return nil, fail(ctx, a.s, err)
 	}
-	return &pb.TransferLeadershipResponse{Leader: st.GetLeader(), Term: st.GetTerm()}, nil
+	return &pb.TransferLeadershipResponse{Leader: uint64(leader), Term: term}, nil
 }
 
 type leaseService struct {
