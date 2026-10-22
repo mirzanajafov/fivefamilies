@@ -39,28 +39,6 @@ func logf(format string, args ...any) {
 
 var errProblems = errors.New("the run found problems")
 
-func checkRun(read client.ReadMode, bugs planted.Bug, faults []lab.FaultKind, election, heartbeat, lease string) error {
-	for _, d := range []string{election, heartbeat} {
-		if _, err := time.ParseDuration(d); err != nil {
-			return err
-		}
-	}
-	leaseLen, err := time.ParseDuration(lease)
-	switch {
-	case err != nil:
-		return err
-	case read == client.ReadLease && leaseLen <= 0:
-		return errors.New("-read lease needs a -lease longer than zero")
-	case bugs.Has(planted.Watches | planted.LocalKeepAlive):
-		return errors.New("-bug: the lab runs no watchers or lease holders, so watch and lease bugs are never exercised")
-	case bugs.Has(planted.FollowerRead) && read == client.ReadLog:
-		return errors.New("-bug followerread is never exercised when every read goes through the log")
-	case bugs.Has(planted.EarlyConf) && !slices.Contains(faults, lab.FaultMember):
-		return errors.New("-bug earlyconf is never exercised without member in -faults, since nothing else changes the membership")
-	}
-	return nil
-}
-
 func runFailover(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("failover", flag.ContinueOnError)
 	elections := fs.String("election", "150ms,300ms,600ms,1s", "election timeouts to sweep; the heartbeat is a third of each")
@@ -331,10 +309,9 @@ func runLab(ctx context.Context, args []string) error {
 	})
 	mean := fs.Duration("fault-every", 3*time.Second, "mean gap between faults")
 	var bug string
-	var bugs planted.Bug
-	fs.Func("bug", "planted bug for every node", func(s string) (err error) {
+	fs.Func("bug", "planted bug for every node", func(s string) error {
 		bug = s
-		bugs, err = planted.Parse(s)
+		_, err := planted.Parse(s)
 		return err
 	})
 	election := fs.String("election", "1s", "election timeout")
@@ -348,14 +325,14 @@ func runLab(ctx context.Context, args []string) error {
 	if err := parse(fs, args); err != nil {
 		return err
 	}
-	if err := checkRun(read, bugs, faults, *election, *heartbeat, *lease); err != nil {
-		return usageError{error: err}
-	}
 	opts := lab.Options{
 		Seed: *seed, Duration: *duration, Settle: *settle, Workers: *workers, Keys: *keys, Read: read, Faults: faults,
 		FaultMean: *mean, Bug: bug, Election: *election, Heartbeat: *heartbeat, Lease: *lease,
 		OpTimeout: *opTimeout, CheckTimeout: *checkTimeout, Out: *out, Keep: *keep,
 		Project: "fflab", File: filepath.Join("lab", "compose.yml"), Log: logf,
+	}
+	if err := opts.Validate(); err != nil {
+		return usageError{error: err}
 	}
 	if opts.Out == "" {
 		opts.Out = filepath.Join("bench", "results", "lab", time.Now().UTC().Format("20060102-150405"))
