@@ -44,7 +44,7 @@ func (c *Controller) drive(ctx context.Context) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for {
-		want := c.viewed.seenWithin(c.cfg.Idle, time.Now())
+		want := c.viewers.seenWithin(c.cfg.Idle)
 		switch {
 		case want && cancel == nil:
 			var lctx context.Context
@@ -154,7 +154,7 @@ func (d *demo) do(ctx context.Context, cl *client.Client, id int, in check.Input
 	out, err := live.Execute(octx, cl, in, client.ReadIndex)
 	op := check.Op{Client: id, Input: in, Output: out, Call: call, Return: d.c.now()}
 	if err == nil && in.Kind != check.Get {
-		d.c.load.ack(time.Now())
+		d.c.load.ack()
 	}
 	return op
 }
@@ -205,9 +205,9 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 	d.cutting = false
 	d.gate.Broadcast()
 	d.mu.Unlock()
-	d.c.load.measured(clientOps, time.Now())
+	d.c.load.measured(clientOps)
 	if verify {
-		d.checks.Go(func() { d.c.checkWindow(index, from, hist, initial, unchecked) })
+		d.checks.Go(func() { d.c.checkWindow(ctx, index, from, hist, initial, unchecked) })
 	}
 	return true
 }
@@ -227,7 +227,10 @@ func seedOps(initial map[string]check.Output, at int64) []porcupine.Operation {
 	return out
 }
 
-func (c *Controller) checkWindow(index int, from time.Time, ops []porcupine.Operation, initial map[string]check.Output, unchecked bool) {
+func (c *Controller) checkWindow(ctx context.Context, index int, from time.Time, ops []porcupine.Operation, initial map[string]check.Output, unchecked bool) {
+	if ctx.Err() != nil {
+		return
+	}
 	w := Window{Index: index, From: from, To: time.Now(), Ops: len(ops)}
 	switch {
 	case unchecked:

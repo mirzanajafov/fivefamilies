@@ -66,6 +66,15 @@ type Fault struct {
 	Failover  *Failover     `json:"failover,omitempty"`
 }
 
+func (f *Fault) clone() *Fault {
+	c := *f
+	if f.Failover != nil {
+		fo := *f.Failover
+		c.Failover = &fo
+	}
+	return &c
+}
+
 type Load struct {
 	Active  bool    `json:"active"`
 	OpsPerS float64 `json:"ops_per_s"`
@@ -104,7 +113,7 @@ func (c *Controller) poll(ctx context.Context) {
 
 func (c *Controller) pollEvery() time.Duration {
 	active, _ := c.load.view()
-	watched := c.viewed.count() > 0
+	watched := c.viewers.count() > 0
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if watched || active || c.fault != nil {

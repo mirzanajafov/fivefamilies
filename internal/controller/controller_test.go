@@ -142,22 +142,30 @@ func (h *harness) waitFor(what string, within time.Duration, ok func(Snapshot) b
 	return Snapshot{}
 }
 
-func (h *harness) chaos(body string, from string, admin bool) (int, string) {
-	h.t.Helper()
-	req, _ := http.NewRequest(http.MethodPost, h.api.URL+"/api/chaos", strings.NewReader(body))
+func postChaos(t *testing.T, api, body, from string, admin bool) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, api+"/api/chaos", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.Header.Set("X-Forwarded-For", from)
 	if admin {
 		req.Header.Set("Authorization", "Bearer admin-token")
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		h.t.Fatal(err)
+		t.Fatal(err)
 	}
 	b, err := io.ReadAll(resp.Body)
 	if err := errors.Join(err, resp.Body.Close()); err != nil {
-		h.t.Fatal(err)
+		t.Fatal(err)
 	}
-	return resp.StatusCode, string(b)
+	return resp.StatusCode, strings.TrimSpace(string(b))
+}
+
+func (h *harness) chaos(body string, from string, admin bool) (int, string) {
+	h.t.Helper()
+	return postChaos(h.t, h.api.URL, body, from, admin)
 }
 
 func (h *harness) watch(ctx context.Context) {
@@ -295,13 +303,13 @@ func TestAWindowWithAStaleReadIsCaught(t *testing.T) {
 		{ClientId: 0, Input: check.Input{Kind: check.Put, Key: "ledger/a", Value: "new"}, Call: 10, Output: check.Output{Ok: true}, Return: 20},
 		{ClientId: 1, Input: check.Input{Kind: check.Get, Key: "ledger/a"}, Call: 30, Output: check.Output{Found: true, Value: "old"}, Return: 40},
 	}
-	c.checkWindow(1, time.Now(), ops, initial, false)
+	c.checkWindow(context.Background(), 1, time.Now(), ops, initial, false)
 	ops[1].Output = check.Output{Found: true, Value: "new"}
-	c.checkWindow(2, time.Now(), ops, initial, false)
+	c.checkWindow(context.Background(), 2, time.Now(), ops, initial, false)
 	ops[1].Call, ops[1].Return = 1, 5
 	ops[1].Output = check.Output{Found: true, Value: "old"}
-	c.checkWindow(3, time.Now(), ops, initial, false)
-	c.checkWindow(4, time.Now(), ops, nil, true)
+	c.checkWindow(context.Background(), 3, time.Now(), ops, initial, false)
+	c.checkWindow(context.Background(), 4, time.Now(), ops, nil, true)
 	want := []string{string(porcupine.Illegal), string(porcupine.Ok), string(porcupine.Ok), "unchecked"}
 	for i, w := range c.windows {
 		if w.Result != want[i] {
@@ -340,11 +348,11 @@ func TestThePollerSlowsDownWithNobodyWatching(t *testing.T) {
 	if got := c.pollEvery(); got != time.Second {
 		t.Fatalf("idle: %v", got)
 	}
-	c.viewed.join()
+	c.viewers.join()
 	if got := c.pollEvery(); got != 100*time.Millisecond {
 		t.Fatalf("watched: %v", got)
 	}
-	c.viewed.leave(time.Now())
+	c.viewers.leave()
 	c.fault = &Fault{}
 	if got := c.pollEvery(); got != 100*time.Millisecond {
 		t.Fatalf("during a fault: %v", got)
@@ -416,7 +424,7 @@ func TestTheVisitorLimitForgetsAnAddressOnceItsWindowHasPassed(t *testing.T) {
 	}
 }
 
-func TestAFaultThatCouldNotStartTellsTheVisitorWithoutTheRPCError(t *testing.T) {
+func TestAFaultThatCannotStartAnswersWithoutTheRPCErrorAndLeavesNoCooldown(t *testing.T) {
 	c, err := New(Config{Nodes: []string{"127.0.0.1:1"}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
 		t.Fatal(err)
@@ -424,18 +432,13 @@ func TestAFaultThatCouldNotStartTellsTheVisitorWithoutTheRPCError(t *testing.T) 
 	defer c.Close()
 	api := httptest.NewServer(c.Handler())
 	defer api.Close()
-	resp, err := http.Post(api.URL+"/api/chaos", "application/json", strings.NewReader(`{"action":"isolate","node":1,"seconds":1}`))
-	if err != nil {
-		t.Fatal(err)
+	if code, body := postChaos(t, api.URL, `{"action":"step-down"}`, "1.1.1.1", false); code != http.StatusConflict || body != `{"error":"there is no leader to step down"}` {
+		t.Fatalf("a step-down before anyone leads: %d %s", code, body)
 	}
-	body, err := io.ReadAll(resp.Body)
-	if err := errors.Join(err, resp.Body.Close()); err != nil {
-		t.Fatal(err)
+	if code, body := postChaos(t, api.URL, `{"action":"isolate","node":1,"seconds":1}`, "1.1.1.1", false); code != http.StatusBadGateway || body != `{"error":"isolate on node 1 could not be started"}` {
+		t.Fatalf("an isolation whose RPC fails: %d %s", code, body)
 	}
-	if resp.StatusCode != http.StatusBadGateway || strings.TrimSpace(string(body)) != `{"error":"isolate on node 1 could not be started"}` {
-		t.Fatalf("%d %s", resp.StatusCode, body)
-	}
-	if s := c.Snapshot(); s.Fault != nil {
-		t.Fatalf("a fault that never started is still running: %+v", s.Fault)
+	if s := c.Snapshot(); s.Fault != nil || s.Last != nil {
+		t.Fatalf("a fault that never started is running or starts a cooldown: %+v %+v", s.Fault, s.Last)
 	}
 }

@@ -86,12 +86,12 @@ func (c *Config) defaults() error {
 }
 
 type Controller struct {
-	cfg    Config
-	conns  []*grpc.ClientConn
-	admins []pb.AdminClient
-	start  time.Time
-	load   loadMeter
-	viewed audience
+	cfg     Config
+	conns   []*grpc.ClientConn
+	admins  []pb.AdminClient
+	start   time.Time
+	load    loadMeter
+	viewers audience
 
 	mu       sync.Mutex
 	nodes    []NodeView
@@ -154,7 +154,7 @@ func (c *Controller) event(kind string, node int, term uint64, text string) {
 
 func (c *Controller) Snapshot() Snapshot {
 	active, rate := c.load.view()
-	viewers := c.viewed.count()
+	watching := c.viewers.count()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	s := Snapshot{
@@ -164,17 +164,15 @@ func (c *Controller) Snapshot() Snapshot {
 		Term:    c.term,
 		Events:  append([]Event{}, c.events[max(0, len(c.events)-50):]...),
 		Windows: append([]Window{}, c.windows[max(0, len(c.windows)-20):]...),
-		Load:    Load{Active: active, OpsPerS: rate, Viewers: viewers},
+		Load:    Load{Active: active, OpsPerS: rate, Viewers: watching},
 		Limits:  Limits{MaxSeconds: int(c.cfg.VisitorMax / time.Second), CooldownSeconds: int(c.cfg.Cooldown / time.Second)},
 	}
 	if c.fault != nil {
-		f := *c.fault
-		s.Fault = &f
+		s.Fault = c.fault.clone()
 	}
 	if c.last != nil {
-		f := *c.last
-		s.Last = &f
-		s.Limits.NextAllowed = f.Ends.Add(c.cfg.Cooldown)
+		s.Last = c.last.clone()
+		s.Limits.NextAllowed = c.last.Ends.Add(c.cfg.Cooldown)
 	}
 	return s
 }
@@ -244,8 +242,8 @@ func (c *Controller) serveEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
-	c.viewed.join()
-	defer func() { c.viewed.leave(time.Now()) }()
+	c.viewers.join()
+	defer c.viewers.leave()
 	t := time.NewTicker(250 * time.Millisecond)
 	defer t.Stop()
 	for {
