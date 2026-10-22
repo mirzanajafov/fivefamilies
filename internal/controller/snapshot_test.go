@@ -16,13 +16,14 @@ func TestTheDashboardsSnapshotFixtureIsWhatTheControllerWrites(t *testing.T) {
 	dec.DisallowUnknownFields()
 	var s Snapshot
 	if err := dec.Decode(&s); err != nil {
-		t.Fatalf("the fixture has a field the controller doesn't write: %v", err)
+		t.Fatalf("the fixture doesn't decode as the controller's snapshot: %v", err)
 	}
 	got, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got = append(got, '\n'); !bytes.Equal(got, want) {
+	got = append(got, '\n')
+	if !bytes.Equal(got, want) {
 		t.Fatalf("the controller writes the fixture's snapshot differently:\n%s", got)
 	}
 }

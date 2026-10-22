@@ -11,7 +11,7 @@ const all = (v: Fields, type: 'number' | 'string' | 'boolean', keys: readonly st
 function isNode(v: unknown): v is NodeView {
   return (
     isRecord(v) &&
-    all(v, 'number', ['id', 'term', 'leader', 'commit', 'last', 'msgs_per_s']) &&
+    all(v, 'number', ['id', 'term', 'commit', 'last', 'msgs_per_s']) &&
     all(v, 'boolean', ['up', 'voter', 'learner']) &&
     oneOf(roles, v.state) &&
     optional(v.fault, (f) => oneOf(actions, f))
@@ -46,7 +46,6 @@ function isFault(v: unknown): v is Fault {
 function isSnapshot(v: unknown): v is Snapshot {
   return (
     isRecord(v) &&
-    typeof v.at === 'string' &&
     all(v, 'number', ['leader', 'term']) &&
     Array.isArray(v.nodes) &&
     v.nodes.every(isNode) &&

@@ -11,7 +11,6 @@ export type NodeView = {
   up: boolean
   state: Role
   term: number
-  leader: number
   commit: number
   last: number
   voter: boolean
@@ -35,7 +34,7 @@ export type Window = {
   note?: string
 }
 
-export type Failover = {
+type Failover = {
   client_gap_ns: number
   election_ns: number
   new_leader: number
@@ -50,12 +49,7 @@ export type Fault = {
   failover?: Failover
 }
 
-export type Load = { active: boolean; ops_per_s: number; viewers: number }
-
-export type Limits = { max_seconds: number; next_allowed?: string }
-
 export type Snapshot = {
-  at: string
   nodes: NodeView[]
   leader: number
   term: number
@@ -63,6 +57,6 @@ export type Snapshot = {
   windows: Window[]
   fault?: Fault
   last?: Fault
-  load: Load
-  limits: Limits
+  load: { active: boolean; ops_per_s: number; viewers: number }
+  limits: { max_seconds: number; next_allowed?: string }
 }

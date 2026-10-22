@@ -15,8 +15,8 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
   const now = useNow(250)
   const max = admin ? 60 : snapshot.limits.max_seconds
   const fault = snapshot.fault
-  const faults = [fault?.id, snapshot.last?.id].join()
-  const message = refusal?.during === faults ? refusal.text : undefined
+  const faultKey = [fault?.id, snapshot.last?.id].join()
+  const message = refusal?.during === faultKey ? refusal.text : undefined
   const left = fault ? Math.max(0, Math.ceil((Date.parse(fault.ends) - now) / 1000)) : 0
   const cooldown = !admin && snapshot.limits.next_allowed ? Math.max(0, Math.ceil((Date.parse(snapshot.limits.next_allowed) - now) / 1000)) : 0
   const blocked = busy || !!fault || cooldown > 0
@@ -24,12 +24,11 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
   async function post(path: string, body?: object) {
     setBusy(true)
     setRefusal(undefined)
-    const refuse = (text: string) => setRefusal({ text, during: faults })
     try {
       const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) })
-      if (!res.ok) refuse(errorIn(await res.json().catch(() => undefined)) ?? `refused (${res.status})`)
+      if (!res.ok) setRefusal({ text: errorIn(await res.json().catch(() => undefined)) ?? `refused (${res.status})`, during: faultKey })
     } catch {
-      refuse('the dashboard could not reach the controller')
+      setRefusal({ text: 'the dashboard could not reach the controller', during: faultKey })
     } finally {
       setBusy(false)
     }

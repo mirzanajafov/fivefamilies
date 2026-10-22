@@ -1,6 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe as suite, expect, it } from 'vitest'
 import { errorIn } from './api'
-import { readFileSync } from 'node:fs'
 import { ago, ms, rate, wholeRate } from './format'
 import { adminIn } from './session'
 import { snapshotIn } from './snapshot'
@@ -12,7 +12,6 @@ const node = (over: Partial<NodeView>): NodeView => ({
   up: true,
   state: 'follower',
   term: 3,
-  leader: 2,
   commit: 10,
   last: 10,
   voter: true,
@@ -87,8 +86,14 @@ suite('api', () => {
   })
   it('reads a snapshot with every field the controller writes', () => {
     const full = snapshotIn(readFileSync(new URL('../../../internal/controller/testdata/snapshot.json', import.meta.url), 'utf8'))
-    expect(full?.last?.failover?.new_leader).toBe(3)
-    expect(full?.limits.next_allowed).toBeTypeOf('string')
+    expect(full).toMatchObject({
+      nodes: [{}, { fault: 'isolate' }],
+      events: [{ node: 3, term: 7 }],
+      windows: [{ note: 'the check ran out of time' }],
+      fault: { id: 5 },
+      last: { failover: { new_leader: 3 } },
+      limits: { next_allowed: '2026-10-22T18:00:05Z' },
+    })
   })
   it('reads an error and the admin flag only when they have the right type', () => {
     expect(errorIn({ error: 'refused' })).toBe('refused')
