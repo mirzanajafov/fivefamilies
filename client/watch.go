@@ -55,7 +55,7 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 	return out
 }
 
-func (c *Client) watchOnce(ctx context.Context, cc *grpc.ClientConn, key string, prefix bool, next *uint64, out chan<- WatchResponse) (got, compacted bool) {
+func (c *Client) watchOnce(ctx context.Context, cc grpc.ClientConnInterface, key string, prefix bool, next *uint64, out chan<- WatchResponse) (got, compacted bool) {
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	idle := time.AfterFunc(c.opts.WatchSilence, cancel)

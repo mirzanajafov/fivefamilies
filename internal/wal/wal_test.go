@@ -114,7 +114,7 @@ func TestRotationAcrossSegments(t *testing.T) {
 	_, st, _ := open(t, fs, 256)
 	want := append(entries(1, 1, 39), entries(2, 40, 41)...)
 	if !sameEntries(st.Entries, want) {
-		t.Fatalf("restored %d entries from %d segments", len(st.Entries), len(names))
+		t.Fatalf("restored %d entries, want %d", len(st.Entries), len(want))
 	}
 	if st.HardState.Commit != 0 || st.HardState.Term != 2 {
 		t.Fatalf("hard state %+v", st.HardState)
