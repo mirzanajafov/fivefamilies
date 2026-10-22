@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"fmt"
 	"math/rand/v2"
 	"os"
 	"reflect"
@@ -231,11 +232,13 @@ func TestACheckOrBugThatCanNeverFireIsRefused(t *testing.T) {
 		}
 	}
 	for _, reads := range []ReadMode{ReadIndex, ReadLease, ReadFollower} {
-		o := DefaultOptions()
-		o.Bugs, o.Reads = planted.FollowerRead, reads
-		if err := o.Validate(""); err != nil {
-			t.Errorf("followerread with %s reads: %v", reads, err)
-		}
+		t.Run(fmt.Sprint(reads), func(t *testing.T) {
+			o := DefaultOptions()
+			o.Bugs, o.Reads = planted.FollowerRead, reads
+			if err := o.Validate(""); err != nil {
+				t.Errorf("followerread with %s reads: %v", reads, err)
+			}
+		})
 	}
 	for name, c := range map[string]struct {
 		off   func(*Options)

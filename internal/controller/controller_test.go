@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -195,17 +196,19 @@ func TestTheControllerFollowsTheClusterAndChecksTheDemoWhileSomeoneWatches(t *te
 	h.waitFor("the demo clients stop once the last viewer is gone for the idle time", 10*time.Second, func(s Snapshot) bool { return !s.Load.Active && s.Load.Viewers == 0 })
 }
 
-func TestAFaultRightAfterTheLastOneEndedWaitsForTheCooldown(t *testing.T) {
+func TestAVisitorFaultIsRefusedUntilTheCooldownEndsButTheAdminsIsNot(t *testing.T) {
 	h := newHarness(t, 3, func(c *Config) { c.Cooldown = time.Minute })
 	h.waitFor("a leader", 5*time.Second, func(s Snapshot) bool { return s.Leader != 0 })
 	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "1.1.1.1", false); code != http.StatusOK {
 		t.Fatalf("the first fault: %d %s", code, body)
 	}
-	h.waitFor("the fault to close", 10*time.Second, func(s Snapshot) bool { return s.Fault == nil && s.Last != nil })
+	next := h.waitFor("the fault to close", 10*time.Second, func(s Snapshot) bool { return s.Fault == nil && s.Last != nil }).Limits.NextAllowed
+	most := int(math.Ceil(time.Until(next).Seconds()))
 	code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "3.3.3.3", false)
+	least := int(math.Ceil(time.Until(next).Seconds()))
 	var wait int
-	if _, err := fmt.Sscanf(body, `{"error":"the Commission is still settling, so try again in %d s"}`, &wait); code != http.StatusTooManyRequests || err != nil || wait < 1 || wait > 60 {
-		t.Fatalf("a fault right after the last one ended: %d %s", code, body)
+	if _, err := fmt.Sscanf(body, `{"error":"the Commission is still settling, so try again in %d s"}`, &wait); code != http.StatusTooManyRequests || err != nil || wait < least || wait > most {
+		t.Fatalf("a fault right after the last one ended: %d %s, want a wait between %d and %d s rounded up", code, body, least, most)
 	}
 	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "3.3.3.3", true); code != http.StatusOK {
 		t.Fatalf("the admin does not wait for the cooldown: %d %s", code, body)
@@ -326,7 +329,7 @@ func TestTheAdminCheck(t *testing.T) {
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, req)
 			if w.Code != want {
-				t.Fatalf("%q: %d, want %d", token, w.Code, want)
+				t.Fatalf("%d, want %d", w.Code, want)
 			}
 		})
 	}

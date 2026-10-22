@@ -325,36 +325,40 @@ func TestLeaderCatchesUpADivergedFollower(t *testing.T) {
 
 func TestPreVoteKeepsARejoiningNodeFromDisruptingTheLeader(t *testing.T) {
 	for _, preVote := range []bool{true, false} {
-		c := newCluster(t, 3, func(cfg *Config) { cfg.PreVote = preVote })
-		c.elect(1)
-		c.isolate(3)
-		for range 100 {
-			c.tick(3, 1)
-			c.tick(1, 1)
-			c.tick(2, 1)
-		}
-		c.heal()
-		c.tickAll(30)
-		disrupted := c.node(1).State() != StateLeader || c.node(1).Term() != 1
-		if preVote && disrupted {
-			t.Fatalf("with PreVote: node 1 is %s in term %d", c.node(1).State(), c.node(1).Term())
-		}
-		if !preVote && !disrupted {
-			t.Fatal("without PreVote the rejoining node should have forced a new term")
-		}
+		t.Run(fmt.Sprintf("prevote=%v", preVote), func(t *testing.T) {
+			c := newCluster(t, 3, func(cfg *Config) { cfg.PreVote = preVote })
+			c.elect(1)
+			c.isolate(3)
+			for range 100 {
+				c.tick(3, 1)
+				c.tick(1, 1)
+				c.tick(2, 1)
+			}
+			c.heal()
+			c.tickAll(30)
+			disrupted := c.node(1).State() != StateLeader || c.node(1).Term() != 1
+			if preVote && disrupted {
+				t.Fatalf("with PreVote: node 1 is %s in term %d", c.node(1).State(), c.node(1).Term())
+			}
+			if !preVote && !disrupted {
+				t.Fatal("without PreVote the rejoining node should have forced a new term")
+			}
+		})
 	}
 }
 
 func TestCheckQuorumDeposesAnIsolatedLeader(t *testing.T) {
 	for _, checkQuorum := range []bool{true, false} {
-		c := newCluster(t, 3, func(cfg *Config) { cfg.CheckQuorum = checkQuorum })
-		c.elect(1)
-		c.isolate(1)
-		c.tick(1, 25)
-		stillLeader := c.node(1).State() == StateLeader
-		if checkQuorum == stillLeader {
-			t.Fatalf("check quorum %v: isolated leader still leading: %v", checkQuorum, stillLeader)
-		}
+		t.Run(fmt.Sprintf("checkquorum=%v", checkQuorum), func(t *testing.T) {
+			c := newCluster(t, 3, func(cfg *Config) { cfg.CheckQuorum = checkQuorum })
+			c.elect(1)
+			c.isolate(1)
+			c.tick(1, 25)
+			stillLeader := c.node(1).State() == StateLeader
+			if checkQuorum == stillLeader {
+				t.Fatalf("check quorum %v: isolated leader still leading: %v", checkQuorum, stillLeader)
+			}
+		})
 	}
 }
 

@@ -199,7 +199,7 @@ func TestAQuickRunTakesTheFirstOfTheChosenCurvesOfEachSystem(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("quick %v only %v", tc.o.Quick, tc.o.Only), func(t *testing.T) {
 			if got := names(tc.o.pick(specs)); got != tc.want {
-				t.Errorf("quick %v, only %v: picked %s, want %s", tc.o.Quick, tc.o.Only, got, tc.want)
+				t.Errorf("picked %s, want %s", got, tc.want)
 			}
 		})
 	}
@@ -220,10 +220,12 @@ func TestAReportFromAnOlderGeneratorIsRefused(t *testing.T) {
 
 func TestEveryCurveExperimentNamesItsCurves(t *testing.T) {
 	for _, e := range []string{"e2", "e3", "e4", "e5"} {
-		names := CurveNames(e)
-		if len(names) == 0 || len(slices.Compact(slices.Sorted(slices.Values(names)))) != len(names) {
-			t.Errorf("%s names %v, want at least one curve and no name twice", e, names)
-		}
+		t.Run(e, func(t *testing.T) {
+			names := CurveNames(e)
+			if len(names) == 0 || len(slices.Compact(slices.Sorted(slices.Values(names)))) != len(names) {
+				t.Errorf("%s names %v, want at least one curve and no name twice", e, names)
+			}
+		})
 	}
 	if CurveNames("e1b") != nil {
 		t.Error("e1b has no curves")

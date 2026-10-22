@@ -217,16 +217,19 @@ func TestARegistrationWhoseNewLeaseRanOutCanBeRetried(t *testing.T) {
 }
 
 func TestOnlyABlockingQueryGetsItsWaitOnTopOfTheCallTime(t *testing.T) {
-	for target, want := range map[string]time.Duration{
-		"/v1/registry/dimensions":                 callTimeout,
-		"/v1/registry/dimensions?wait=5m":         callTimeout,
-		"/v1/registry/dimensions?index=5&wait=1m": callTimeout + time.Minute,
+	for _, tc := range []struct {
+		name, target string
+		want         time.Duration
+	}{
+		{"a plain lookup", "/v1/registry/dimensions", callTimeout},
+		{"a wait without an index", "/v1/registry/dimensions?wait=5m", callTimeout},
+		{"a blocking query", "/v1/registry/dimensions?index=5&wait=1m", callTimeout + time.Minute},
 	} {
-		t.Run(target, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			f := fake{instances: []client.Instance{}}
-			NewServer(&f, nil).Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", target, nil))
-			if f.timeout != want {
-				t.Errorf("%s: the registry was given %v, want %v", target, f.timeout, want)
+			NewServer(&f, nil).Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", tc.target, nil))
+			if f.timeout != tc.want {
+				t.Errorf("the registry was given %v, want %v", f.timeout, tc.want)
 			}
 		})
 	}

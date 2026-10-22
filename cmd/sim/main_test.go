@@ -33,7 +33,7 @@ func TestASeedIsCaughtOnlyByItsCheckAndCutShortWhenAnotherStopsItFirst(t *testin
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if cat, out := verdict(c.r, c.catch); cat != c.cat || out != c.out {
-				t.Errorf("%s: %q %d, want %q %d", c.name, cat, out, c.cat, c.out)
+				t.Errorf("%q %d, want %q %d", cat, out, c.cat, c.out)
 			}
 		})
 	}

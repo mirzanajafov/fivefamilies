@@ -18,7 +18,7 @@ func TestABenchRunRefusesNamesThatMatchNothing(t *testing.T) {
 	} {
 		t.Run(fmt.Sprint(tc.experiments, tc.only), func(t *testing.T) {
 			if err := checkBench(tc.experiments, tc.only); (err == nil) != tc.ok {
-				t.Errorf("experiments %v, only %v: %v", tc.experiments, tc.only, err)
+				t.Errorf("accepted %v, got %v", tc.ok, err)
 			}
 		})
 	}

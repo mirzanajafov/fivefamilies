@@ -2,6 +2,7 @@ package raft
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -161,24 +162,26 @@ func TestOnlyOneChangeIsInFlight(t *testing.T) {
 
 func TestANewLeaderCommitsInItsOwnTermBeforeChanging(t *testing.T) {
 	for _, buggy := range []bool{false, true} {
-		r := newNode(t, 1, []NodeID{1, 2, 3}, Restore{}, func(cfg *Config) {
-			cfg.PreVote = false
-			if buggy {
-				cfg.Bugs = planted.EarlyConf
+		t.Run(fmt.Sprintf("buggy=%v", buggy), func(t *testing.T) {
+			r := newNode(t, 1, []NodeID{1, 2, 3}, Restore{}, func(cfg *Config) {
+				cfg.PreVote = false
+				if buggy {
+					cfg.Bugs = planted.EarlyConf
+				}
+			})
+			r.Campaign()
+			for _, m := range r.Ready().AfterPersist {
+				r.Step(m)
+			}
+			r.Step(Message{Type: MsgVoteResp, From: 2, To: 1, Term: 1})
+			_, err := r.ProposeConfChange(ConfChange{ConfAddLearner, 4})
+			if buggy != (err == nil) {
+				t.Fatalf("planted %v: change before the first commit gave %v", buggy, err)
+			}
+			if !buggy && !errors.Is(err, ErrConfNotReady) {
+				t.Fatalf("error %v", err)
 			}
 		})
-		r.Campaign()
-		for _, m := range r.Ready().AfterPersist {
-			r.Step(m)
-		}
-		r.Step(Message{Type: MsgVoteResp, From: 2, To: 1, Term: 1})
-		_, err := r.ProposeConfChange(ConfChange{ConfAddLearner, 4})
-		if buggy != (err == nil) {
-			t.Fatalf("planted %v: change before the first commit gave %v", buggy, err)
-		}
-		if !buggy && !errors.Is(err, ErrConfNotReady) {
-			t.Fatalf("error %v", err)
-		}
 	}
 }
 
@@ -452,59 +455,61 @@ func TestAReadForwardedToAnOldLeaderIsRefusedWithTheNewTerm(t *testing.T) {
 
 func TestAnEarlyChangeLetsTwoMajoritiesCommitDifferentEntries(t *testing.T) {
 	for _, buggy := range []bool{false, true} {
-		tweak := func(cfg *Config) {
-			cfg.PreVote, cfg.CheckQuorum = false, false
-			if buggy {
-				cfg.Bugs = planted.EarlyConf
+		t.Run(fmt.Sprintf("buggy=%v", buggy), func(t *testing.T) {
+			tweak := func(cfg *Config) {
+				cfg.PreVote, cfg.CheckQuorum = false, false
+				if buggy {
+					cfg.Bugs = planted.EarlyConf
+				}
 			}
-		}
-		c := newCluster(t, 4, tweak)
-		c.add(tweak)
-		c.elect(1)
-		c.change(1, ConfAddLearner, 5)
-		c.propose(1, "x")
-		c.tickAll(2)
-		for _, id := range []NodeID{2, 3, 4} {
-			for _, x := range []NodeID{1, 5} {
-				c.cut[[2]NodeID{id, x}], c.cut[[2]NodeID{x, id}] = true, true
+			c := newCluster(t, 4, tweak)
+			c.add(tweak)
+			c.elect(1)
+			c.change(1, ConfAddLearner, 5)
+			c.propose(1, "x")
+			c.tickAll(2)
+			for _, id := range []NodeID{2, 3, 4} {
+				for _, x := range []NodeID{1, 5} {
+					c.cut[[2]NodeID{id, x}], c.cut[[2]NodeID{x, id}] = true, true
+				}
 			}
-		}
-		k := c.node(1).LastIndex()
-		c.change(1, ConfPromote, 5)
-		wantConf(t, c.node(5), []NodeID{1, 2, 3, 4, 5}, nil)
-		c.drop = func(m Message) bool { return m.From == 2 && (m.Type == MsgApp || m.Type == MsgHeartbeat) }
-		c.elect(2)
-		_, err := c.node(2).ProposeConfChange(ConfChange{ConfRemove, 1})
-		if !buggy {
-			if !errors.Is(err, ErrConfNotReady) {
-				t.Fatalf("a leader whose empty entry has not committed proposed a change: %v", err)
+			k := c.node(1).LastIndex()
+			c.change(1, ConfPromote, 5)
+			wantConf(t, c.node(5), []NodeID{1, 2, 3, 4, 5}, nil)
+			c.drop = func(m Message) bool { return m.From == 2 && (m.Type == MsgApp || m.Type == MsgHeartbeat) }
+			c.elect(2)
+			_, err := c.node(2).ProposeConfChange(ConfChange{ConfRemove, 1})
+			if !buggy {
+				if !errors.Is(err, ErrConfNotReady) {
+					t.Fatalf("a leader whose empty entry has not committed proposed a change: %v", err)
+				}
+				return
 			}
-			continue
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		c.drop = func(m Message) bool { return m.From == 2 && m.To != 3 && (m.Type == MsgApp || m.Type == MsgHeartbeat) }
-		c.tick(2, 2)
-		if c.node(2).Committed() < k+2 {
-			t.Fatalf("nodes 2 and 3 did not commit the removal under the new configuration: commit %d", c.node(2).Committed())
-		}
-		delete(c.cut, [2]NodeID{1, 4})
-		delete(c.cut, [2]NodeID{4, 1})
-		c.crash(1)
-		c.restart(1)
-		for range 2 {
-			c.node(1).Campaign()
-			c.drain()
-		}
-		if c.node(1).State() != StateLeader {
-			t.Fatalf("node 1 is %s, but with nodes 4 and 5 it holds a majority of the configuration in its own log", c.node(1).State())
-		}
-		mine, _ := c.node(1).EntryAt(k + 1)
-		theirs, _ := c.node(2).EntryAt(k + 1)
-		if c.node(1).Committed() < k+1 || mine.Term == theirs.Term {
-			t.Fatalf("expected two committed entries at %d: node 1 has t%d (commit %d), node 2 has t%d (commit %d)", k+1, mine.Term, c.node(1).Committed(), theirs.Term, c.node(2).Committed())
-		}
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.drop = func(m Message) bool { return m.From == 2 && m.To != 3 && (m.Type == MsgApp || m.Type == MsgHeartbeat) }
+			c.tick(2, 2)
+			if c.node(2).Committed() < k+2 {
+				t.Fatalf("nodes 2 and 3 did not commit the removal under the new configuration: commit %d", c.node(2).Committed())
+			}
+			delete(c.cut, [2]NodeID{1, 4})
+			delete(c.cut, [2]NodeID{4, 1})
+			c.crash(1)
+			c.restart(1)
+			for range 2 {
+				c.node(1).Campaign()
+				c.drain()
+			}
+			if c.node(1).State() != StateLeader {
+				t.Fatalf("node 1 is %s, but with nodes 4 and 5 it holds a majority of the configuration in its own log", c.node(1).State())
+			}
+			mine, _ := c.node(1).EntryAt(k + 1)
+			theirs, _ := c.node(2).EntryAt(k + 1)
+			if c.node(1).Committed() < k+1 || mine.Term == theirs.Term {
+				t.Fatalf("expected two committed entries at %d: node 1 has t%d (commit %d), node 2 has t%d (commit %d)", k+1, mine.Term, c.node(1).Committed(), theirs.Term, c.node(2).Committed())
+			}
+		})
 	}
 }
 

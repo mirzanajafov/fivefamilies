@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
+	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
@@ -217,5 +218,43 @@ func blockLoop(t *testing.T, ctx context.Context, srv *Server) func() {
 	case err := <-failed:
 		t.Fatalf("the loop never ran the blocking call: %v", err)
 	}
-	return func() { close(release) }
+	unblock := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(unblock)
+	return unblock
+}
+
+func TestADiskStallOnTheLeaderCausesAnElectionOnlyWithSynchronousStorage(t *testing.T) {
+	for _, syncStorage := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sync=%v", syncStorage), func(t *testing.T) {
+			c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos, cfg.SyncStorage = true, syncStorage })
+			leader := c.leader(5 * time.Second)
+			cl, err := client.New(c.addrs(), client.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cl.Close()
+			putMany(t, c, 5, 1)
+			before := c.status(leader).GetElections()
+			chaos(t, c, leader, pb.ChaosAction_CHAOS_ACTION_STALL_DISK, 800*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			start := time.Now()
+			if _, err := cl.Put(ctx, "during", []byte("x")); err != nil {
+				t.Fatal(err)
+			}
+			took := time.Since(start)
+			time.Sleep(time.Second)
+			elections := uint64(0)
+			for id := range c.running {
+				elections = max(elections, c.status(id).GetElections())
+			}
+			t.Logf("sync storage %v: a put during an 800 ms stall took %v, elections %d -> %d", syncStorage, took.Round(time.Millisecond), before, elections)
+			if syncStorage && elections == before {
+				t.Fatal("the leader's event loop waited 800 ms on the disk, four election timeouts, and nobody noticed")
+			}
+			if !syncStorage && elections != before {
+				t.Fatal("a disk stall on the leader started an election, but heartbeats should not wait for the disk")
+			}
+		})
+	}
 }

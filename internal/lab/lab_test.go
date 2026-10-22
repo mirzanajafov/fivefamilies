@@ -56,8 +56,10 @@ func TestOnlyKnownFaultsParse(t *testing.T) {
 		})
 	}
 	for _, s := range []string{"", "kil", "kill,partition"} {
-		if got, err := ParseFaults(s); err == nil {
-			t.Errorf("%q was accepted as %v", s, got)
-		}
+		t.Run(fmt.Sprintf("%q", s), func(t *testing.T) {
+			if got, err := ParseFaults(s); err == nil {
+				t.Errorf("%q was accepted as %v", s, got)
+			}
+		})
 	}
 }
