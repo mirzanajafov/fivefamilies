@@ -295,10 +295,10 @@ func (a *adminService) Chaos(ctx context.Context, req *pb.ChaosRequest) (*pb.Cha
 }
 
 func (a *adminService) TransferLeadership(ctx context.Context, req *pb.TransferLeadershipRequest) (*pb.TransferLeadershipResponse, error) {
-	if err := a.s.TransferLeadership(ctx, raft.NodeID(req.GetTo())); err != nil {
+	st, err := a.s.TransferLeadership(ctx, raft.NodeID(req.GetTo()))
+	if err != nil {
 		return nil, fail(ctx, a.s, err)
 	}
-	st := a.s.Status()
 	return &pb.TransferLeadershipResponse{Leader: st.GetLeader(), Term: st.GetTerm()}, nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,11 +80,14 @@ func TestMembersChangeAndLeadershipMovesOverTheWire(t *testing.T) {
 	if !slices.Equal(resp.GetVoters(), uint64s(1, 2, 3, 4)) || len(resp.GetLearners()) != 0 {
 		t.Fatalf("after the promotion: %v", resp)
 	}
-	if _, err := c.admin(old).TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: 4}); err != nil {
-		t.Fatalf("transfer: %v", err)
-	}
-	if lead := c.leader(time.Second); lead != 4 {
-		t.Fatalf("leader %d after the transfer", lead)
+	for lead := old; lead != 4; lead = c.leader(time.Second) {
+		resp, err := c.admin(lead).TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: 4})
+		if err != nil {
+			t.Fatalf("transfer: %v", err)
+		}
+		if resp.GetLeader() != 4 {
+			t.Logf("node %d took over instead of 4, so the transfer goes again", resp.GetLeader())
+		}
 	}
 	if _, err := c.admin(4).ChangeMembers(ctx, &pb.ChangeMembersRequest{Change: pb.MemberChange_MEMBER_CHANGE_REMOVE, Node: 4}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("the leader removing itself: %v", err)
@@ -110,40 +114,62 @@ func TestMembersChangeAndLeadershipMovesOverTheWire(t *testing.T) {
 	}
 }
 
+type transferAnswer struct {
+	resp *pb.TransferLeadershipResponse
+	err  error
+}
+
+func transferLater(ctx context.Context, admin pb.AdminClient, to raft.NodeID) <-chan transferAnswer {
+	done := make(chan transferAnswer, 1)
+	go func() {
+		resp, err := admin.TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: uint64(to)})
+		done <- transferAnswer{resp, err}
+	}()
+	return done
+}
+
 func TestATransferEndsWithTheNewLeaderWhenANodeOtherThanTheTargetTakesOver(t *testing.T) {
-	c := newTestCluster(t, 5, func(cfg *Config) { cfg.Chaos, cfg.ElectionTick = true, 60 })
+	c := newTestCluster(t, 5, func(cfg *Config) { cfg.Chaos, cfg.ElectionTick = true, 100 })
 	old := c.leader(5 * time.Second)
 	target := old%5 + 1
 	chaos(t, c, target, pb.ChaosAction_CHAOS_ACTION_ISOLATE, time.Minute)
 	admin := c.admin(old)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	type result struct {
-		resp *pb.TransferLeadershipResponse
-		err  error
-	}
-	done := make(chan result, 1)
-	go func() {
-		resp, err := admin.TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: uint64(target)})
-		done <- result{resp, err}
-	}()
+	done := transferLater(ctx, admin, target)
 	for c.running[old].srv.Status().GetTransferee() != uint64(target) {
 		select {
-		case r := <-done:
-			t.Fatalf("the transfer ended with %v before it was seen to start", r.err)
+		case a := <-done:
+			t.Fatalf("the transfer ended with %v before it was seen to start", a.err)
 		case <-ctx.Done():
 			t.Fatal("the transfer never started")
 		case <-time.After(time.Millisecond):
 		}
 	}
-	if _, err := admin.Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_PAUSE, DurationMs: 3000}); err != nil {
+	if _, err := admin.Chaos(ctx, &pb.ChaosRequest{Action: pb.ChaosAction_CHAOS_ACTION_PAUSE, DurationMs: 4000}); err != nil {
 		t.Fatal(err)
 	}
-	r := <-done
-	if r.err != nil {
-		t.Fatalf("the transfer ended with %v, want it to end once another node leads", r.err)
+	a := <-done
+	if a.err != nil {
+		t.Fatalf("the transfer ended with %v, want it to end once another node leads", a.err)
 	}
-	if lead := raft.NodeID(r.resp.GetLeader()); lead == old || lead == target || lead == raft.None {
+	if lead := raft.NodeID(a.resp.GetLeader()); lead == old || lead == target || lead == raft.None {
 		t.Fatalf("the transfer reports node %d as leader, want one of the nodes that were neither paused nor isolated", lead)
+	}
+}
+
+func TestATransferTheTargetNeverTakesUpEndsWithAnErrorNamingIt(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
+	old := c.leader(5 * time.Second)
+	target := old%3 + 1
+	chaos(t, c, target, pb.ChaosAction_CHAOS_ACTION_ISOLATE, time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := c.admin(old).TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: uint64(target)})
+	if s := status.Convert(err); s.Code() != codes.FailedPrecondition || !strings.Contains(s.Message(), fmt.Sprintf("node %d did not take over", target)) {
+		t.Fatalf("a transfer to an isolated node ended with %v, want FailedPrecondition naming node %d", err, target)
+	}
+	if lead := c.leader(time.Second); lead != old {
+		t.Fatalf("node %d leads, want %d to have kept the leadership", lead, old)
 	}
 }

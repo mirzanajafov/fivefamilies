@@ -37,32 +37,36 @@ func (s *Server) ChangeMembers(ctx context.Context, cc raft.ConfChange) (uint64,
 	return index, conf, nil
 }
 
-func (s *Server) TransferLeadership(ctx context.Context, to raft.NodeID) error {
+func (s *Server) TransferLeadership(ctx context.Context, to raft.NodeID) (*pb.StatusResponse, error) {
 	var refused error
-	if err := s.onLoop(ctx, func() { refused = s.node.TransferLeadership(to); s.publish() }); err != nil {
-		return err
+	var term uint64
+	if err := s.onLoop(ctx, func() {
+		term = s.node.Raft().Term()
+		refused = s.node.TransferLeadership(to)
+		s.publish()
+	}); err != nil {
+		return nil, err
 	}
 	if refused != nil {
-		return refused
+		return nil, refused
 	}
 	t := time.NewTicker(s.cfg.Tick)
 	defer t.Stop()
 	for {
 		st := s.Status()
+		leading := st.GetRole() == pb.Role_ROLE_LEADER && st.GetTransferee() == 0
 		switch {
-		case st.GetRole() == pb.Role_ROLE_LEADER && to == s.cfg.ID:
-			return nil
-		case st.GetRole() == pb.Role_ROLE_LEADER && st.GetTransferee() == 0:
-			return fmt.Errorf("%w: node %d did not take over within an election timeout", ErrTransferAborted, to)
-		case st.GetRole() != pb.Role_ROLE_LEADER && st.GetLeader() != 0:
-			return nil
+		case st.GetTerm() > term && st.GetLeader() != 0, leading && to == s.cfg.ID:
+			return st, nil
+		case leading:
+			return nil, fmt.Errorf("%w: node %d did not take over", ErrTransferAborted, to)
 		}
 		select {
 		case <-t.C:
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-s.stopped:
-			return ErrStopped
+			return nil, ErrStopped
 		}
 	}
 }
