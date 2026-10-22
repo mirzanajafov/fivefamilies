@@ -117,9 +117,9 @@ type Client struct {
 	opts    Options
 	addrs   []string
 	router  *route.Router
+	watch   *route.Router
 	mu      sync.Mutex
 	conns   map[string]*grpc.ClientConn
-	watchAt int
 	writing chan struct{}
 	session uint64
 	seq     uint64
@@ -138,7 +138,7 @@ func New(addrs []string, opts Options) (*Client, error) {
 	if opts.WatchSilence <= 0 {
 		opts.WatchSilence = 5 * time.Second
 	}
-	c := &Client{opts: opts, addrs: addrs, router: route.NewRouter(addrs), conns: map[string]*grpc.ClientConn{}, writing: make(chan struct{}, 1)}
+	c := &Client{opts: opts, addrs: addrs, router: route.NewRouter(addrs), watch: route.NewRouter(addrs), conns: map[string]*grpc.ClientConn{}, writing: make(chan struct{}, 1)}
 	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
@@ -214,7 +214,7 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 		}
 		if status.Code(err) != codes.ResourceExhausted {
 			if !c.router.MoveOn(target, md) {
-				c.watchFailed(addr)
+				c.watch.MoveOn(target, nil)
 			}
 		}
 		select {

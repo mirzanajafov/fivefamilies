@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"sync"
 	"time"
@@ -247,7 +248,7 @@ func (c *Controller) checkWindow(index int, from time.Time, ops []porcupine.Oper
 	case unchecked:
 		w.Result, w.Note = "unchecked", "a write's outcome is unknown, so this window and the start of the next can't be pinned down"
 	default:
-		first := int64(1 << 62)
+		first := int64(math.MaxInt64)
 		for _, op := range ops {
 			first = min(first, op.Call)
 		}
