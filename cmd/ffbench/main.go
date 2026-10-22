@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -19,12 +18,13 @@ import (
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
+	"github.com/mirzanajafov/fivefamilies/client"
 )
 
 type target struct {
 	kv       []pb.KVClient
 	admin    []pb.AdminClient
-	leader   atomic.Int64
+	router   *client.Router
 	next     atomic.Uint64
 	mode     pb.ReadMode
 	follower bool
@@ -35,20 +35,10 @@ type codeErr struct{ code string }
 func (e codeErr) Error() string { return e.code }
 func (e codeErr) Class() string { return e.code }
 
-func (t *target) failed(n int, err error, md metadata.MD) error {
-	if hint := md.Get("ff-leader"); len(hint) > 0 {
-		if id, perr := strconv.Atoi(hint[0]); perr == nil && id >= 1 && id <= len(t.kv) {
-			t.leader.CompareAndSwap(int64(n), int64(id-1))
-		}
-	} else if status.Code(err) == codes.Unavailable {
-		t.leader.CompareAndSwap(int64(n), int64((n+1)%len(t.kv)))
-	}
-	return codeErr{status.Code(err).String()}
-}
-
 func (t *target) Do(ctx context.Context, op loadgen.Op) error {
-	n := int(t.leader.Load())
-	if op.Read && t.follower {
+	n := t.router.Target()
+	toLeader := !op.Read || !t.follower
+	if !toLeader {
 		n = int(t.next.Add(1) % uint64(len(t.kv)))
 	}
 	var md metadata.MD
@@ -58,13 +48,13 @@ func (t *target) Do(ctx context.Context, op loadgen.Op) error {
 	} else {
 		_, err = t.kv[n].Put(ctx, &pb.PutRequest{Key: op.Key, Value: op.Value}, grpc.Header(&md))
 	}
-	if err != nil {
-		if op.Read && t.follower {
-			return codeErr{status.Code(err).String()}
-		}
-		return t.failed(n, err, md)
+	if err == nil {
+		return nil
 	}
-	return nil
+	if toLeader && status.Code(err) == codes.Unavailable {
+		t.router.MoveOn(n, md)
+	}
+	return codeErr{status.Code(err).String()}
 }
 
 func (t *target) counters(ctx context.Context) ([]loadgen.Counters, error) {
@@ -112,7 +102,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, "unknown read mode", *readMode)
 		os.Exit(2)
 	}
-	for a := range strings.SplitSeq(*nodes, ",") {
+	addrs := strings.Split(*nodes, ",")
+	t.router = client.NewRouter(addrs)
+	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

@@ -3,7 +3,6 @@ package lab
 import (
 	"context"
 	"fmt"
-	"math"
 	"math/rand/v2"
 	"sync"
 	"time"
@@ -12,15 +11,12 @@ import (
 
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/check"
+	"github.com/mirzanajafov/fivefamilies/internal/check/live"
 )
 
-type Op struct {
-	Client int          `json:"client"`
-	Input  check.Input  `json:"input"`
-	Output check.Output `json:"output"`
-	Call   int64        `json:"call_ns"`
-	Return int64        `json:"return_ns"`
-	Err    string       `json:"error,omitempty"`
+type record struct {
+	check.Op
+	Err string `json:"error,omitempty"`
 }
 
 type workload struct {
@@ -32,7 +28,7 @@ type workload struct {
 	seed      uint64
 	start     time.Time
 	mu        sync.Mutex
-	ops       []Op
+	ops       []record
 }
 
 func (w *workload) now() int64 {
@@ -98,52 +94,25 @@ func (w *workload) worker(id int, stop <-chan struct{}) {
 	}
 }
 
-func (w *workload) do(c *client.Client, id int, in check.Input) Op {
+func (w *workload) do(c *client.Client, id int, in check.Input) record {
 	ctx, cancel := context.WithTimeout(context.Background(), w.opTimeout)
 	defer cancel()
-	op := Op{Client: id, Input: in, Call: w.now()}
-	var err error
-	switch in.Kind {
-	case check.Get:
-		var kv client.KeyValue
-		var found bool
-		kv, found, err = c.Get(ctx, in.Key, w.read)
-		op.Output = check.Output{Found: found, Value: string(kv.Value)}
-	case check.Put:
-		_, err = c.Put(ctx, in.Key, []byte(in.Value))
-		op.Output = check.Output{Ok: true}
-	case check.CAS:
-		var ok bool
-		ok, _, err = c.CompareAndSwap(ctx, in.Key, client.Expect{Value: []byte(in.Expect), Missing: in.ExpectMissing}, []byte(in.Value))
-		op.Output = check.Output{Ok: ok}
-	case check.Delete:
-		var ok bool
-		ok, err = c.Delete(ctx, in.Key)
-		op.Output = check.Output{Ok: ok}
-	}
-	op.Return = w.now()
+	call := w.now()
+	out, err := live.Execute(ctx, c, in, w.read)
+	r := record{Op: check.Op{Client: id, Input: in, Output: out, Call: call, Return: w.now()}}
 	if err != nil {
-		op.Err = err.Error()
-		op.Return = math.MaxInt64
-		op.Output = check.Output{Unknown: true}
+		r.Err = err.Error()
 	}
-	return op
+	return r
 }
 
 func (w *workload) history() ([]porcupine.Operation, int, int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	var out []porcupine.Operation
-	unknown, failedReads := 0, 0
-	for _, op := range w.ops {
-		if op.Err != "" {
-			if op.Input.Kind == check.Get {
-				failedReads++
-				continue
-			}
-			unknown++
-		}
-		out = append(out, porcupine.Operation{ClientId: op.Client, Input: op.Input, Output: op.Output, Call: op.Call, Return: op.Return})
+	ops := make([]check.Op, len(w.ops))
+	for i, r := range w.ops {
+		ops[i] = r.Op
 	}
-	return out, unknown, failedReads
+	hist, unknown := check.History(ops)
+	return hist, unknown, len(ops) - len(hist)
 }

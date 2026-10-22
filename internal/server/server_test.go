@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
@@ -534,5 +535,35 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 		if s := status.Convert(tc.err); s.Code() != tc.code || s.Message() != tc.msg || client.Reason(tc.err) != tc.reason {
 			t.Errorf("got %v %q %v, want %v %q %v", s.Code(), s.Message(), client.Reason(tc.err), tc.code, tc.msg, tc.reason)
 		}
+	}
+}
+
+func TestAFollowerPointsTheClientsRouterAtTheLeader(t *testing.T) {
+	c := newTestCluster(t, 3, nil)
+	leader := c.leader(5 * time.Second)
+	follower, other := leader%3+1, (leader+1)%3+1
+	deadline := time.Now().Add(5 * time.Second)
+	for c.status(follower).GetLeader() != uint64(leader) {
+		if time.Now().After(deadline) {
+			t.Fatal("the follower never learned the leader")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	conn, err := grpc.NewClient(c.nodes[follower], grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var md metadata.MD
+	_, err = pb.NewKVClient(conn).Put(ctx, &pb.PutRequest{Key: "k"}, grpc.Header(&md))
+	if client.Reason(err) != pb.ErrorReason_ERROR_REASON_NOT_LEADER {
+		t.Fatalf("a write to a follower: %v", err)
+	}
+	r := client.NewRouter([]string{c.nodes[follower], c.nodes[other], c.nodes[leader]})
+	r.MoveOn(0, md)
+	if got := r.Target(); got != 2 {
+		t.Fatalf("the router moved to %d, want 2, the leader named by the follower", got)
 	}
 }

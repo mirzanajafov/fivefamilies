@@ -62,10 +62,6 @@ func (c *Client) watchTarget() string {
 func (c *Client) watchFailed(addr string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.skipWatchLocked(addr)
-}
-
-func (c *Client) skipWatchLocked(addr string) {
 	if c.addrs[c.watchAt] == addr {
 		c.watchAt = (c.watchAt + 1) % len(c.addrs)
 	}

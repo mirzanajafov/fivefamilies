@@ -1,7 +1,6 @@
 package sim
 
 import (
-	"math"
 	"math/rand/v2"
 	"os"
 	"runtime"
@@ -9,11 +8,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/anishathalye/porcupine"
 
-	"github.com/mirzanajafov/fivefamilies/internal/check"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
@@ -369,27 +366,6 @@ func TestCheckerCatchesACommitThatIsNotDurableOnAQuorum(t *testing.T) {
 	c.observe(0, soloLeader(t, 1, raft.Restore{}, "a"))
 	if !c.failed() {
 		t.Fatal("entries committed with nothing on disk went unnoticed")
-	}
-}
-
-func TestHistoryMarksUnfinishedWritesIndeterminateAndDropsUnfinishedReads(t *testing.T) {
-	s := &Sim{history: []opRecord{
-		{client: 0, call: 1, ret: 2, done: true, in: check.Input{Kind: check.Put, Key: "k", Value: "a"}, out: check.Output{Ok: true}},
-		{client: 1, call: 3, in: check.Input{Kind: check.CAS, Key: "k", Expect: "a", Value: "b"}},
-		{client: 2, call: 4, in: check.Input{Kind: check.Get, Key: "k"}},
-	}}
-	h := s.porcupineHistory()
-	if len(h) != 2 {
-		t.Fatalf("%d operations, want the finished put and the unfinished swap", len(h))
-	}
-	if h[1].Return != math.MaxInt64 || !h[1].Output.(check.Output).Unknown {
-		t.Fatalf("unfinished swap: %+v", h[1])
-	}
-	if s.stats.Indeterminate != 1 {
-		t.Fatalf("indeterminate %d", s.stats.Indeterminate)
-	}
-	if v := check.Linearizable(h, 10*time.Second); !v.OK() {
-		t.Fatalf("verdict %s", v.Result)
 	}
 }
 

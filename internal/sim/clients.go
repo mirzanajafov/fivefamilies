@@ -3,7 +3,6 @@ package sim
 import (
 	"errors"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/anishathalye/porcupine"
@@ -12,15 +11,6 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 )
-
-type opRecord struct {
-	client int
-	call   time.Duration
-	ret    time.Duration
-	done   bool
-	in     check.Input
-	out    check.Output
-}
 
 type simClient struct {
 	idx         int
@@ -92,7 +82,7 @@ func (s *Sim) nextOp(c *simClient) {
 	}
 	c.cmd = cmd
 	c.op = len(s.history)
-	s.history = append(s.history, opRecord{client: c.idx, call: s.now, in: in})
+	s.history = append(s.history, check.Op{Client: c.idx, Input: in, Output: check.Output{Unknown: true}, Call: int64(s.now)})
 	s.stats.ClientOps++
 	s.sendRequest(c)
 }
@@ -177,24 +167,24 @@ func (s *Sim) clientResponse(c *simClient, attempt, seq uint64, res kv.Result, e
 		return
 	}
 	rec := &s.history[c.op]
-	rec.done, rec.ret = true, s.now
+	rec.Return = int64(s.now)
 	switch c.cmd.Op {
 	case kv.OpGet:
-		rec.out = check.Output{Found: res.Found, Value: string(res.KV.Value)}
+		rec.Output = check.Output{Found: res.Found, Value: string(res.KV.Value)}
 		c.see(c.cmd.Key, res.Found, string(res.KV.Value))
 	case kv.OpPut:
-		rec.out = check.Output{Ok: true}
-		c.see(c.cmd.Key, true, rec.in.Value)
+		rec.Output = check.Output{Ok: true}
+		c.see(c.cmd.Key, true, rec.Input.Value)
 	case kv.OpCAS:
-		rec.out = check.Output{Ok: res.Ok}
+		rec.Output = check.Output{Ok: res.Ok}
 		if res.Ok {
 			s.stats.SwapsWon++
-			c.see(c.cmd.Key, true, rec.in.Value)
+			c.see(c.cmd.Key, true, rec.Input.Value)
 		} else {
 			c.see(c.cmd.Key, res.Found, string(res.KV.Value))
 		}
 	case kv.OpDelete:
-		rec.out = check.Output{Ok: res.Ok}
+		rec.Output = check.Output{Ok: res.Ok}
 		c.see(c.cmd.Key, false, "")
 	}
 	c.op = -1
@@ -210,18 +200,7 @@ func (c *simClient) see(key string, found bool, value string) {
 }
 
 func (s *Sim) porcupineHistory() []porcupine.Operation {
-	ops := make([]porcupine.Operation, 0, len(s.history))
-	for _, rec := range s.history {
-		o := porcupine.Operation{ClientId: rec.client, Call: int64(rec.call), Input: rec.in, Output: rec.out, Return: int64(rec.ret)}
-		if !rec.done {
-			if rec.in.Kind == check.Get {
-				continue
-			}
-			o.Return = math.MaxInt64
-			o.Output = check.Output{Unknown: true}
-			s.stats.Indeterminate++
-		}
-		ops = append(ops, o)
-	}
-	return ops
+	hist, unknown := check.History(s.history)
+	s.stats.Indeterminate += unknown
+	return hist
 }

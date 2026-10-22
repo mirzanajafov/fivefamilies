@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -18,8 +17,6 @@ import (
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 )
-
-const headerLeaderAddr = "ff-leader-addr"
 
 const errorDomain = "fivefamilies.najafov.dev"
 
@@ -118,10 +115,9 @@ type Options struct {
 type Client struct {
 	opts    Options
 	addrs   []string
+	router  *Router
 	mu      sync.Mutex
 	conns   map[string]*grpc.ClientConn
-	leader  string
-	next    int
 	watchAt int
 	writing chan struct{}
 	session uint64
@@ -141,7 +137,7 @@ func New(addrs []string, opts Options) (*Client, error) {
 	if opts.WatchSilence <= 0 {
 		opts.WatchSilence = 5 * time.Second
 	}
-	c := &Client{opts: opts, addrs: addrs, conns: map[string]*grpc.ClientConn{}, leader: addrs[0], writing: make(chan struct{}, 1)}
+	c := &Client{opts: opts, addrs: addrs, router: NewRouter(addrs), conns: map[string]*grpc.ClientConn{}, writing: make(chan struct{}, 1)}
 	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
@@ -181,26 +177,6 @@ func (c *Client) conn(addr string) (grpc.ClientConnInterface, error) {
 	return conn, nil
 }
 
-func (c *Client) target() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.leader
-}
-
-func (c *Client) moveOn(failed string, md metadata.MD) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if hint := md.Get(headerLeaderAddr); len(hint) > 0 && hint[0] != failed && slices.Contains(c.addrs, hint[0]) {
-		c.leader = hint[0]
-		return
-	}
-	if c.leader == failed {
-		c.next = (c.next + 1) % len(c.addrs)
-		c.leader = c.addrs[c.next]
-	}
-	c.skipWatchLocked(failed)
-}
-
 func retryable(err error) bool {
 	switch status.Code(err) {
 	case codes.Unavailable, codes.DeadlineExceeded, codes.Canceled, codes.ResourceExhausted:
@@ -213,7 +189,8 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 	var zero T
 	backoff := c.opts.Backoff
 	for {
-		addr := c.target()
+		target := c.router.Target()
+		addr := c.addrs[target]
 		cc, err := c.conn(addr)
 		if err != nil {
 			return zero, err
@@ -235,7 +212,8 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 			return zero, ctx.Err()
 		}
 		if status.Code(err) != codes.ResourceExhausted {
-			c.moveOn(addr, md)
+			c.router.MoveOn(target, md)
+			c.watchFailed(addr)
 		}
 		select {
 		case <-ctx.Done():
