@@ -86,7 +86,7 @@ func main() {
 	flag.Parse()
 
 	addrs := strings.Split(*nodes, ",")
-	g := &generator{router: route.NewRouter(addrs)}
+	g := &generator{router: route.New(addrs)}
 	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {

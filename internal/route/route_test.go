@@ -24,7 +24,7 @@ func TestTheRouterFollowsAHintToANodeItKnows(t *testing.T) {
 		{"a hint naming the node that failed, listed twice", []string{"n1:3161", "n2:3161", "n1:3161"}, hint("n1:3161"), 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := NewRouter(tc.addrs)
+			r := New(tc.addrs)
 			r.MoveOn(0, tc.md)
 			if got := r.Target(); got != tc.want {
 				t.Fatalf("target %d, want %d", got, tc.want)
@@ -33,29 +33,25 @@ func TestTheRouterFollowsAHintToANodeItKnows(t *testing.T) {
 	}
 }
 
-func TestTheRouterReachesEveryNodeWhileAFollowerPointsAtADeadLeader(t *testing.T) {
-	r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161", "n4:3161", "n5:3161"})
-	var tried []int
-	for range 6 {
+func TestTheRouterReachesEveryNodeWhileTheFollowersStillNameADeadLeader(t *testing.T) {
+	r := New([]string{"n1:3161", "n2:3161", "n3:3161", "n4:3161", "n5:3161"})
+	seen := map[int]bool{}
+	for range 10 {
 		n := r.Target()
-		tried = append(tried, n)
-		if n == 1 {
-			r.MoveOn(n, hint("n1:3161"))
-		} else {
+		seen[n] = true
+		if n == 0 {
 			r.MoveOn(n, nil)
+		} else {
+			r.MoveOn(n, hint("n1:3161"))
 		}
 	}
-	seen := map[int]bool{}
-	for _, n := range tried {
-		seen[n] = true
-	}
 	if len(seen) != 5 {
-		t.Fatalf("tried %v, want every node within six attempts", tried)
+		t.Fatalf("tried %v in ten attempts, want every node (a follower, then the dead leader again, for each)", seen)
 	}
 }
 
 func TestTheRouterNeverMovesBackToTheNodeThatFailed(t *testing.T) {
-	r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161"})
+	r := New([]string{"n1:3161", "n2:3161", "n3:3161"})
 	r.MoveOn(0, hint("n2:3161"))
 	r.MoveOn(1, nil)
 	if got := r.Target(); got == 1 {
@@ -64,7 +60,7 @@ func TestTheRouterNeverMovesBackToTheNodeThatFailed(t *testing.T) {
 }
 
 func TestAHintWinsOverAnEarlierRotation(t *testing.T) {
-	r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161", "n4:3161"})
+	r := New([]string{"n1:3161", "n2:3161", "n3:3161", "n4:3161"})
 	r.MoveOn(0, nil)
 	r.MoveOn(0, hint("n4:3161"))
 	if got := r.Target(); got != 3 {
@@ -73,7 +69,7 @@ func TestAHintWinsOverAnEarlierRotation(t *testing.T) {
 }
 
 func TestOnlyAFailureOfTheTargetRotatesTheRouter(t *testing.T) {
-	r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161"})
+	r := New([]string{"n1:3161", "n2:3161", "n3:3161"})
 	r.MoveOn(0, nil)
 	r.MoveOn(0, nil)
 	if got := r.Target(); got != 1 {

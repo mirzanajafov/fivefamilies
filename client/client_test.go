@@ -199,29 +199,39 @@ func serveFake(t *testing.T, node *fakeNode) {
 	})
 }
 
-func TestARedirectToTheLeaderKeepsWatchesOnTheNodeThatRedirected(t *testing.T) {
-	watched := make(chan string, 2)
-	leader := &fakeNode{watched: watched}
-	serveFake(t, leader)
-	follower := &fakeNode{leader: leader.addr, notLeader: refusal(t, codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER), watched: watched}
-	serveFake(t, follower)
-	c, err := New([]string{follower.addr, leader.addr}, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { c.Close() })
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, err := c.Put(ctx, "k", []byte("v")); err != nil {
-		t.Fatal(err)
-	}
-	c.Watch(ctx, "k", false, 0)
-	select {
-	case addr := <-watched:
-		if addr != follower.addr {
-			t.Fatalf("the watch went to the leader %s, want the follower %s, which only redirected a write", addr, follower.addr)
-		}
-	case <-ctx.Done():
-		t.Fatal("no node got the watch")
+func TestANodeThatAnsweredNotTheLeaderKeepsTheClientsWatches(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		hint func(leader string) string
+	}{
+		{"with a hint to the leader", func(leader string) string { return leader }},
+		{"with a hint to an address the client doesn't know", func(string) string { return "fivefamilies-n2:3161" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			watched := make(chan string, 2)
+			leader := &fakeNode{watched: watched}
+			serveFake(t, leader)
+			follower := &fakeNode{leader: tc.hint(leader.addr), notLeader: refusal(t, codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER), watched: watched}
+			serveFake(t, follower)
+			c, err := New([]string{follower.addr, leader.addr}, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { c.Close() })
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := c.Put(ctx, "k", []byte("v")); err != nil {
+				t.Fatal(err)
+			}
+			c.Watch(ctx, "k", false, 0)
+			select {
+			case addr := <-watched:
+				if addr != follower.addr {
+					t.Fatalf("the watch went to the leader %s, want the follower %s, which answered", addr, follower.addr)
+				}
+			case <-ctx.Done():
+				t.Fatal("no node got the watch")
+			}
+		})
 	}
 }

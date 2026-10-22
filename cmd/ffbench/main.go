@@ -105,7 +105,7 @@ func main() {
 		os.Exit(2)
 	}
 	addrs := strings.Split(*nodes, ",")
-	t.router = route.NewRouter(addrs)
+	t.router = route.New(addrs)
 	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {

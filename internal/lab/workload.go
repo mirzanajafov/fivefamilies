@@ -14,6 +14,11 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/check/live"
 )
 
+type record struct {
+	check.Op
+	Err string `json:"error,omitempty"`
+}
+
 type workload struct {
 	addrs     []string
 	workers   int

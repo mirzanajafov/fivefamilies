@@ -114,15 +114,15 @@ type Options struct {
 }
 
 type Client struct {
-	opts    Options
-	addrs   []string
-	router  *route.Router
-	watch   *route.Router
-	mu      sync.Mutex
-	conns   map[string]*grpc.ClientConn
-	writing chan struct{}
-	session uint64
-	seq     uint64
+	opts        Options
+	addrs       []string
+	router      *route.Router
+	watchRouter *route.Router
+	mu          sync.Mutex
+	conns       map[string]*grpc.ClientConn
+	writing     chan struct{}
+	session     uint64
+	seq         uint64
 }
 
 func New(addrs []string, opts Options) (*Client, error) {
@@ -138,7 +138,7 @@ func New(addrs []string, opts Options) (*Client, error) {
 	if opts.WatchSilence <= 0 {
 		opts.WatchSilence = 5 * time.Second
 	}
-	c := &Client{opts: opts, addrs: addrs, router: route.NewRouter(addrs), watch: route.NewRouter(addrs), conns: map[string]*grpc.ClientConn{}, writing: make(chan struct{}, 1)}
+	c := &Client{opts: opts, addrs: addrs, router: route.New(addrs), watchRouter: route.New(addrs), conns: map[string]*grpc.ClientConn{}, writing: make(chan struct{}, 1)}
 	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
@@ -215,7 +215,7 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 		if status.Code(err) != codes.ResourceExhausted {
 			c.router.MoveOn(target, md)
 			if Reason(err) != pb.ErrorReason_ERROR_REASON_NOT_LEADER {
-				c.watch.MoveOn(target, nil)
+				c.watchRouter.MoveOn(target, nil)
 			}
 		}
 		select {

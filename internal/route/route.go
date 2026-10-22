@@ -17,7 +17,7 @@ type Router struct {
 	next   int
 }
 
-func NewRouter(addrs []string) *Router {
+func New(addrs []string) *Router {
 	return &Router{addrs: addrs}
 }
 

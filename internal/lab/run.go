@@ -267,11 +267,6 @@ func compareStates(ctx context.Context, adm *cluster, rep *Report) error {
 	})
 }
 
-type record struct {
-	check.Op
-	Err string `json:"error,omitempty"`
-}
-
 func save(dir string, rep Report, w *workload) error {
 	if err := SaveJSON(dir, "report.json", rep); err != nil {
 		return err
