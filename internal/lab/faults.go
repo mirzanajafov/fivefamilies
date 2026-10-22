@@ -11,6 +11,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type FaultKind string
@@ -60,7 +62,7 @@ type FaultRecord struct {
 
 type nemesis struct {
 	d      *Docker
-	adm    *cluster
+	adm    *rig.Admin
 	rng    *rand.Rand
 	kinds  []FaultKind
 	mean   time.Duration
@@ -80,13 +82,13 @@ func (n *nemesis) between(lo, hi time.Duration) time.Duration {
 func (n *nemesis) run(ctx context.Context) {
 	for {
 		gap := time.Duration(-float64(n.mean) * math.Log(1-n.rng.Float64()))
-		if !wait(ctx, gap) {
+		if !rig.Wait(ctx, gap) {
 			return
 		}
 		kind := n.kinds[n.rng.IntN(len(n.kinds))]
 		rec := n.inject(ctx, kind)
 		if rec.Err == "" {
-			wait(ctx, rec.duration)
+			rig.Wait(ctx, rec.duration)
 		}
 		if err := n.clear(context.Background(), &rec); err != nil && rec.Err == "" {
 			rec.Err = err.Error()
@@ -165,7 +167,7 @@ func (n *nemesis) inject(ctx context.Context, kind FaultKind) FaultRecord {
 			rec.duration = n.between(500*time.Millisecond, 2*time.Second)
 			rec.Detail = fmt.Sprintf("hand leadership from node %d to %d", l, target)
 			var lead int
-			switch lead, err = n.adm.transfer(ctx, l, target); {
+			switch lead, err = transfer(ctx, n.adm, l, target); {
 			case err == nil:
 				rec.Detail += fmt.Sprintf(" (node %d leads after it)", lead)
 			case status.Code(err) == codes.FailedPrecondition:
@@ -176,7 +178,7 @@ func (n *nemesis) inject(ctx context.Context, kind FaultKind) FaultRecord {
 		}
 		rec.duration = n.between(time.Second, 6*time.Second)
 		rec.Detail = fmt.Sprintf("remove node %d, then add it back as a learner and promote it", target)
-		err = n.adm.removeVoter(ctx, target)
+		err = removeVoter(ctx, n.adm, target)
 	}
 	if err != nil {
 		rec.Err = err.Error()
@@ -194,7 +196,7 @@ func (n *nemesis) clear(ctx context.Context, rec *FaultRecord) error {
 		if rec.leader == 0 {
 			return nil
 		}
-		return n.adm.restoreVoter(ctx, rec.leader)
+		return restoreVoter(ctx, n.adm, rec.leader)
 	case FaultTransfer:
 		return nil
 	}

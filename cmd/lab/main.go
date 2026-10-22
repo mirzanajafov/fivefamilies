@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/client"
+	"github.com/mirzanajafov/fivefamilies/internal/bench"
 	"github.com/mirzanajafov/fivefamilies/internal/lab"
 	"github.com/mirzanajafov/fivefamilies/internal/planted"
 )
@@ -38,27 +39,7 @@ func logf(format string, args ...any) {
 
 var errProblems = errors.New("the run found problems")
 
-func checkRun(read client.ReadMode, bugs planted.Bug, election, heartbeat, lease string) error {
-	for _, d := range []string{election, heartbeat} {
-		if _, err := time.ParseDuration(d); err != nil {
-			return err
-		}
-	}
-	leaseLen, err := time.ParseDuration(lease)
-	switch {
-	case err != nil:
-		return err
-	case read == client.ReadLease && leaseLen <= 0:
-		return errors.New("-read lease needs a -lease longer than zero")
-	case bugs.Has(planted.Watches | planted.LocalKeepAlive):
-		return errors.New("-bug: the lab runs no watchers or lease holders, so watch and lease bugs are never exercised")
-	case bugs.Has(planted.FollowerRead) && read == client.ReadLog:
-		return errors.New("-bug followerread is never exercised when every read goes through the log")
-	}
-	return nil
-}
-
-func failover(ctx context.Context, args []string) error {
+func runFailover(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("failover", flag.ContinueOnError)
 	elections := fs.String("election", "150ms,300ms,600ms,1s", "election timeouts to sweep; the heartbeat is a third of each")
 	trials := fs.Int("trials", 10, "leader kills per election timeout")
@@ -106,7 +87,7 @@ func failover(ctx context.Context, args []string) error {
 	return nil
 }
 
-func registry(ctx context.Context, args []string) error {
+func runRegistry(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("registry", flag.ContinueOnError)
 	election := fs.String("election", "1s", "election timeout")
 	heartbeat := fs.String("heartbeat", "100ms", "heartbeat interval")
@@ -139,7 +120,7 @@ func registry(ctx context.Context, args []string) error {
 	return nil
 }
 
-func profile(ctx context.Context, args []string) error {
+func runProfile(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("profile", flag.ContinueOnError)
 	nodes := fs.Int("nodes", 5, "cluster size")
 	rate := fs.Float64("rate", 4000, "operations per second while profiling")
@@ -162,54 +143,15 @@ func profile(ctx context.Context, args []string) error {
 		}
 	}
 	out := filepath.Join("bench", "results", "profile", *label)
-	o := lab.ProfileOptions{
+	o := bench.ProfileOptions{
 		Nodes: *nodes, Flags: strings.Split(*nodeFlags, ","), GenFlags: strings.Split(*genFlags, ","),
 		Rate: *rate, Seconds: *seconds, Trace: *trace, Overload: *overload, OverloadFor: *overloadFor,
 		NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Out: out, Log: logf,
 	}
-	rep, err := lab.Profile(ctx, o)
+	rep, err := bench.Profile(ctx, o)
 	for _, p := range rep.Phases {
 		for _, f := range p.Files {
-			if strings.HasSuffix(f, ".trace") {
-				for _, kind := range []string{"sync", "syscall", "sched"} {
-					text, err := exec.CommandContext(ctx, "go", "tool", "trace", "-pprof="+kind, f).Output()
-					if err != nil {
-						fmt.Fprintln(os.Stderr, f+":", err)
-						continue
-					}
-					prof := strings.TrimSuffix(f, ".trace") + "-" + kind + ".pprof"
-					if err := os.WriteFile(prof, text, 0o644); err != nil {
-						fmt.Fprintln(os.Stderr, err)
-						continue
-					}
-					top, err := exec.CommandContext(ctx, "go", "tool", "pprof", "-top", "-nodecount=40", prof).Output()
-					if err != nil {
-						fmt.Fprintln(os.Stderr, prof+":", err)
-						continue
-					}
-					name := strings.TrimSuffix(filepath.Base(f), ".trace") + "-" + kind + ".txt"
-					if err := os.WriteFile(filepath.Join(out, name), top, 0o644); err != nil {
-						fmt.Fprintln(os.Stderr, err)
-					}
-				}
-				continue
-			}
-			views := map[string][]string{".txt": {"-top"}}
-			if strings.Contains(f, "-cpu-") {
-				views[".cum.txt"] = []string{"-top", "-cum"}
-			}
-			for suffix, view := range views {
-				top := exec.CommandContext(ctx, "go", append(append([]string{"tool", "pprof"}, view...), "-nodecount=40", f)...)
-				text, err := top.Output()
-				if err != nil {
-					fmt.Fprintln(os.Stderr, f+":", err)
-					continue
-				}
-				name := strings.TrimSuffix(filepath.Base(f), ".pprof") + suffix
-				if err := os.WriteFile(filepath.Join(out, name), text, 0o644); err != nil {
-					fmt.Fprintln(os.Stderr, err)
-				}
-			}
+			summarize(ctx, f, out)
 		}
 	}
 	if err != nil {
@@ -219,7 +161,7 @@ func profile(ctx context.Context, args []string) error {
 	return nil
 }
 
-func bench(ctx context.Context, args []string) error {
+func runBench(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("bench", flag.ContinueOnError)
 	experiments := fs.String("experiment", "e1b,e2,e3,e4,e5", "experiments to run, comma separated")
 	label := fs.String("label", "", "results go to bench/results/<experiment>/<label> (default <date>-laptop, or <date>-quick with -quick, which the results page leaves out)")
@@ -258,15 +200,15 @@ func bench(ctx context.Context, args []string) error {
 		}
 	}
 	for _, e := range exps {
-		if len(onlyNames) > 0 && !slices.ContainsFunc(lab.CurveNames(e), func(name string) bool { return slices.Contains(onlyNames, name) }) {
+		if len(onlyNames) > 0 && !slices.ContainsFunc(bench.CurveNames(e), func(name string) bool { return slices.Contains(onlyNames, name) }) {
 			continue
 		}
-		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Repeat: *repeat, Only: onlyNames, Log: logf}
+		o := bench.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Repeat: *repeat, Only: onlyNames, Log: logf}
 		var err error
 		if e == "e1b" {
-			_, err = lab.E1b(ctx, o)
+			_, err = bench.E1b(ctx, o)
 		} else {
-			_, err = lab.Curves(ctx, o, e)
+			_, err = bench.Curves(ctx, o, e)
 		}
 		if err != nil {
 			return fmt.Errorf("%s: %w", e, err)
@@ -279,7 +221,7 @@ func bench(ctx context.Context, args []string) error {
 func checkBench(experiments, only []string) error {
 	var names []string
 	for _, e := range experiments {
-		curves := lab.CurveNames(e)
+		curves := bench.CurveNames(e)
 		if e != "e1b" && curves == nil {
 			return fmt.Errorf("-experiment: unknown experiment %q", e)
 		}
@@ -293,10 +235,45 @@ func checkBench(experiments, only []string) error {
 	return nil
 }
 
+func summarize(ctx context.Context, file, out string) {
+	if strings.HasSuffix(file, ".trace") {
+		for _, kind := range []string{"sync", "syscall", "sched"} {
+			text, err := exec.CommandContext(ctx, "go", "tool", "trace", "-pprof="+kind, file).Output()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, file+":", err)
+				continue
+			}
+			prof := strings.TrimSuffix(file, ".trace") + "-" + kind + ".pprof"
+			if err := os.WriteFile(prof, text, 0o644); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				continue
+			}
+			writeTop(ctx, prof, []string{"-top"}, filepath.Join(out, strings.TrimSuffix(filepath.Base(file), ".trace")+"-"+kind+".txt"))
+		}
+		return
+	}
+	name := strings.TrimSuffix(filepath.Base(file), ".pprof")
+	writeTop(ctx, file, []string{"-top"}, filepath.Join(out, name+".txt"))
+	if strings.Contains(file, "-cpu-") {
+		writeTop(ctx, file, []string{"-top", "-cum"}, filepath.Join(out, name+".cum.txt"))
+	}
+}
+
+func writeTop(ctx context.Context, prof string, view []string, to string) {
+	text, err := exec.CommandContext(ctx, "go", append(append([]string{"tool", "pprof"}, view...), "-nodecount=40", prof)...).Output()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, prof+":", err)
+		return
+	}
+	if err := os.WriteFile(to, text, 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+}
+
 func buildEtcd(ctx context.Context) error {
 	for _, args := range [][]string{
-		{"build", "-q", "-f", filepath.Join("bench", "etcd", "Dockerfile"), "-t", lab.EtcdGenImage, "."},
-		{"pull", "-q", lab.EtcdImage},
+		{"build", "-q", "-f", filepath.Join("bench", "etcd", "Dockerfile"), "-t", bench.EtcdGenImage, "."},
+		{"pull", "-q", bench.EtcdImage},
 	} {
 		cmd := exec.CommandContext(ctx, "docker", args...)
 		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
@@ -332,10 +309,9 @@ func runLab(ctx context.Context, args []string) error {
 	})
 	mean := fs.Duration("fault-every", 3*time.Second, "mean gap between faults")
 	var bug string
-	var bugs planted.Bug
-	fs.Func("bug", "planted bug for every node", func(s string) (err error) {
+	fs.Func("bug", "planted bug for every node", func(s string) error {
 		bug = s
-		bugs, err = planted.Parse(s)
+		_, err := planted.Parse(s)
 		return err
 	})
 	election := fs.String("election", "1s", "election timeout")
@@ -349,14 +325,14 @@ func runLab(ctx context.Context, args []string) error {
 	if err := parse(fs, args); err != nil {
 		return err
 	}
-	if err := checkRun(read, bugs, *election, *heartbeat, *lease); err != nil {
-		return usageError{error: err}
-	}
 	opts := lab.Options{
 		Seed: *seed, Duration: *duration, Settle: *settle, Workers: *workers, Keys: *keys, Read: read, Faults: faults,
 		FaultMean: *mean, Bug: bug, Election: *election, Heartbeat: *heartbeat, Lease: *lease,
 		OpTimeout: *opTimeout, CheckTimeout: *checkTimeout, Out: *out, Keep: *keep,
 		Project: "fflab", File: filepath.Join("lab", "compose.yml"), Log: logf,
+	}
+	if err := opts.Validate(); err != nil {
+		return usageError{error: err}
 	}
 	if opts.Out == "" {
 		opts.Out = filepath.Join("bench", "results", "lab", time.Now().UTC().Format("20060102-150405"))
@@ -385,10 +361,10 @@ func runLab(ctx context.Context, args []string) error {
 
 func main() {
 	commands := map[string]func(context.Context, []string) error{
-		"failover": failover,
-		"registry": registry,
-		"profile":  profile,
-		"bench":    bench,
+		"failover": runFailover,
+		"registry": runRegistry,
+		"profile":  runProfile,
+		"bench":    runBench,
 	}
 	run, args := runLab, os.Args[1:]
 	if len(args) > 0 {

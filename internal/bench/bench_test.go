@@ -1,4 +1,4 @@
-package lab
+package bench
 
 import (
 	"context"
@@ -51,7 +51,7 @@ func (f *fakeCluster) Quiet(context.Context) error {
 	return nil
 }
 
-func (f *fakeCluster) sweep(t *testing.T, opts SweepOptions) Curve {
+func (f *fakeCluster) sweep(t *testing.T, opts sweepOptions) Curve {
 	t.Helper()
 	opts.Factor, opts.Max, opts.MaxP99 = 2, 64000, time.Second
 	c, err := sweep(context.Background(), f, Curve{Name: "fake"}, opts)
@@ -63,7 +63,7 @@ func (f *fakeCluster) sweep(t *testing.T, opts SweepOptions) Curve {
 
 func TestTheSweepStopsAtTheKneeAndMeasuresBelowIt(t *testing.T) {
 	f := &fakeCluster{capacity: 3000}
-	c := f.sweep(t, SweepOptions{Start: 500})
+	c := f.sweep(t, sweepOptions{Start: 500})
 	if c.Knee != 2000 {
 		t.Fatalf("knee %.0f: 4000/s achieved only 3000, so the last rate that kept up was 2000", c.Knee)
 	}
@@ -80,7 +80,7 @@ func TestTheSweepStopsAtTheKneeAndMeasuresBelowIt(t *testing.T) {
 
 func TestTheSweepNarrowsTheKneeBetweenTheLastGoodAndFirstBadRate(t *testing.T) {
 	f := &fakeCluster{capacity: 3000}
-	c := f.sweep(t, SweepOptions{Start: 500, Refine: 2})
+	c := f.sweep(t, sweepOptions{Start: 500, Refine: 2})
 	if got := strings.Join(f.rates, " "); got != "500 1000 2000 4000 3000 3500 1500 2400" {
 		t.Fatalf("rates run: %s", got)
 	}
@@ -91,7 +91,7 @@ func TestTheSweepNarrowsTheKneeBetweenTheLastGoodAndFirstBadRate(t *testing.T) {
 
 func TestTheSweepStepsDownWhenTheFirstRateIsAlreadyTooMuch(t *testing.T) {
 	f := &fakeCluster{capacity: 100}
-	c := f.sweep(t, SweepOptions{Start: 500, Floor: 30, Refine: 2})
+	c := f.sweep(t, sweepOptions{Start: 500, Floor: 30, Refine: 2})
 	if got := strings.Join(f.rates, " "); got != "500 250 125 62.5 94 110 55 88" {
 		t.Fatalf("rates run: %s", got)
 	}
@@ -99,7 +99,7 @@ func TestTheSweepStepsDownWhenTheFirstRateIsAlreadyTooMuch(t *testing.T) {
 		t.Fatalf("knee %.0f", c.Knee)
 	}
 	f = &fakeCluster{capacity: 10}
-	c = f.sweep(t, SweepOptions{Start: 500, Floor: 30, Refine: 2})
+	c = f.sweep(t, sweepOptions{Start: 500, Floor: 30, Refine: 2})
 	if got := strings.Join(f.rates, " "); got != "500 250 125 62.5 31.25" || c.Knee != 0 || c.At80 != nil {
 		t.Fatalf("below the floor: rates %s, knee %.0f, at 80%% %+v", got, c.Knee, c.At80)
 	}
@@ -107,7 +107,7 @@ func TestTheSweepStepsDownWhenTheFirstRateIsAlreadyTooMuch(t *testing.T) {
 
 func TestTheSweepStopsWhenTheClusterNeverSettles(t *testing.T) {
 	f := &fakeCluster{capacity: 3000, busy: true}
-	c := f.sweep(t, SweepOptions{Start: 500, Floor: 30, Refine: 2})
+	c := f.sweep(t, sweepOptions{Start: 500, Floor: 30, Refine: 2})
 	if len(f.rates) != 0 || len(c.Steps) != 1 || c.Steps[0].Err == "" || c.Knee != 0 || c.At80 != nil {
 		t.Fatalf("rates %v, steps %+v", f.rates, c.Steps)
 	}
@@ -135,14 +135,14 @@ func TestAnInvalidOrSlowStepCountsAsSaturated(t *testing.T) {
 }
 
 func TestTheGeneratedComposeFilesPinEveryNode(t *testing.T) {
-	b := &BenchCluster{Nodes: 3, Flags: []string{"-fsync", "entry"}, NodeCPUs: []string{"4", "5", "6"}, Image: "img"}
+	b := &ffCluster{Nodes: 3, Flags: []string{"-fsync", "entry"}, NodeCPUs: []string{"4", "5", "6"}, Image: "img"}
 	y := composeFile(b.services())
 	for _, want := range []string{`cpuset: "6"`, `"127.0.0.1:3153:3161"`, `"-cluster", "1=n1:3161,2=n2:3161,3=n3:3161"`, `"-fsync", "entry"`} {
 		if !strings.Contains(y, want) {
 			t.Fatalf("missing %s in\n%s", want, y)
 		}
 	}
-	e := &EtcdCluster{Nodes: 3, NodeCPUs: []string{"4", "5", "6"}, Procs: 2}
+	e := &etcdCluster{Nodes: 3, NodeCPUs: []string{"4", "5", "6"}, Procs: 2}
 	y = composeFile(e.services())
 	for _, want := range []string{EtcdImage, `"--heartbeat-interval", "100"`, `"--election-timeout", "1000"`, `"e1=http://e1:2380,e2=http://e2:2380,e3=http://e3:2380"`, `cpuset: "5"`, `GOMAXPROCS=2`} {
 		if !strings.Contains(y, want) {

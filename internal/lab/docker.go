@@ -1,52 +1,27 @@
 package lab
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type Docker struct {
-	Project string
-	File    string
-	Nodes   int
-	ips     map[int]string
-}
-
-func (d *Docker) cmd(ctx context.Context, env []string, args ...string) (string, error) {
-	c := exec.CommandContext(ctx, "docker", args...)
-	if env != nil {
-		c.Env = append(c.Environ(), env...)
-	}
-	var out, errb bytes.Buffer
-	c.Stdout, c.Stderr = &out, &errb
-	if err := c.Run(); err != nil {
-		return out.String(), fmt.Errorf("docker %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
-	}
-	return strings.TrimSpace(out.String()), nil
-}
-
-func (d *Docker) compose(ctx context.Context, env []string, args ...string) error {
-	_, err := d.cmd(ctx, env, append([]string{"compose", "-p", d.Project, "-f", d.File}, args...)...)
-	return err
-}
-
-func (d *Docker) container(svc string) string {
-	return d.Project + "-" + svc + "-1"
+	rig.Project
+	Nodes int
+	ips   map[int]string
 }
 
 func (d *Docker) Up(ctx context.Context, env []string) error {
-	if err := d.compose(ctx, env, "down", "-v", "--remove-orphans"); err != nil {
-		return err
-	}
-	if err := d.compose(ctx, env, "up", "-d"); err != nil {
+	if err := d.Recreate(ctx, env); err != nil {
 		return err
 	}
 	d.ips = map[int]string{}
 	for i := 1; i <= d.Nodes; i++ {
-		ip, err := d.cmd(ctx, nil, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", d.container(fmt.Sprintf("n%dnet", i)))
+		ip, err := rig.Docker(ctx, nil, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", d.Container(fmt.Sprintf("n%dnet", i)))
 		if err != nil {
 			return err
 		}
@@ -55,32 +30,28 @@ func (d *Docker) Up(ctx context.Context, env []string) error {
 	return nil
 }
 
-func (d *Docker) Down(ctx context.Context) error {
-	return d.compose(ctx, nil, "down", "-v", "--remove-orphans")
-}
-
 func (d *Docker) Kill(ctx context.Context, n int) error {
-	_, err := d.cmd(ctx, nil, "kill", "-s", "KILL", d.container(fmt.Sprintf("n%d", n)))
+	_, err := rig.Docker(ctx, nil, "kill", "-s", "KILL", d.Container(fmt.Sprintf("n%d", n)))
 	return err
 }
 
 func (d *Docker) Start(ctx context.Context, n int) error {
-	_, err := d.cmd(ctx, nil, "start", d.container(fmt.Sprintf("n%d", n)))
+	_, err := rig.Docker(ctx, nil, "start", d.Container(fmt.Sprintf("n%d", n)))
 	return err
 }
 
 func (d *Docker) Pause(ctx context.Context, n int) error {
-	_, err := d.cmd(ctx, nil, "pause", d.container(fmt.Sprintf("n%d", n)))
+	_, err := rig.Docker(ctx, nil, "pause", d.Container(fmt.Sprintf("n%d", n)))
 	return err
 }
 
 func (d *Docker) Unpause(ctx context.Context, n int) error {
-	_, err := d.cmd(ctx, nil, "unpause", d.container(fmt.Sprintf("n%d", n)))
+	_, err := rig.Docker(ctx, nil, "unpause", d.Container(fmt.Sprintf("n%d", n)))
 	return err
 }
 
 func (d *Docker) shell(ctx context.Context, n int, script string) error {
-	_, err := d.cmd(ctx, nil, "exec", d.container(fmt.Sprintf("n%dnet", n)), "sh", "-c", script)
+	_, err := rig.Docker(ctx, nil, "exec", d.Container(fmt.Sprintf("n%dnet", n)), "sh", "-c", script)
 	return err
 }
 
@@ -117,16 +88,43 @@ func (d *Docker) Heal(ctx context.Context) error {
 }
 
 func (d *Docker) Running(ctx context.Context, n int) bool {
-	out, err := d.cmd(ctx, nil, "inspect", "-f", "{{.State.Running}} {{.State.Paused}}", d.container(fmt.Sprintf("n%d", n)))
+	out, err := rig.Docker(ctx, nil, "inspect", "-f", "{{.State.Running}} {{.State.Paused}}", d.Container(fmt.Sprintf("n%d", n)))
 	return err == nil && out == "true false"
 }
 
 func (d *Docker) Exited(ctx context.Context, n int) (string, bool) {
-	name := d.container(fmt.Sprintf("n%d", n))
-	out, err := d.cmd(ctx, nil, "inspect", "-f", "{{.State.Running}} {{.State.ExitCode}}", name)
+	name := d.Container(fmt.Sprintf("n%d", n))
+	out, err := rig.Docker(ctx, nil, "inspect", "-f", "{{.State.Running}} {{.State.ExitCode}}", name)
 	if err != nil || strings.HasPrefix(out, "true") {
 		return "", false
 	}
-	logs, _ := d.cmd(ctx, nil, "logs", "--tail", "2", name)
+	logs, _ := rig.Docker(ctx, nil, "logs", "--tail", "2", name)
 	return fmt.Sprintf("node %d is not running (state %q): %s", n, out, logs), true
+}
+
+type labCluster struct {
+	d     *Docker
+	adm   *rig.Admin
+	addrs []string
+}
+
+func startLab(ctx context.Context, project, file string, env []string) (*labCluster, error) {
+	d := &Docker{Project: rig.Project{Name: project, File: file}, Nodes: 5}
+	addrs := rig.HostAddrs(d.Nodes)
+	adm, err := rig.DialAdmin(addrs)
+	if err != nil {
+		return nil, err
+	}
+	if err := d.Up(ctx, env); err != nil {
+		adm.Close()
+		return nil, errors.Join(err, d.Down(context.Background()))
+	}
+	return &labCluster{d: d, adm: adm, addrs: addrs}, nil
+}
+
+func (c *labCluster) stop(log func(format string, args ...any)) {
+	c.adm.Close()
+	if err := c.d.Down(context.Background()); err != nil {
+		log("tearing down the cluster: %v", err)
+	}
 }

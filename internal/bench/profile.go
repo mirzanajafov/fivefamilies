@@ -1,4 +1,4 @@
-package lab
+package bench
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type ProfileOptions struct {
@@ -47,8 +48,17 @@ type ProfileReport struct {
 	Phases   []ProfilePhase `json:"phases"`
 }
 
+const (
+	pprofPort         = 6060
+	pprofHostPortBase = 3160
+)
+
+func pprofAddr(node int) string {
+	return fmt.Sprintf("127.0.0.1:%d", pprofHostPortBase+node)
+}
+
 func profileURL(node int, path string) string {
-	return fmt.Sprintf("http://127.0.0.1:316%d/debug/pprof/%s", node, path)
+	return "http://" + pprofAddr(node) + "/debug/pprof/" + path
 }
 
 func fetchProfile(ctx context.Context, url, file string) error {
@@ -72,22 +82,13 @@ func fetchProfile(ctx context.Context, url, file string) error {
 	return errors.Join(err, f.Close())
 }
 
-func (b *BenchCluster) leader(ctx context.Context) (int, error) {
-	adm, err := dialAdmin(b.addrs())
-	if err != nil {
-		return 0, err
-	}
-	defer adm.close()
-	return steady(ctx, adm)
-}
-
-func (b *BenchCluster) phase(ctx context.Context, o ProfileOptions, name string, rate float64, seconds int) ProfilePhase {
+func (b *ffCluster) phase(ctx context.Context, o ProfileOptions, name string, rate float64, seconds int) ProfilePhase {
 	p := ProfilePhase{Name: name, Rate: rate}
 	if err := b.Quiet(ctx); err != nil {
 		p.Err = err.Error()
 		return p
 	}
-	l, err := b.leader(ctx)
+	l, err := b.adm.Steady(ctx)
 	if err != nil {
 		p.Err = err.Error()
 		return p
@@ -112,7 +113,7 @@ func collect(ctx context.Context, o ProfileOptions, p *ProfilePhase, seconds int
 	if err := os.MkdirAll(raw, 0o755); err != nil {
 		return err
 	}
-	if !wait(ctx, 4*time.Second) {
+	if !rig.Wait(ctx, 4*time.Second) {
 		return ctx.Err()
 	}
 	var mu sync.Mutex
@@ -139,7 +140,7 @@ func collect(ctx context.Context, o ProfileOptions, p *ProfilePhase, seconds int
 			get(n, "trace", fmt.Sprintf("trace?seconds=%d", int(o.Trace/time.Second)))
 		}
 	}
-	if wait(ctx, time.Duration(seconds)*time.Second/2) {
+	if rig.Wait(ctx, time.Duration(seconds)*time.Second/2) {
 		get(p.Leader, "goroutine", "goroutine")
 	}
 	fetches.Wait()
@@ -155,7 +156,7 @@ func collect(ctx context.Context, o ProfileOptions, p *ProfilePhase, seconds int
 
 func Profile(ctx context.Context, o ProfileOptions) (ProfileReport, error) {
 	rep := ProfileReport{Nodes: o.Nodes, Flags: o.Flags, GenFlags: o.GenFlags}
-	b := &BenchCluster{Nodes: o.Nodes, Flags: o.Flags, NodeCPUs: o.NodeCPUs, Profiles: true}
+	b := &ffCluster{Nodes: o.Nodes, Flags: o.Flags, NodeCPUs: o.NodeCPUs, Profiles: true}
 	o.Log("starting %d nodes", o.Nodes)
 	defer func() {
 		if err := b.Down(); err != nil {
@@ -180,7 +181,7 @@ func Profile(ctx context.Context, o ProfileOptions) (ProfileReport, error) {
 		s := p.Report.Summary
 		o.Log("%s: achieved %.0f/s, p50 %v, p99 %v, %d errors, leader n%d %s", step.name, s.Achieved, s.All.P50, s.All.P99, s.All.Error, p.Leader, p.Err)
 		rep.Phases = append(rep.Phases, p)
-		if err := SaveJSON(o.Out, "profile.json", rep); err != nil {
+		if err := rig.SaveJSON(o.Out, "profile.json", rep); err != nil {
 			return rep, err
 		}
 		if ctx.Err() != nil {

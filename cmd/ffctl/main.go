@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -40,7 +41,42 @@ func usage() {
   backup-check FILE
   content-hash           (key count and a hash of every key, to compare with a backup)
   transfer ID`)
-	os.Exit(2)
+}
+
+var (
+	errUsage       = errors.New("ffctl: bad command line")
+	errNotPositive = errors.New("not a positive number")
+)
+
+type target struct {
+	addrs []string
+	mode  client.ReadMode
+	c     *client.Client
+}
+
+type command struct {
+	minArgs, maxArgs int
+	needsClient      bool
+	run              func(ctx context.Context, t target, args []string) error
+}
+
+var commands = map[string]command{
+	"put":          {minArgs: 2, maxArgs: 3, needsClient: true, run: put},
+	"get":          {minArgs: 1, maxArgs: 1, needsClient: true, run: get},
+	"del":          {minArgs: 1, maxArgs: 1, needsClient: true, run: del},
+	"cas":          {minArgs: 3, maxArgs: 3, needsClient: true, run: cas},
+	"range":        {minArgs: 1, maxArgs: 1, needsClient: true, run: rangePrefix},
+	"status":       {minArgs: 0, maxArgs: 0, run: status},
+	"member":       {minArgs: 2, maxArgs: 2, run: member},
+	"lease":        {minArgs: 2, maxArgs: 2, needsClient: true, run: lease},
+	"watch":        {minArgs: 1, maxArgs: 2, needsClient: true, run: watch},
+	"register":     {minArgs: 3, maxArgs: 4, needsClient: true, run: register},
+	"discover":     {minArgs: 1, maxArgs: 1, needsClient: true, run: discover},
+	"config":       {minArgs: 2, maxArgs: 4, needsClient: true, run: config},
+	"backup":       {minArgs: 1, maxArgs: 1, run: takeBackup},
+	"backup-check": {minArgs: 1, maxArgs: 1, run: backupCheck},
+	"content-hash": {minArgs: 0, maxArgs: 0, needsClient: true, run: contentHash},
+	"transfer":     {minArgs: 1, maxArgs: 1, run: transfer},
 }
 
 func main() {
@@ -50,117 +86,108 @@ func main() {
 	timeout := flag.Duration("timeout", 10*time.Second, "overall timeout")
 	flag.Usage = usage
 	flag.Parse()
-	args := flag.Args()
-	if len(args) == 0 {
-		usage()
-	}
-	addrs := strings.Split(*endpoints, ",")
-	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-	defer cancel()
+	err := run(target{addrs: strings.Split(*endpoints, ","), mode: mode}, *timeout, flag.Args())
 	switch {
-	case args[0] == "status":
-		status(ctx, addrs)
-		return
-	case args[0] == "member" && len(args) == 3:
-		member(ctx, addrs, args[1], args[2])
-		return
-	case args[0] == "transfer" && len(args) == 2:
-		transfer(ctx, addrs, args[1])
-		return
-	case args[0] == "backup" && len(args) == 2:
-		takeBackup(ctx, addrs, args[1])
-		return
-	case args[0] == "backup-check" && len(args) == 2:
-		_, s, err := backup.Load(args[1])
-		check(err)
-		fmt.Printf("revision %d, %d keys, %d bytes, state %x, content %x\n", s.Rev, s.Keys, s.Bytes, s.Hash, s.Content)
-		return
-	}
-	c, err := client.New(addrs, client.Options{})
-	if err != nil {
-		fail(err)
-	}
-	defer c.Close()
-	switch {
-	case args[0] == "put" && (len(args) == 3 || len(args) == 4):
-		var opts []client.WriteOption
-		if len(args) == 4 {
-			opts = append(opts, client.WithLease(nodeID(args[3])))
-		}
-		rev, err := c.Put(ctx, args[1], []byte(args[2]), opts...)
-		check(err)
-		fmt.Println("rev", rev)
-	case args[0] == "register" && (len(args) == 4 || len(args) == 5):
-		ttl := 10 * time.Second
-		if len(args) == 5 {
-			var err error
-			ttl, err = time.ParseDuration(args[4])
-			check(err)
-		}
-		rctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		reg, err := c.Register(ctx, args[1], client.Instance{Name: args[2], Addr: args[3]}, ttl)
-		check(err)
-		fmt.Println("registered with lease", reg.Lease())
-		<-rctx.Done()
-		dctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		check(c.Deregister(dctx, reg))
-		fmt.Println("deregistered")
-	case args[0] == "discover" && len(args) == 2:
-		dctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer stop()
-		seen, err := c.Discover(dctx, args[1])
-		check(err)
-		for list := range seen {
-			fmt.Println(time.Now().Format("15:04:05.000"), list)
-		}
-	case args[0] == "config" && len(args) >= 3:
-		config(ctx, c, args[1:])
-	case args[0] == "watch" && (len(args) == 2 || len(args) == 3):
-		var from uint64
-		if len(args) == 3 {
-			from = nodeID(args[2])
-		}
-		wctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer stop()
-		watchPrefix(wctx, c, args[1], from)
-	case args[0] == "content-hash" && len(args) == 1:
-		kvs, err := c.Range(ctx, "", 0)
-		check(err)
-		contentHash(kvs)
-	case args[0] == "lease" && len(args) == 3:
-		lease(ctx, c, args[1], args[2])
-	case args[0] == "get" && len(args) == 2:
-		kv, found, err := c.Get(ctx, args[1], mode)
-		check(err)
-		if !found {
-			fmt.Println("(missing)")
-			return
-		}
-		fmt.Printf("%s mod_rev=%d version=%d\n", kv.Value, kv.ModRev, kv.Version)
-	case args[0] == "del" && len(args) == 2:
-		deleted, err := c.Delete(ctx, args[1])
-		check(err)
-		fmt.Println("deleted", deleted)
-	case args[0] == "cas" && len(args) == 4:
-		exp := client.Expect{Value: []byte(args[2]), Missing: args[2] == "-"}
-		ok, cur, err := c.CompareAndSwap(ctx, args[1], exp, []byte(args[3]))
-		check(err)
-		fmt.Println("swapped", ok, "current", strconv.Quote(string(cur.Value)))
-	case args[0] == "range" && len(args) == 2:
-		kvs, err := c.Range(ctx, args[1], 0)
-		check(err)
-		for _, kv := range kvs {
-			fmt.Printf("%s = %s\n", kv.Key, kv.Value)
-		}
-	default:
+	case errors.Is(err, errUsage):
 		usage()
+		os.Exit(2)
+	case err != nil:
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
-func status(ctx context.Context, addrs []string) {
-	for _, addr := range addrs {
+func run(t target, timeout time.Duration, args []string) error {
+	if len(args) == 0 {
+		return errUsage
+	}
+	cmd, ok := commands[args[0]]
+	if !ok || len(args)-1 < cmd.minArgs || len(args)-1 > cmd.maxArgs {
+		return errUsage
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if cmd.needsClient {
+		c, err := client.New(t.addrs, client.Options{})
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+		t.c = c
+	}
+	return cmd.run(ctx, t, args[1:])
+}
+
+func positive(what, s string) (uint64, error) {
+	n, err := strconv.ParseUint(s, 10, 64)
+	if err != nil || n == 0 {
+		return 0, fmt.Errorf("%s %q: %w", what, s, errNotPositive)
+	}
+	return n, nil
+}
+
+func put(ctx context.Context, t target, args []string) error {
+	var opts []client.WriteOption
+	if len(args) == 3 {
+		id, err := positive("lease id", args[2])
+		if err != nil {
+			return err
+		}
+		opts = append(opts, client.WithLease(id))
+	}
+	rev, err := t.c.Put(ctx, args[0], []byte(args[1]), opts...)
+	if err != nil {
+		return err
+	}
+	fmt.Println("rev", rev)
+	return nil
+}
+
+func get(ctx context.Context, t target, args []string) error {
+	kv, found, err := t.c.Get(ctx, args[0], t.mode)
+	switch {
+	case err != nil:
+		return err
+	case !found:
+		fmt.Println("(missing)")
+	default:
+		fmt.Printf("%s mod_rev=%d version=%d\n", kv.Value, kv.ModRev, kv.Version)
+	}
+	return nil
+}
+
+func del(ctx context.Context, t target, args []string) error {
+	deleted, err := t.c.Delete(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	fmt.Println("deleted", deleted)
+	return nil
+}
+
+func cas(ctx context.Context, t target, args []string) error {
+	exp := client.Expect{Value: []byte(args[1]), Missing: args[1] == "-"}
+	ok, cur, err := t.c.CompareAndSwap(ctx, args[0], exp, []byte(args[2]))
+	if err != nil {
+		return err
+	}
+	fmt.Println("swapped", ok, "current", strconv.Quote(string(cur.Value)))
+	return nil
+}
+
+func rangePrefix(ctx context.Context, t target, args []string) error {
+	kvs, err := t.c.Range(ctx, args[0], 0)
+	if err != nil {
+		return err
+	}
+	for _, kv := range kvs {
+		fmt.Printf("%s = %s\n", kv.Key, kv.Value)
+	}
+	return nil
+}
+
+func status(ctx context.Context, t target, _ []string) error {
+	for _, addr := range t.addrs {
 		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			fmt.Printf("%s: %v\n", addr, err)
@@ -178,9 +205,10 @@ func status(ctx context.Context, addrs []string) {
 			addr, st.GetId(), client.RoleName(st.GetRole()), st.GetTerm(), st.GetLeader(), st.GetCommit(), st.GetApplied(),
 			st.GetFirstIndex(), st.GetLastIndex(), st.GetSnapshotIndex(), st.GetStateHash(), st.GetHashIndex(), st.GetVoters(), st.GetLearners())
 	}
+	return nil
 }
 
-func onLeader(addrs []string, call func(pb.AdminClient) error) {
+func onLeader(addrs []string, call func(pb.AdminClient) error) error {
 	var last error
 	for _, addr := range addrs {
 		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -191,35 +219,31 @@ func onLeader(addrs []string, call func(pb.AdminClient) error) {
 		err = call(pb.NewAdminClient(conn))
 		conn.Close()
 		if err == nil {
-			return
+			return nil
 		}
 		last = fmt.Errorf("%s: %w", addr, err)
 		if client.Reason(err) != pb.ErrorReason_ERROR_REASON_NOT_LEADER {
 			break
 		}
 	}
-	fail(last)
+	return last
 }
 
-func nodeID(s string) uint64 {
-	id, err := strconv.ParseUint(s, 10, 64)
-	if err != nil || id == 0 {
-		fail(fmt.Errorf("bad node id %q", s))
-	}
-	return id
-}
-
-func member(ctx context.Context, addrs []string, op, id string) {
+func member(ctx context.Context, t target, args []string) error {
 	change, ok := map[string]pb.MemberChange{
 		"add":     pb.MemberChange_MEMBER_CHANGE_ADD_LEARNER,
 		"promote": pb.MemberChange_MEMBER_CHANGE_PROMOTE,
 		"remove":  pb.MemberChange_MEMBER_CHANGE_REMOVE,
-	}[op]
+	}[args[0]]
 	if !ok {
-		usage()
+		return errUsage
 	}
-	req := &pb.ChangeMembersRequest{Change: change, Node: nodeID(id)}
-	onLeader(addrs, func(c pb.AdminClient) error {
+	id, err := positive("node id", args[1])
+	if err != nil {
+		return err
+	}
+	req := &pb.ChangeMembersRequest{Change: change, Node: id}
+	return onLeader(t.addrs, func(c pb.AdminClient) error {
 		resp, err := c.ChangeMembers(ctx, req)
 		if err == nil {
 			fmt.Printf("committed, applied %d: voters %v learners %v\n", resp.GetIndex(), resp.GetVoters(), resp.GetLearners())
@@ -228,9 +252,13 @@ func member(ctx context.Context, addrs []string, op, id string) {
 	})
 }
 
-func transfer(ctx context.Context, addrs []string, id string) {
-	req := &pb.TransferLeadershipRequest{To: nodeID(id)}
-	onLeader(addrs, func(c pb.AdminClient) error {
+func transfer(ctx context.Context, t target, args []string) error {
+	id, err := positive("node id", args[0])
+	if err != nil {
+		return err
+	}
+	req := &pb.TransferLeadershipRequest{To: id}
+	return onLeader(t.addrs, func(c pb.AdminClient) error {
 		start := time.Now()
 		resp, err := c.TransferLeadership(ctx, req)
 		if err != nil {
@@ -244,45 +272,62 @@ func transfer(ctx context.Context, addrs []string, id string) {
 	})
 }
 
-func lease(ctx context.Context, c *client.Client, op, arg string) {
-	switch op {
-	case "grant":
+func lease(ctx context.Context, t target, args []string) error {
+	op, arg := args[0], args[1]
+	if op == "grant" {
 		ttl, err := time.ParseDuration(arg)
-		check(err)
-		l, err := c.Grant(ctx, ttl)
-		check(err)
+		if err != nil {
+			return err
+		}
+		l, err := t.c.Grant(ctx, ttl)
+		if err != nil {
+			return err
+		}
 		fmt.Println("lease", l.ID, "ttl", l.TTL)
+		return nil
+	}
+	if !slices.Contains([]string{"revoke", "keepalive", "ttl"}, op) {
+		return errUsage
+	}
+	id, err := positive("lease id", arg)
+	if err != nil {
+		return err
+	}
+	switch op {
 	case "revoke":
-		check(c.Revoke(ctx, nodeID(arg)))
+		if err := t.c.Revoke(ctx, id); err != nil {
+			return err
+		}
 		fmt.Println("revoked")
 	case "keepalive":
-		ttl, err := c.KeepAliveOnce(ctx, nodeID(arg))
-		check(err)
+		ttl, err := t.c.KeepAliveOnce(ctx, id)
+		if err != nil {
+			return err
+		}
 		fmt.Println("kept alive for", ttl)
 	case "ttl":
-		remaining, ttl, keys, err := c.TimeToLive(ctx, nodeID(arg))
-		check(err)
+		remaining, ttl, keys, err := t.c.TimeToLive(ctx, id)
+		if err != nil {
+			return err
+		}
 		fmt.Printf("%v left of %v, %d keys\n", remaining.Round(time.Millisecond), ttl, keys)
-	default:
-		usage()
 	}
+	return nil
 }
 
-func check(err error) {
-	if err != nil {
-		fail(err)
+func watch(_ context.Context, t target, args []string) error {
+	var from uint64
+	if len(args) == 2 {
+		var err error
+		if from, err = positive("revision", args[1]); err != nil {
+			return err
+		}
 	}
-}
-
-func fail(err error) {
-	fmt.Fprintln(os.Stderr, err)
-	os.Exit(1)
-}
-
-func watchPrefix(ctx context.Context, c *client.Client, prefix string, from uint64) {
-	for r := range c.Watch(ctx, prefix, true, from) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	for r := range t.c.Watch(ctx, args[0], true, from) {
 		if r.CompactRev != 0 {
-			fail(fmt.Errorf("revisions before %d are no longer kept; read the keys again and watch from there", r.CompactRev))
+			return fmt.Errorf("revisions before %d are no longer kept, so read the keys again and watch from there", r.CompactRev)
 		}
 		for _, ev := range r.Events {
 			if ev.Type == client.EventDelete {
@@ -292,38 +337,84 @@ func watchPrefix(ctx context.Context, c *client.Client, prefix string, from uint
 			fmt.Println(ev.KV.ModRev, "put", ev.KV.Key, strconv.Quote(string(ev.KV.Value)))
 		}
 	}
+	return nil
 }
 
-func config(ctx context.Context, c *client.Client, args []string) {
+func register(ctx context.Context, t target, args []string) error {
+	ttl := 10 * time.Second
+	if len(args) == 4 {
+		var err error
+		if ttl, err = time.ParseDuration(args[3]); err != nil {
+			return err
+		}
+	}
+	rctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	reg, err := t.c.Register(ctx, args[0], client.Instance{Name: args[1], Addr: args[2]}, ttl)
+	if err != nil {
+		return err
+	}
+	fmt.Println("registered with lease", reg.Lease())
+	<-rctx.Done()
+	dctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := t.c.Deregister(dctx, reg); err != nil {
+		return err
+	}
+	fmt.Println("deregistered")
+	return nil
+}
+
+func discover(_ context.Context, t target, args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	seen, err := t.c.Discover(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	for list := range seen {
+		fmt.Println(time.Now().Format("15:04:05.000"), list)
+	}
+	return nil
+}
+
+func config(ctx context.Context, t target, args []string) error {
 	switch {
 	case args[0] == "set" && len(args) == 4:
-		rev, err := c.SetConfig(ctx, args[1], args[2], args[3])
-		check(err)
+		rev, err := t.c.SetConfig(ctx, args[1], args[2], args[3])
+		if err != nil {
+			return err
+		}
 		fmt.Println("rev", rev)
 	case args[0] == "get" && len(args) == 3:
-		v, found, err := c.GetConfig(ctx, args[1], args[2])
-		check(err)
-		if !found {
+		v, found, err := t.c.GetConfig(ctx, args[1], args[2])
+		switch {
+		case err != nil:
+			return err
+		case !found:
 			fmt.Println("(missing)")
-			return
+		default:
+			fmt.Println(v)
 		}
-		fmt.Println(v)
 	case args[0] == "watch" && len(args) == 2:
 		wctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		cfg, err := c.WatchConfig(wctx, args[1])
-		check(err)
+		cfg, err := t.c.WatchConfig(wctx, args[1])
+		if err != nil {
+			return err
+		}
 		for m := range cfg {
 			fmt.Println(time.Now().Format("15:04:05.000"), m)
 		}
 	default:
-		usage()
+		return errUsage
 	}
+	return nil
 }
 
-func takeBackup(ctx context.Context, addrs []string, path string) {
+func takeBackup(ctx context.Context, t target, args []string) error {
 	var f backup.File
-	onLeader(addrs, func(c pb.AdminClient) error {
+	err := onLeader(t.addrs, func(c pb.AdminClient) error {
 		stream, err := c.Backup(ctx, &pb.BackupRequest{})
 		if err != nil {
 			return err
@@ -343,16 +434,38 @@ func takeBackup(ctx context.Context, addrs []string, path string) {
 			f.Data = append(f.Data, chunk.GetData()...)
 		}
 	})
+	if err != nil {
+		return err
+	}
 	sum, err := backup.Check(f)
-	check(err)
-	check(backup.Save(path, f))
-	fmt.Println("saved", path, "at revision", sum.Rev, "with", sum.Keys, "keys and content", fmt.Sprintf("%x", sum.Content))
+	if err != nil {
+		return err
+	}
+	if err := backup.Save(args[0], f); err != nil {
+		return err
+	}
+	fmt.Println("saved", args[0], "at revision", sum.Rev, "with", sum.Keys, "keys and content", fmt.Sprintf("%x", sum.Content))
+	return nil
 }
 
-func contentHash(kvs []client.KeyValue) {
+func backupCheck(_ context.Context, _ target, args []string) error {
+	_, s, err := backup.Load(args[0])
+	if err != nil {
+		return err
+	}
+	fmt.Printf("revision %d, %d keys, %d bytes, state %x, content %x\n", s.Rev, s.Keys, s.Bytes, s.Hash, s.Content)
+	return nil
+}
+
+func contentHash(ctx context.Context, t target, _ []string) error {
+	kvs, err := t.c.Range(ctx, "", 0)
+	if err != nil {
+		return err
+	}
 	out := make([]kv.KeyValue, len(kvs))
 	for i, k := range kvs {
 		out[i] = kv.KeyValue{Key: k.Key, Value: k.Value, CreateRev: k.CreateRev, ModRev: k.ModRev, Version: k.Version, Lease: k.Lease}
 	}
 	fmt.Printf("%d keys, content %x\n", len(out), kv.ContentHash(out))
+	return nil
 }

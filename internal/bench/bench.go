@@ -1,4 +1,4 @@
-package lab
+package bench
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 const benchProject = "ffbench"
@@ -55,9 +56,9 @@ func quote(args []string) string {
 }
 
 type composeCluster struct {
-	dir  string
-	d    *Docker
-	gens int
+	dir     string
+	project *rig.Project
+	gens    int
 }
 
 func (c *composeCluster) start(ctx context.Context, project string, services []service) error {
@@ -70,17 +71,14 @@ func (c *composeCluster) start(ctx context.Context, project string, services []s
 	if err := os.WriteFile(file, []byte(composeFile(services)), 0o644); err != nil {
 		return err
 	}
-	c.d = &Docker{Project: project, File: file, Nodes: len(services)}
-	if err := c.d.Down(ctx); err != nil {
-		return err
-	}
-	return c.d.compose(ctx, nil, "up", "-d")
+	c.project = &rig.Project{Name: project, File: file}
+	return c.project.Recreate(ctx, nil)
 }
 
 func (c *composeCluster) Down() error {
 	var errs []error
-	if c.d != nil {
-		errs = append(errs, c.d.Down(context.Background()))
+	if c.project != nil {
+		errs = append(errs, c.project.Down(context.Background()))
 	}
 	if c.dir != "" {
 		errs = append(errs, os.RemoveAll(c.dir))
@@ -90,17 +88,17 @@ func (c *composeCluster) Down() error {
 
 func (c *composeCluster) runGenerator(ctx context.Context, genCPUs string, command, args []string) (loadgen.Report, error) {
 	c.gens++
-	name := fmt.Sprintf("%s-gen-%d", c.d.Project, c.gens)
-	run := append([]string{"run", "--rm", "--name", name, "--network", c.d.Project + "_bench", "--cpuset-cpus", genCPUs}, command...)
-	out, err := c.d.cmd(ctx, nil, append(run, args...)...)
+	name := fmt.Sprintf("%s-gen-%d", c.project.Name, c.gens)
+	run := append([]string{"run", "--rm", "--name", name, "--network", c.project.Name + "_bench", "--cpuset-cpus", genCPUs}, command...)
+	out, err := rig.Docker(ctx, nil, append(run, args...)...)
 	if err != nil {
-		_, rmErr := c.d.cmd(context.Background(), nil, "rm", "-f", name)
+		_, rmErr := rig.Docker(context.Background(), nil, "rm", "-f", name)
 		return loadgen.Report{}, errors.Join(err, rmErr)
 	}
 	return decodeReport(out)
 }
 
-var errUnreadableReport = errors.New("lab: the generator's report can't be read (an image older than the harness?)")
+var errUnreadableReport = errors.New("bench: the generator's report can't be read (an image older than the harness?)")
 
 func decodeReport(out string) (loadgen.Report, error) {
 	var r loadgen.Report
@@ -115,70 +113,62 @@ func decodeReport(out string) (loadgen.Report, error) {
 	return r, nil
 }
 
-type BenchCluster struct {
+type ffCluster struct {
 	Nodes    int
 	Flags    []string
 	NodeCPUs []string
 	Image    string
 	Profiles bool
+	adm      *rig.Admin
 	composeCluster
 }
 
-func (b *BenchCluster) addrs() []string {
-	var out []string
-	for i := 1; i <= b.Nodes; i++ {
-		out = append(out, fmt.Sprintf("127.0.0.1:315%d", i))
-	}
-	return out
-}
-
-func (b *BenchCluster) inside() string {
-	var out []string
-	for i := 1; i <= b.Nodes; i++ {
-		out = append(out, fmt.Sprintf("n%d:3161", i))
-	}
-	return strings.Join(out, ",")
-}
-
-func (b *BenchCluster) services() []service {
+func (b *ffCluster) services() []service {
+	network, host := rig.NetworkAddrs(b.Nodes), rig.HostAddrs(b.Nodes)
 	var cluster []string
-	for i := 1; i <= b.Nodes; i++ {
-		cluster = append(cluster, fmt.Sprintf("%d=n%d:3161", i, i))
+	for i, addr := range network {
+		cluster = append(cluster, fmt.Sprintf("%d=%s", i+1, addr))
 	}
 	var out []service
 	for i := 1; i <= b.Nodes; i++ {
 		s := service{
 			name: fmt.Sprintf("n%d", i), image: b.Image, cpuset: b.NodeCPUs[(i-1)%len(b.NodeCPUs)],
 			command: append([]string{"-id", fmt.Sprint(i), "-cluster", strings.Join(cluster, ","), "-data", "/data"}, b.Flags...),
-			ports:   []string{fmt.Sprintf("127.0.0.1:315%d:3161", i)},
+			ports:   []string{fmt.Sprintf("%s:%d", host[i-1], rig.NodePort)},
 		}
 		if b.Profiles {
-			s.command = append(s.command, "-pprof", ":6060")
-			s.ports = append(s.ports, fmt.Sprintf("127.0.0.1:316%d:6060", i))
+			s.command = append(s.command, "-pprof", fmt.Sprintf(":%d", pprofPort))
+			s.ports = append(s.ports, fmt.Sprintf("%s:%d", pprofAddr(i), pprofPort))
 		}
 		out = append(out, s)
 	}
 	return out
 }
 
-func (b *BenchCluster) Up(ctx context.Context) error {
+func (b *ffCluster) Up(ctx context.Context) error {
 	if b.Image == "" {
 		b.Image = "fivefamilies-lab-node"
 	}
 	if err := b.start(ctx, benchProject, b.services()); err != nil {
 		return err
 	}
-	adm, err := dialAdmin(b.addrs())
-	if err != nil {
+	var err error
+	if b.adm, err = rig.DialAdmin(rig.HostAddrs(b.Nodes)); err != nil {
 		return err
 	}
-	defer adm.close()
-	_, err = steady(ctx, adm)
+	_, err = b.adm.Steady(ctx)
 	return err
 }
 
-func (b *BenchCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
-	return b.runGenerator(ctx, genCPUs, []string{"--entrypoint", "ffbench", b.Image, "-nodes", b.inside()}, args)
+func (b *ffCluster) Down() error {
+	if b.adm != nil {
+		b.adm.Close()
+	}
+	return b.composeCluster.Down()
+}
+
+func (b *ffCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
+	return b.runGenerator(ctx, genCPUs, []string{"--entrypoint", "ffbench", b.Image, "-nodes", strings.Join(rig.NetworkAddrs(b.Nodes), ",")}, args)
 }
 
 type Step struct {
@@ -199,7 +189,7 @@ type Curve struct {
 	At80      *Step    `json:"at_80_percent,omitempty"`
 }
 
-type SweepOptions struct {
+type sweepOptions struct {
 	Start    float64
 	Floor    float64
 	Factor   float64
@@ -221,7 +211,7 @@ type sweepable interface {
 	Quiet(ctx context.Context) error
 }
 
-func sweep(ctx context.Context, sys sweepable, c Curve, opts SweepOptions) (Curve, error) {
+func sweep(ctx context.Context, sys sweepable, c Curve, opts sweepOptions) (Curve, error) {
 	stopped := false
 	var broken error
 	run := func(rate float64) Step {
@@ -278,27 +268,22 @@ func sweep(ctx context.Context, sys sweepable, c Curve, opts SweepOptions) (Curv
 func settle(ctx context.Context, probe func(context.Context) (uint64, bool)) error {
 	var last uint64
 	was := false
-	err := poll(ctx, 500*time.Millisecond, 2*time.Minute, func(ctx context.Context) (bool, error) {
+	err := rig.Poll(ctx, 500*time.Millisecond, 2*time.Minute, func(ctx context.Context) (bool, error) {
 		at, idle := probe(ctx)
 		quiet := idle && was && at == last
 		last, was = at, idle
 		return quiet, nil
 	})
-	if errors.Is(err, errGaveUp) {
+	if errors.Is(err, rig.ErrGaveUp) {
 		return fmt.Errorf("the cluster was still working through its backlog: %w", err)
 	}
 	return err
 }
 
-func (b *BenchCluster) Quiet(ctx context.Context) error {
-	adm, err := dialAdmin(b.addrs())
-	if err != nil {
-		return err
-	}
-	defer adm.close()
+func (b *ffCluster) Quiet(ctx context.Context) error {
 	return settle(ctx, func(ctx context.Context) (uint64, bool) {
-		sts := adm.progress(ctx, time.Second)
-		l, _ := leaderOf(sts)
+		sts := b.adm.Progress(ctx, time.Second)
+		l, _ := rig.LeaderOf(sts)
 		if l == 0 {
 			return 0, false
 		}
@@ -313,15 +298,4 @@ func (b *BenchCluster) Quiet(ctx context.Context) error {
 		}
 		return commit, true
 	})
-}
-
-func SaveJSON(dir, name string, v any) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, name), append(b, '\n'), 0o644)
 }

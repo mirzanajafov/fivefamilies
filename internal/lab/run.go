@@ -12,12 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
-	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/check"
+	"github.com/mirzanajafov/fivefamilies/internal/planted"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type Options struct {
@@ -64,169 +62,76 @@ type Report struct {
 	Problems     []string       `json:"problems,omitempty"`
 }
 
+func (o Options) Validate() error {
+	bugs, err := planted.Parse(o.Bug)
+	if err != nil {
+		return fmt.Errorf("-bug: %w", err)
+	}
+	if _, err := time.ParseDuration(o.Election); err != nil {
+		return fmt.Errorf("-election: %w", err)
+	}
+	if _, err := time.ParseDuration(o.Heartbeat); err != nil {
+		return fmt.Errorf("-heartbeat: %w", err)
+	}
+	lease, err := time.ParseDuration(o.Lease)
+	switch {
+	case err != nil:
+		return fmt.Errorf("-lease: %w", err)
+	case o.Read == client.ReadLease && lease <= 0:
+		return errors.New("-read lease needs a -lease longer than zero")
+	case bugs.Has(planted.Watches | planted.LocalKeepAlive):
+		return errors.New("-bug: the lab runs no watchers or lease holders, so watch and lease bugs are never exercised")
+	case bugs.Has(planted.FollowerRead) && o.Read == client.ReadLog:
+		return errors.New("-bug followerread is never exercised when every read goes through the log")
+	case bugs.Has(planted.EarlyConf) && !slices.Contains(o.Faults, FaultMember):
+		return errors.New("-bug earlyconf is never exercised without member in -faults, since nothing else changes the membership")
+	}
+	return nil
+}
+
 func (r Report) OK() bool {
 	return r.Linearizable == "Ok" && r.StatesEqual && len(r.Problems) == 0
 }
 
-type cluster struct {
-	addrs []string
-	conns []*grpc.ClientConn
-}
-
-func dialAdmin(addrs []string) (*cluster, error) {
-	c := &cluster{addrs: addrs}
-	for _, a := range addrs {
-		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			return nil, err
-		}
-		c.conns = append(c.conns, conn)
-	}
-	return c, nil
-}
-
-func (c *cluster) close() {
-	for _, conn := range c.conns {
-		conn.Close()
-	}
-}
-
-func (c *cluster) statuses(ctx context.Context, timeout time.Duration) []*pb.StatusResponse {
-	return c.ask(ctx, timeout, &pb.StatusRequest{Hash: true})
-}
-
-func (c *cluster) progress(ctx context.Context, timeout time.Duration) []*pb.StatusResponse {
-	return c.ask(ctx, timeout, &pb.StatusRequest{})
-}
-
-func (c *cluster) ask(ctx context.Context, timeout time.Duration, req *pb.StatusRequest) []*pb.StatusResponse {
-	out := make([]*pb.StatusResponse, len(c.conns))
-	var wg sync.WaitGroup
-	for i, conn := range c.conns {
-		wg.Go(func() {
-			cctx, cancel := context.WithTimeout(ctx, timeout)
-			defer cancel()
-			st, err := pb.NewAdminClient(conn).Status(cctx, req)
-			if err == nil {
-				out[i] = st
-			}
-		})
-	}
-	wg.Wait()
-	return out
-}
-
-func leaderOf(sts []*pb.StatusResponse) (int, uint64) {
-	best, term := 0, uint64(0)
-	for i, st := range sts {
-		if st != nil && st.GetRole() == pb.Role_ROLE_LEADER && st.GetTerm() >= term {
-			best, term = i+1, st.GetTerm()
-		}
-	}
-	return best, term
-}
-
-func agreedOn(sts []*pb.StatusResponse) int {
-	l, _ := leaderOf(sts)
-	if l == 0 {
-		return 0
-	}
-	for _, st := range sts {
-		if st == nil || st.GetLeader() != uint64(l) {
-			return 0
-		}
-	}
-	return l
-}
-
 func Run(ctx context.Context, opts Options) (Report, error) {
 	rep := Report{Options: opts, Started: time.Now()}
-	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
-	env := []string{
-		"FF_BUG=" + opts.Bug, "FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease,
-	}
-	if err := d.Up(ctx, env); err != nil {
+	if err := opts.Validate(); err != nil {
 		return rep, err
 	}
-	if !opts.Keep {
-		defer func() {
-			if err := d.Down(context.Background()); err != nil {
-				opts.Log("tearing down the cluster: %v", err)
-			}
-		}()
-	}
-	var addrs []string
-	for i := 1; i <= d.Nodes; i++ {
-		addrs = append(addrs, fmt.Sprintf("127.0.0.1:315%d", i))
-	}
-	adm, err := dialAdmin(addrs)
+	env := []string{"FF_BUG=" + opts.Bug, "FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease}
+	c, err := startLab(ctx, opts.Project, opts.File, env)
 	if err != nil {
 		return rep, err
 	}
-	defer adm.close()
-	err = poll(ctx, 200*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
-		l, _ := leaderOf(adm.statuses(ctx, time.Second))
+	if opts.Keep {
+		defer c.adm.Close()
+	} else {
+		defer c.stop(opts.Log)
+	}
+	err = rig.Poll(ctx, 200*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
+		l, _ := rig.LeaderOf(c.adm.Statuses(ctx, time.Second))
 		return l > 0, nil
 	})
 	if err != nil {
 		return rep, fmt.Errorf("no leader after starting: %w", err)
 	}
 	start := time.Now()
-	w := &workload{addrs: addrs, workers: opts.Workers, keys: opts.Keys, read: opts.Read, opTimeout: opts.OpTimeout, seed: opts.Seed, start: start}
-	var mu sync.Mutex
-	current := 0
-	pollCtx, stopPoll := context.WithCancel(ctx)
-	var bg sync.WaitGroup
-	bg.Go(func() {
-		lastLeader, lastTerm := -1, uint64(0)
-		for pollCtx.Err() == nil {
-			l, t := leaderOf(adm.statuses(pollCtx, 300*time.Millisecond))
-			mu.Lock()
-			current = l
-			if l != lastLeader || t != lastTerm {
-				rep.Leaders = append(rep.Leaders, LeaderChange{At: time.Since(start), Leader: uint64(l), Term: t})
-				lastLeader, lastTerm = l, t
-			}
-			mu.Unlock()
-			wait(pollCtx, 200*time.Millisecond)
-		}
-	})
+	leaders := watchLeaders(ctx, c.adm, start)
+	w := &workload{addrs: c.addrs, workers: opts.Workers, keys: opts.Keys, read: opts.Read, opTimeout: opts.OpTimeout, seed: opts.Seed, start: start}
 	stopWork := make(chan struct{})
-	bg.Go(func() { w.run(stopWork) })
-	nctx, stopFaults := context.WithTimeout(ctx, opts.Duration)
-	nem := &nemesis{d: d, adm: adm, rng: rand.New(rand.NewPCG(opts.Seed, 7)), kinds: opts.Faults, mean: opts.FaultMean, start: start,
-		leader: func() int { mu.Lock(); defer mu.Unlock(); return current }}
-	if len(opts.Faults) > 0 {
-		nem.run(nctx)
-	} else {
-		<-nctx.Done()
-	}
-	stopFaults()
-	if err := d.Heal(context.Background()); err != nil {
-		rep.Problems = append(rep.Problems, "heal: "+err.Error())
-	}
-	for i := 1; i <= d.Nodes; i++ {
-		if msg, exited := d.Exited(context.Background(), i); exited {
-			rep.Problems = append(rep.Problems, msg)
-			if err := d.Start(context.Background(), i); err != nil {
-				rep.Problems = append(rep.Problems, fmt.Sprintf("restarting node %d: %v", i, err))
-			}
-		} else if !d.Running(context.Background(), i) {
-			if err := d.Unpause(context.Background(), i); err != nil {
-				rep.Problems = append(rep.Problems, fmt.Sprintf("unpausing node %d: %v", i, err))
-			}
-		}
-	}
-	rep.Faults = nem.log
-	wait(ctx, opts.Settle)
+	var work sync.WaitGroup
+	work.Go(func() { w.run(stopWork) })
+	rep.Faults = injectFaults(ctx, opts, c, start, leaders.current)
+	rep.Problems = append(rep.Problems, restoreNodes(c.d)...)
+	rig.Wait(ctx, opts.Settle)
 	close(stopWork)
-	stopPoll()
-	bg.Wait()
+	rep.Leaders = leaders.stop()
+	work.Wait()
 	hist, unknown, failedReads := w.history()
 	rep.Ops, rep.Unknown, rep.FailedReads = len(hist), unknown, failedReads
 	v := check.Linearizable(hist, opts.CheckTimeout)
 	rep.Linearizable, rep.CheckTook = string(v.Result), v.Took
-	switch err := compareStates(ctx, adm, &rep); {
+	switch err := compareStates(ctx, c.adm, &rep); {
 	case err == nil:
 	case ctx.Err() != nil:
 		rep.Problems = append(rep.Problems, fmt.Sprintf("the nodes had not converged when the run ended: %v", ctx.Err()))
@@ -241,9 +146,82 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	return rep, nil
 }
 
-func compareStates(ctx context.Context, adm *cluster, rep *Report) error {
-	return poll(ctx, 500*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
-		sts := adm.statuses(ctx, 2*time.Second)
+type leaderWatch struct {
+	mu      sync.Mutex
+	leader  int
+	changes []LeaderChange
+	cancel  context.CancelFunc
+	done    chan struct{}
+}
+
+func watchLeaders(ctx context.Context, adm *rig.Admin, start time.Time) *leaderWatch {
+	ctx, cancel := context.WithCancel(ctx)
+	lw := &leaderWatch{cancel: cancel, done: make(chan struct{})}
+	go func() {
+		defer close(lw.done)
+		lastLeader, lastTerm := -1, uint64(0)
+		for ctx.Err() == nil {
+			l, t := rig.LeaderOf(adm.Statuses(ctx, 300*time.Millisecond))
+			lw.mu.Lock()
+			lw.leader = l
+			if l != lastLeader || t != lastTerm {
+				lw.changes = append(lw.changes, LeaderChange{At: time.Since(start), Leader: uint64(l), Term: t})
+				lastLeader, lastTerm = l, t
+			}
+			lw.mu.Unlock()
+			rig.Wait(ctx, 200*time.Millisecond)
+		}
+	}()
+	return lw
+}
+
+func (lw *leaderWatch) current() int {
+	lw.mu.Lock()
+	defer lw.mu.Unlock()
+	return lw.leader
+}
+
+func (lw *leaderWatch) stop() []LeaderChange {
+	lw.cancel()
+	<-lw.done
+	return lw.changes
+}
+
+func injectFaults(ctx context.Context, opts Options, c *labCluster, start time.Time, leader func() int) []FaultRecord {
+	nctx, stop := context.WithTimeout(ctx, opts.Duration)
+	defer stop()
+	nem := &nemesis{d: c.d, adm: c.adm, rng: rand.New(rand.NewPCG(opts.Seed, 7)), kinds: opts.Faults, mean: opts.FaultMean, start: start, leader: leader}
+	if len(opts.Faults) > 0 {
+		nem.run(nctx)
+	} else {
+		<-nctx.Done()
+	}
+	return nem.log
+}
+
+func restoreNodes(d *Docker) []string {
+	var problems []string
+	if err := d.Heal(context.Background()); err != nil {
+		problems = append(problems, "heal: "+err.Error())
+	}
+	for i := 1; i <= d.Nodes; i++ {
+		if msg, exited := d.Exited(context.Background(), i); exited {
+			problems = append(problems, msg)
+			if err := d.Start(context.Background(), i); err != nil {
+				problems = append(problems, fmt.Sprintf("restarting node %d: %v", i, err))
+			}
+		} else if !d.Running(context.Background(), i) {
+			if err := d.Unpause(context.Background(), i); err != nil {
+				problems = append(problems, fmt.Sprintf("unpausing node %d: %v", i, err))
+			}
+		}
+	}
+	return problems
+}
+
+func compareStates(ctx context.Context, adm *rig.Admin, rep *Report) error {
+	return rig.Poll(ctx, 500*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
+		sts := adm.Statuses(ctx, 2*time.Second)
 		if ctx.Err() != nil && slices.Contains(sts, nil) {
 			return false, nil
 		}
@@ -268,7 +246,7 @@ func compareStates(ctx context.Context, adm *cluster, rep *Report) error {
 }
 
 func save(dir string, rep Report, w *workload) error {
-	if err := SaveJSON(dir, "report.json", rep); err != nil {
+	if err := rig.SaveJSON(dir, "report.json", rep); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "raw"), 0o755); err != nil {

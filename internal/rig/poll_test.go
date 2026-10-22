@@ -1,4 +1,4 @@
-package lab
+package rig
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 func TestPollingStopsAtOnceWhenItsContextIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
-	err := poll(ctx, time.Millisecond, time.Minute, func(context.Context) (bool, error) {
+	err := Poll(ctx, time.Millisecond, time.Minute, func(context.Context) (bool, error) {
 		calls++
 		if calls == 3 {
 			cancel()
@@ -23,10 +23,10 @@ func TestPollingStopsAtOnceWhenItsContextIsCancelled(t *testing.T) {
 }
 
 func TestPollingGivesUpAfterItsLimit(t *testing.T) {
-	err := poll(context.Background(), time.Millisecond, 20*time.Millisecond, func(context.Context) (bool, error) {
+	err := Poll(context.Background(), time.Millisecond, 20*time.Millisecond, func(context.Context) (bool, error) {
 		return false, nil
 	})
-	if !errors.Is(err, errGaveUp) {
+	if !errors.Is(err, ErrGaveUp) {
 		t.Fatalf("polling past its limit returned %v", err)
 	}
 }
@@ -34,7 +34,7 @@ func TestPollingGivesUpAfterItsLimit(t *testing.T) {
 func TestEachCheckRunsWithinTheLimit(t *testing.T) {
 	start := time.Now()
 	var deadline time.Time
-	err := poll(context.Background(), time.Millisecond, time.Minute, func(ctx context.Context) (bool, error) {
+	err := Poll(context.Background(), time.Millisecond, time.Minute, func(ctx context.Context) (bool, error) {
 		deadline, _ = ctx.Deadline()
 		return true, nil
 	})
@@ -46,7 +46,7 @@ func TestEachCheckRunsWithinTheLimit(t *testing.T) {
 func TestPollingReportsTheCallersOwnDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	err := poll(ctx, time.Millisecond, time.Minute, func(context.Context) (bool, error) {
+	err := Poll(ctx, time.Millisecond, time.Minute, func(context.Context) (bool, error) {
 		return false, nil
 	})
 	if !errors.Is(err, context.DeadlineExceeded) {
@@ -57,7 +57,7 @@ func TestPollingReportsTheCallersOwnDeadline(t *testing.T) {
 func TestPollingStopsOnTheFirstError(t *testing.T) {
 	failed := errors.New("refused")
 	calls := 0
-	err := poll(context.Background(), time.Millisecond, time.Minute, func(context.Context) (bool, error) {
+	err := Poll(context.Background(), time.Millisecond, time.Minute, func(context.Context) (bool, error) {
 		calls++
 		return false, failed
 	})

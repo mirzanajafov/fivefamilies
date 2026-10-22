@@ -1,18 +1,17 @@
 package lab
 
 import (
-	"bufio"
 	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type FailoverOptions struct {
@@ -71,19 +70,19 @@ func gaps(samples []loadgen.FailoverSample, from, to int64) time.Duration {
 }
 
 func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]loadgen.FailoverSample, error) {
-	network := d.Project + "_lab"
+	network := d.Name + "_lab"
 	args := []string{"run", "--rm", "--network", network, "--entrypoint", "failgen", "fivefamilies-lab-node",
+		"-nodes", strings.Join(rig.NetworkAddrs(d.Nodes), ","),
 		"-rate", fmt.Sprint(opts.Rate), "-duration", (opts.Before + opts.After).String(), "-timeout", opts.Timeout.String(), fmt.Sprintf("-cold=%v", opts.Cold)}
-	c := exec.CommandContext(ctx, "docker", args...)
-	out, err := c.Output()
+	out, err := rig.Docker(ctx, nil, args...)
 	if err != nil {
 		return nil, fmt.Errorf("generator: %w", err)
 	}
 	var samples []loadgen.FailoverSample
-	sc := bufio.NewScanner(strings.NewReader(string(out)))
-	for sc.Scan() {
+	dec := json.NewDecoder(strings.NewReader(out))
+	for dec.More() {
 		var s loadgen.FailoverSample
-		if err := json.Unmarshal(sc.Bytes(), &s); err != nil {
+		if err := dec.Decode(&s); err != nil {
 			return nil, err
 		}
 		samples = append(samples, s)
@@ -97,7 +96,7 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 		res.Err = err.Error()
 	}
 	if out != "" {
-		if serr := SaveJSON(out, fmt.Sprintf("election-%s.json", opts.Election), res); serr != nil {
+		if serr := rig.SaveJSON(out, fmt.Sprintf("election-%s.json", opts.Election), res); serr != nil {
 			return res, errors.Join(err, serr)
 		}
 	}
@@ -106,79 +105,20 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 
 func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, error) {
 	res := FailoverResult{Options: opts}
-	d := &Docker{Project: opts.Project, File: opts.File, Nodes: 5}
 	env := []string{"FF_ELECTION=" + opts.Election, "FF_HEARTBEAT=" + opts.Heartbeat, "FF_LEASE=" + opts.Lease, "FF_BUG="}
-	if err := d.Up(ctx, env); err != nil {
-		return res, err
-	}
-	defer func() {
-		if err := d.Down(context.Background()); err != nil {
-			opts.Log("tearing down the cluster: %v", err)
-		}
-	}()
-	var addrs []string
-	for i := 1; i <= d.Nodes; i++ {
-		addrs = append(addrs, fmt.Sprintf("127.0.0.1:315%d", i))
-	}
-	adm, err := dialAdmin(addrs)
+	c, err := startLab(ctx, opts.Project, opts.File, env)
 	if err != nil {
 		return res, err
 	}
-	defer adm.close()
+	defer c.stop(opts.Log)
 	var runErr error
 	for t := 0; t < opts.Trials && ctx.Err() == nil; t++ {
-		leader, err := steady(ctx, adm)
+		leader, err := c.adm.Steady(ctx)
 		if err != nil {
 			runErr = err
 			break
 		}
-		trial := Trial{Killed: leader}
-		type genResult struct {
-			samples []loadgen.FailoverSample
-			err     error
-		}
-		ch := make(chan genResult, 1)
-		go func() {
-			s, err := d.generate(ctx, opts)
-			ch <- genResult{s, err}
-		}()
-		wait(ctx, opts.Before)
-		if err := d.Kill(ctx, leader); err != nil {
-			trial.Err = err.Error()
-		}
-		g := <-ch
-		if err := d.Start(ctx, leader); err != nil && trial.Err == "" {
-			trial.Err = err.Error()
-		}
-		if g.err != nil {
-			trial.Err = g.err.Error()
-		}
-		trial.Errors = map[string]int{}
-		var writes []loadgen.FailoverSample
-		for _, s := range g.samples {
-			switch {
-			case s.Kind == loadgen.SampleUnreachable && s.Node == leader && trial.Detected == 0:
-				trial.Detected = time.Duration(s.Done)
-			case s.Kind == loadgen.SampleLeader && s.Leader != leader && trial.Detected > 0 && trial.NewLeader == 0:
-				trial.NewLeader = time.Duration(s.Done)
-			}
-			if s.Kind != loadgen.SampleWrite {
-				continue
-			}
-			writes = append(writes, s)
-			trial.Requests++
-			if !s.Ok {
-				trial.Failed++
-				trial.Errors[s.Err]++
-			}
-		}
-		if trial.NewLeader > 0 {
-			trial.Election = trial.NewLeader - trial.Detected
-		}
-		half := int64(opts.Before) / 2
-		trial.QuietGap = gaps(writes, 0, half)
-		trial.Unavailable = gaps(writes, half, int64(opts.Before+opts.After))
-		res.Trials = append(res.Trials, trial)
+		res.Trials = append(res.Trials, failoverTrial(ctx, c.d, opts, leader))
 	}
 	var us []time.Duration
 	for _, tr := range res.Trials {
@@ -193,24 +133,52 @@ func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, err
 	return res, runErr
 }
 
-func steady(ctx context.Context, adm *cluster) (int, error) {
-	var leader int
-	err := poll(ctx, 200*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
-		sts := adm.statuses(ctx, time.Second)
-		l := agreedOn(sts)
-		if l == 0 {
-			return false, nil
-		}
-		for _, st := range sts {
-			if st.GetCommit() != sts[l-1].GetCommit() {
-				return false, nil
-			}
-		}
-		leader = l
-		return true, nil
-	})
-	if err != nil {
-		return 0, fmt.Errorf("the cluster did not settle: %w", err)
+func failoverTrial(ctx context.Context, d *Docker, opts FailoverOptions, leader int) Trial {
+	type genResult struct {
+		samples []loadgen.FailoverSample
+		err     error
 	}
-	return leader, nil
+	ch := make(chan genResult, 1)
+	go func() {
+		s, err := d.generate(ctx, opts)
+		ch <- genResult{s, err}
+	}()
+	rig.Wait(ctx, opts.Before)
+	killErr := d.Kill(ctx, leader)
+	g := <-ch
+	startErr := d.Start(ctx, leader)
+	trial := measureTrial(g.samples, leader, opts)
+	if err := cmp.Or(g.err, killErr, startErr); err != nil {
+		trial.Err = err.Error()
+	}
+	return trial
+}
+
+func measureTrial(samples []loadgen.FailoverSample, leader int, opts FailoverOptions) Trial {
+	trial := Trial{Killed: leader, Errors: map[string]int{}}
+	var writes []loadgen.FailoverSample
+	for _, s := range samples {
+		switch {
+		case s.Kind == loadgen.SampleUnreachable && s.Node == leader && trial.Detected == 0:
+			trial.Detected = time.Duration(s.Done)
+		case s.Kind == loadgen.SampleLeader && s.Leader != leader && trial.Detected > 0 && trial.NewLeader == 0:
+			trial.NewLeader = time.Duration(s.Done)
+		}
+		if s.Kind != loadgen.SampleWrite {
+			continue
+		}
+		writes = append(writes, s)
+		trial.Requests++
+		if !s.Ok {
+			trial.Failed++
+			trial.Errors[s.Err]++
+		}
+	}
+	if trial.NewLeader > 0 {
+		trial.Election = trial.NewLeader - trial.Detected
+	}
+	half := int64(opts.Before) / 2
+	trial.QuietGap = gaps(writes, 0, half)
+	trial.Unavailable = gaps(writes, half, int64(opts.Before+opts.After))
+	return trial
 }
