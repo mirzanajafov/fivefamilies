@@ -63,20 +63,26 @@ func (k *keyRecorder) Do(_ context.Context, op Op) error {
 func TestAMeasurementPreloadsEveryKeyAndCountsOnlyTheMeasuredWindow(t *testing.T) {
 	k := &keyRecorder{written: map[string]int{}}
 	probes := []Counters{{Fsyncs: 10, Entries: 20, Sent: 100, Elections: 1}, {Fsyncs: 30, Entries: 80, Sent: 300, Elections: 2}}
+	var probed []time.Time
 	probe := func(context.Context) ([]Counters, error) {
+		probed = append(probed, time.Now())
 		c := probes[0]
 		probes = probes[1:]
 		return []Counters{c}, nil
 	}
-	cfg := Config{Rate: 200, Duration: 100 * time.Millisecond, Warmup: 50 * time.Millisecond, Keys: 5, ValueBytes: 8}
+	cfg := Config{Rate: 200, Duration: 100 * time.Millisecond, Warmup: 50 * time.Millisecond, ReadFraction: 1, Keys: 5, ValueBytes: 8}
+	start := time.Now()
 	r, err := Measure(context.Background(), k, cfg, true, probe)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := range 5 {
-		if k.written[key(i)] == 0 {
-			t.Fatalf("%s was never written: %v", key(i), k.written)
+		if k.written[key(i)] != 1 {
+			t.Fatalf("%s was written %d times before a read-only run, want once: %v", key(i), k.written[key(i)], k.written)
 		}
+	}
+	if len(probed) != 2 || probed[0].Sub(start) < cfg.Warmup {
+		t.Fatalf("counters read at %v after the start, want the first after the %v warmup", probed, cfg.Warmup)
 	}
 	want := Counters{Fsyncs: 20, Entries: 60, Sent: 200, Elections: 1}
 	if r.Nodes != 1 || len(r.PerNode) != 1 || r.PerNode[0] != want || r.Elections != 1 || r.EntriesPerFsync != 3 {

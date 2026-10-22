@@ -79,14 +79,6 @@ type curveSpec struct {
 	leaderOnly bool
 }
 
-func ffCurve(name string, nodes int, node, gen []string) curveSpec {
-	return curveSpec{name: name, nodes: nodes, node: node, gen: gen}
-}
-
-func etcdCurve(name string, nodes int, gen []string, procs int, leaderOnly bool) curveSpec {
-	return curveSpec{name: name, nodes: nodes, gen: gen, etcd: true, procs: procs, leaderOnly: leaderOnly}
-}
-
 type system interface {
 	Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error)
 	Quiet(ctx context.Context) error
@@ -114,7 +106,13 @@ func withBase(extra ...string) []string {
 
 func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []curveSpec) ([]Curve, error) {
 	if o.Quick {
-		specs = specs[:1]
+		var quick []curveSpec
+		for _, sp := range specs {
+			if !slices.ContainsFunc(quick, func(q curveSpec) bool { return q.etcd == sp.etcd }) {
+				quick = append(quick, sp)
+			}
+		}
+		specs = quick
 	}
 	var curves []Curve
 	for round, sp := range rounds(o, specs, func(sp curveSpec) string { return sp.name }) {
@@ -127,13 +125,13 @@ func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []cu
 		c := sweep(ctx, sys.Generate, sys.Quiet, Curve{Name: sp.name, Nodes: sp.nodes, NodeFlags: sp.node, GenFlags: gen}, o.sweep())
 		c.Round = round
 		o.tearDown(sp.name, sys.Down)
+		if err := ctx.Err(); err != nil {
+			return curves, err
+		}
 		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
 		if err := SaveJSON(o.Out, file, curves); err != nil {
 			return curves, err
-		}
-		if ctx.Err() != nil {
-			return curves, ctx.Err()
 		}
 	}
 	return curves, nil
@@ -142,30 +140,30 @@ func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []cu
 func E2(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 	writes := []string{"-reads", "0", "-value-bytes", "128"}
 	return runCurves(ctx, o, "e2.json", []curveSpec{
-		ffCurve("5 nodes", 5, withBase(), writes),
-		ffCurve("3 nodes", 3, withBase(), writes),
-		ffCurve("7 nodes", 7, withBase(), writes),
-		ffCurve("5 nodes, one entry per append", 5, withBase("-max-msg-bytes", "1"), writes),
-		ffCurve("5 nodes, no pipelining", 5, withBase("-max-inflight", "1"), writes),
-		ffCurve("5 nodes, one event per Ready", 5, withBase("-batch", "1"), writes),
-		ffCurve("5 nodes, no cap on pending writes", 5, withBase("-max-pending", "0"), writes),
-		ffCurve("5 nodes, no snapshots", 5, withBase("-snapshot-every", "1000000000"), writes),
-		ffCurve("5 nodes, 2 appends in flight", 5, withBase("-max-inflight", "2"), writes),
-		ffCurve("5 nodes, 4 appends in flight", 5, withBase("-max-inflight", "4"), writes),
-		ffCurve("5 nodes, 16 appends in flight", 5, withBase("-max-inflight", "16"), writes),
-		ffCurve("5 nodes, one Go processor", 5, withBase("-gomaxprocs", "1"), writes),
-		ffCurve("5 nodes, 1 KiB values", 5, withBase(), []string{"-reads", "0", "-value-bytes", "1024"}),
+		{name: "5 nodes", nodes: 5, node: withBase(), gen: writes},
+		{name: "3 nodes", nodes: 3, node: withBase(), gen: writes},
+		{name: "7 nodes", nodes: 7, node: withBase(), gen: writes},
+		{name: "5 nodes, one entry per append", nodes: 5, node: withBase("-max-msg-bytes", "1"), gen: writes},
+		{name: "5 nodes, no pipelining", nodes: 5, node: withBase("-max-inflight", "1"), gen: writes},
+		{name: "5 nodes, one event per Ready", nodes: 5, node: withBase("-batch", "1"), gen: writes},
+		{name: "5 nodes, no cap on pending writes", nodes: 5, node: withBase("-max-pending", "0"), gen: writes},
+		{name: "5 nodes, no snapshots", nodes: 5, node: withBase("-snapshot-every", "1000000000"), gen: writes},
+		{name: "5 nodes, 2 appends in flight", nodes: 5, node: withBase("-max-inflight", "2"), gen: writes},
+		{name: "5 nodes, 4 appends in flight", nodes: 5, node: withBase("-max-inflight", "4"), gen: writes},
+		{name: "5 nodes, 16 appends in flight", nodes: 5, node: withBase("-max-inflight", "16"), gen: writes},
+		{name: "5 nodes, one Go processor", nodes: 5, node: withBase("-gomaxprocs", "1"), gen: writes},
+		{name: "5 nodes, 1 KiB values", nodes: 5, node: withBase(), gen: []string{"-reads", "0", "-value-bytes", "1024"}},
 	})
 }
 
 func E3(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 	writes := []string{"-reads", "0", "-value-bytes", "128"}
 	return runCurves(ctx, o, "e3.json", []curveSpec{
-		ffCurve("group commit", 5, withBase("-fsync", "group"), writes),
-		ffCurve("one fsync per write", 5, withBase("-fsync", "ready"), writes),
-		ffCurve("one fsync per entry", 5, withBase("-fsync", "entry"), writes),
-		ffCurve("no fsync (unsafe)", 5, withBase("-fsync", "off"), writes),
-		ffCurve("group commit, leader writes before sending", 5, withBase("-fsync", "group", "-write-before-send"), writes),
+		{name: "group commit", nodes: 5, node: withBase("-fsync", "group"), gen: writes},
+		{name: "one fsync per write", nodes: 5, node: withBase("-fsync", "ready"), gen: writes},
+		{name: "one fsync per entry", nodes: 5, node: withBase("-fsync", "entry"), gen: writes},
+		{name: "no fsync (unsafe)", nodes: 5, node: withBase("-fsync", "off"), gen: writes},
+		{name: "group commit, leader writes before sending", nodes: 5, node: withBase("-fsync", "group", "-write-before-send"), gen: writes},
 	})
 }
 
@@ -174,10 +172,10 @@ func E4(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 	var specs []curveSpec
 	for _, share := range []string{"0.95", "0.5"} {
 		for _, mode := range []string{"lease", "index", "follower", "log"} {
-			specs = append(specs, ffCurve(fmt.Sprintf("%s reads, %s", mode, share), 5, lease, []string{"-reads", share, "-read-mode", mode}))
+			specs = append(specs, curveSpec{name: fmt.Sprintf("%s reads, %s", mode, share), nodes: 5, node: lease, gen: []string{"-reads", share, "-read-mode", mode}})
 		}
-		specs = append(specs, ffCurve(fmt.Sprintf("index reads, %s, one event per Ready", share), 5, append(slices.Clone(lease), "-batch", "1"), []string{"-reads", share, "-read-mode", "index"}))
-		specs = append(specs, ffCurve(fmt.Sprintf("local reads (unsafe), %s", share), 5, append(slices.Clone(lease), "-bug", "followerread"), []string{"-reads", share, "-read-mode", "follower"}))
+		specs = append(specs, curveSpec{name: fmt.Sprintf("index reads, %s, one event per Ready", share), nodes: 5, node: append(slices.Clone(lease), "-batch", "1"), gen: []string{"-reads", share, "-read-mode", "index"}})
+		specs = append(specs, curveSpec{name: fmt.Sprintf("local reads (unsafe), %s", share), nodes: 5, node: append(slices.Clone(lease), "-bug", "followerread"), gen: []string{"-reads", share, "-read-mode", "follower"}})
 	}
 	return runCurves(ctx, o, "e4.json", specs)
 }
@@ -185,16 +183,16 @@ func E4(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
 	writes := []string{"-reads", "0", "-value-bytes", "128"}
 	return runCurves(ctx, o, "e5.json", []curveSpec{
-		etcdCurve("etcd, 3 nodes, writes", 3, writes, 0, false),
-		ffCurve("fivefamilies, 3 nodes, writes", 3, withBase(), writes),
-		ffCurve("fivefamilies, 5 nodes, writes", 5, withBase(), writes),
-		etcdCurve("etcd, 5 nodes, writes", 5, writes, 0, false),
-		etcdCurve("etcd, 5 nodes, writes, client on the leader only", 5, writes, 0, true),
-		etcdCurve("etcd, 5 nodes, writes, two Go processors", 5, writes, 2, false),
-		ffCurve("fivefamilies, 5 nodes, ReadIndex reads 0.95", 5, withBase(), []string{"-reads", "0.95", "-read-mode", "index"}),
-		etcdCurve("etcd, 5 nodes, linearizable reads 0.95", 5, []string{"-reads", "0.95", "-read-mode", "linearizable"}, 0, false),
-		ffCurve("fivefamilies, 5 nodes, local reads (unsafe) 0.95", 5, withBase("-bug", "followerread"), []string{"-reads", "0.95", "-read-mode", "follower"}),
-		etcdCurve("etcd, 5 nodes, serializable reads 0.95", 5, []string{"-reads", "0.95", "-read-mode", "serializable"}, 0, false),
+		{name: "fivefamilies, 3 nodes, writes", nodes: 3, node: withBase(), gen: writes},
+		{name: "etcd, 3 nodes, writes", nodes: 3, gen: writes, etcd: true},
+		{name: "fivefamilies, 5 nodes, writes", nodes: 5, node: withBase(), gen: writes},
+		{name: "etcd, 5 nodes, writes", nodes: 5, gen: writes, etcd: true},
+		{name: "etcd, 5 nodes, writes, client on the leader only", nodes: 5, gen: writes, etcd: true, leaderOnly: true},
+		{name: "etcd, 5 nodes, writes, two Go processors", nodes: 5, gen: writes, etcd: true, procs: 2},
+		{name: "fivefamilies, 5 nodes, ReadIndex reads 0.95", nodes: 5, node: withBase(), gen: []string{"-reads", "0.95", "-read-mode", "index"}},
+		{name: "etcd, 5 nodes, linearizable reads 0.95", nodes: 5, gen: []string{"-reads", "0.95", "-read-mode", "linearizable"}, etcd: true},
+		{name: "fivefamilies, 5 nodes, local reads (unsafe) 0.95", nodes: 5, node: withBase("-bug", "followerread"), gen: []string{"-reads", "0.95", "-read-mode", "follower"}},
+		{name: "etcd, 5 nodes, serializable reads 0.95", nodes: 5, gen: []string{"-reads", "0.95", "-read-mode", "serializable"}, etcd: true},
 	})
 }
 
@@ -250,7 +248,7 @@ func E1b(ctx context.Context, o ExperimentOptions) (E1bResult, error) {
 		res.Rows = append(res.Rows, row)
 		return SaveJSON(o.Out, "e1b.json", res)
 	})
-	if err = cmp.Or(ctx.Err(), err); err != nil {
+	if err = cmp.Or(ctx.Err(), err); err != nil && len(res.Rows) > 0 {
 		res.Err = err.Error()
 		if serr := SaveJSON(o.Out, "e1b.json", res); serr != nil {
 			return res, errors.Join(err, serr)

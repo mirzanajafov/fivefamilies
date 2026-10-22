@@ -35,17 +35,6 @@ type Report struct {
 	Elections       uint64     `json:"elections"`
 }
 
-type FailoverSample struct {
-	Kind      string `json:"kind,omitempty"`
-	Leader    int    `json:"leader,omitempty"`
-	Term      uint64 `json:"term,omitempty"`
-	Scheduled int64  `json:"scheduled_ns"`
-	Done      int64  `json:"done_ns"`
-	Node      int    `json:"node"`
-	Ok        bool   `json:"ok"`
-	Err       string `json:"error,omitempty"`
-}
-
 type Probe func(ctx context.Context) ([]Counters, error)
 
 func Measure(ctx context.Context, t Target, cfg Config, preload bool, probe Probe) (Report, error) {
@@ -104,10 +93,13 @@ func writeEveryKey(ctx context.Context, t Target, cfg Config) error {
 			if err == nil {
 				break
 			}
-			if try == 50 {
+			if try == 50 || ctx.Err() != nil {
 				return fmt.Errorf("writing %s: %w", op.Key, err)
 			}
-			time.Sleep(20 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+			case <-time.After(20 * time.Millisecond):
+			}
 		}
 	}
 	return nil

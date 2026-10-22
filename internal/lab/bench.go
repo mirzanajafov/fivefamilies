@@ -55,10 +55,9 @@ func quote(args []string) string {
 }
 
 type composeCluster struct {
-	project string
-	dir     string
-	d       *Docker
-	gens    int
+	dir  string
+	d    *Docker
+	gens int
 }
 
 func (c *composeCluster) up(ctx context.Context, project string, services []service) error {
@@ -66,13 +65,13 @@ func (c *composeCluster) up(ctx context.Context, project string, services []serv
 	if err != nil {
 		return err
 	}
-	c.project, c.dir = project, dir
+	c.dir = dir
 	file := filepath.Join(dir, "compose.yml")
 	if err := os.WriteFile(file, []byte(composeFile(services)), 0o644); err != nil {
 		return err
 	}
 	c.d = &Docker{Project: project, File: file, Nodes: len(services)}
-	if err := c.d.compose(ctx, nil, "down", "-v", "--remove-orphans"); err != nil {
+	if err := c.d.Down(ctx); err != nil {
 		return err
 	}
 	return c.d.compose(ctx, nil, "up", "-d")
@@ -81,7 +80,7 @@ func (c *composeCluster) up(ctx context.Context, project string, services []serv
 func (c *composeCluster) Down() error {
 	var errs []error
 	if c.d != nil {
-		errs = append(errs, c.d.compose(context.Background(), nil, "down", "-v", "--remove-orphans"))
+		errs = append(errs, c.d.Down(context.Background()))
 	}
 	if c.dir != "" {
 		errs = append(errs, os.RemoveAll(c.dir))
@@ -89,10 +88,10 @@ func (c *composeCluster) Down() error {
 	return errors.Join(errs...)
 }
 
-func (c *composeCluster) generate(ctx context.Context, genCPUs string, generator, args []string) (loadgen.Report, error) {
+func (c *composeCluster) runGenerator(ctx context.Context, genCPUs string, image, args []string) (loadgen.Report, error) {
 	c.gens++
-	name := fmt.Sprintf("%s-gen-%d", c.project, c.gens)
-	run := append([]string{"run", "--rm", "--name", name, "--network", c.project + "_bench", "--cpuset-cpus", genCPUs}, generator...)
+	name := fmt.Sprintf("%s-gen-%d", c.d.Project, c.gens)
+	run := append([]string{"run", "--rm", "--name", name, "--network", c.d.Project + "_bench", "--cpuset-cpus", genCPUs}, image...)
 	out, err := c.d.cmd(ctx, nil, append(run, args...)...)
 	var r loadgen.Report
 	if err != nil {
@@ -168,7 +167,7 @@ func (b *BenchCluster) Up(ctx context.Context) error {
 }
 
 func (b *BenchCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
-	return b.generate(ctx, genCPUs, []string{"--entrypoint", "ffbench", b.Image, "-nodes", b.inside()}, args)
+	return b.runGenerator(ctx, genCPUs, []string{"--entrypoint", "ffbench", b.Image, "-nodes", b.inside()}, args)
 }
 
 type Step struct {

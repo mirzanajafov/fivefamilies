@@ -135,5 +135,5 @@ func (e *EtcdCluster) Leader(ctx context.Context) (string, error) {
 }
 
 func (e *EtcdCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
-	return e.generate(ctx, genCPUs, []string{EtcdGenImage, "-endpoints", strings.Join(e.endpoints(), ",")}, args)
+	return e.runGenerator(ctx, genCPUs, []string{EtcdGenImage, "-endpoints", strings.Join(e.endpoints(), ",")}, args)
 }

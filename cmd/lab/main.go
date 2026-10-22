@@ -221,15 +221,22 @@ func profile(ctx context.Context, args []string) error {
 func bench(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("bench", flag.ContinueOnError)
 	experiments := fs.String("experiment", "e1b,e2,e3,e4,e5", "experiments to run, comma separated")
-	label := fs.String("label", time.Now().Format("20060102")+"-laptop", "results go to bench/results/<experiment>/<label>")
+	label := fs.String("label", "", "results go to bench/results/<experiment>/<label> (default <date>-laptop, or <date>-quick with -quick, which the results page leaves out)")
 	nodeCPUs := fs.String("node-cpus", "4,5,6,7,8,9,10", "one cpuset per node, comma separated")
 	genCPUs := fs.String("gen-cpus", "12-15", "the generator's cpuset")
-	quick := fs.Bool("quick", false, "one short configuration per experiment, to check the harness")
+	quick := fs.Bool("quick", false, "one short configuration per experiment and system, to check the harness")
 	only := fs.String("only", "", "run only the curves with these names, separated by semicolons")
 	repeat := fs.Int("repeat", 1, "run every curve this many times, interleaved and rotated")
 	build := fs.Bool("build", false, "build the lab image first")
 	if err := parse(fs, args); err != nil {
 		return err
+	}
+	if *label == "" {
+		suffix := "-laptop"
+		if *quick {
+			suffix = "-quick"
+		}
+		*label = time.Now().Format("20060102") + suffix
 	}
 	if *build {
 		if err := buildImage(ctx); err != nil {

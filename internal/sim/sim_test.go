@@ -3,6 +3,7 @@ package sim
 import (
 	"math/rand/v2"
 	"os"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -49,6 +50,38 @@ func runSeeds(from uint64, n int, opts Options) []Result {
 	close(next)
 	wg.Wait()
 	return results
+}
+
+func TestAddingStatsSumsEveryCounterAndKeepsTheHighestTerm(t *testing.T) {
+	stats := func(n uint64) Stats {
+		var s Stats
+		v := reflect.ValueOf(&s).Elem()
+		for i := range v.NumField() {
+			if f := v.Field(i); f.CanUint() {
+				f.SetUint(n)
+			} else {
+				f.SetInt(int64(n))
+			}
+		}
+		return s
+	}
+	sum := reflect.ValueOf(stats(1).Add(stats(2)))
+	for i := range sum.NumField() {
+		name, f := sum.Type().Field(i).Name, sum.Field(i)
+		var got uint64
+		if f.CanUint() {
+			got = f.Uint()
+		} else {
+			got = uint64(f.Int())
+		}
+		want := uint64(3)
+		if name == "MaxTerm" {
+			want = 2
+		}
+		if got != want {
+			t.Errorf("%s adds up to %d, want %d", name, got, want)
+		}
+	}
 }
 
 func TestSeeds(t *testing.T) {

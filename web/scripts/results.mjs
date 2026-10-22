@@ -16,8 +16,9 @@ const runs = (kind) =>
         .sort()
     : []
 const files = (kind, run) => readdirSync(path.join(root, kind, run)).filter((f) => f.endsWith('.json'))
-const newestComplete = (kind, usable) =>
+const newestComplete = (kind, usable, pick = () => true) =>
   runs(kind).findLast((run) => {
+    if (!pick(run)) return false
     const names = files(kind, run)
     return names.length > 0 && names.every((name) => usable(read(kind, run, name)))
   })
@@ -53,7 +54,14 @@ function failover() {
 function registry() {
   const run = newestComplete('registry', (f) => !f.error && Object.keys(f.variants ?? {}).length > 0)
   const f = run && read('registry', run, 'registry.json')
-  return f ? { run, ttl: f.options.ttl_ns, election: f.options.election, variants: f.variants } : null
+  if (!f) return null
+  const variants = Object.fromEntries(
+    Object.entries(f.variants).map(([name, v]) => [
+      name,
+      { ...v, median_ns: median(f.trials.filter((t) => t.variant === name && !t.error).map((t) => t.gone_ns)) },
+    ]),
+  )
+  return { run, ttl: f.options.ttl_ns, election: f.options.election, variants }
 }
 
 function lab() {
@@ -152,7 +160,11 @@ function batching() {
 }
 
 function e1b() {
-  const run = newestComplete('e1b', (f) => !f.error && f.rows?.length > 0)
+  const run = newestComplete(
+    'e1b',
+    (f) => !f.error && f.rows?.length > 0,
+    (r) => r.endsWith('-laptop'),
+  )
   const f = run && read('e1b', run, 'e1b.json')
   if (!f) return null
   return {
