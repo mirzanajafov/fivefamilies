@@ -58,13 +58,15 @@ func (s *Server) catchUp() {
 
 func (s *Server) drain() error {
 	for range s.cfg.Batch - 1 {
-		s.catchUp()
 		select {
 		case m := <-s.inbound:
+			s.catchUp()
 			s.node.Receive(m)
 		case f := <-s.calls:
+			s.catchUp()
 			f()
 		case seq := <-s.written:
+			s.catchUp()
 			if err := s.node.WriteDone(seq); err != nil {
 				return err
 			}
