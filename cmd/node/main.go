@@ -117,164 +117,206 @@ func ticks(d, tick time.Duration) int {
 	return int((d + tick - 1) / tick)
 }
 
-func main() {
-	id := flag.Uint64("id", 0, "this node's ID")
-	cluster := flag.String("cluster", "", "every node as id=host:port, comma separated")
-	voterList := flag.String("voters", "", "the voters a fresh cluster starts with (default: every node in -cluster); a node outside it waits to be added")
-	listen := flag.String("listen", "", "address to listen on (default: this node's port from -cluster, on all interfaces)")
-	data := flag.String("data", "data", "data directory")
-	tick := flag.Duration("tick", 10*time.Millisecond, "tick interval")
-	heartbeat := flag.Duration("heartbeat", 100*time.Millisecond, "heartbeat interval")
-	election := flag.Duration("election", time.Second, "minimum election timeout")
-	lease := flag.Duration("lease", 0, "leader lease for lease reads (0 turns them off)")
-	snapEvery := flag.Uint64("snapshot-every", 10000, "applied entries between snapshots")
-	retain := flag.Uint64("retain", 5000, "entries kept behind a snapshot for slow followers")
-	segment := flag.Int64("segment-bytes", 64<<20, "log segment size")
-	bugList := flag.String("bug", "", "planted bugs (only in builds made for testing)")
-	fsync := flag.String("fsync", "group", "group (one fsync for everything queued), ready (one per write), entry (one per entry), or off (unsafe, test builds only)")
-	syncStorage := flag.Bool("sync-storage", false, "wait for the disk inside the event loop, for measuring what asynchronous storage buys")
-	writeFirst := flag.Bool("write-before-send", false, "the leader writes entries before sending them, instead of in parallel")
-	maxInflight := flag.Int("max-inflight", 0, "append messages in flight per follower (1 turns pipelining off)")
-	maxMsgBytes := flag.Int("max-msg-bytes", 0, "bytes of entries per append message (1 sends one entry per message)")
-	batch := flag.Int("batch", 0, "events the loop takes before each Ready (default 256; 1 handles every event on its own)")
-	maxPending := flag.Uint64("max-pending", 4096, "uncommitted entries a leader holds before it refuses new writes (0 never refuses)")
-	restore := flag.String("restore", "", "start a new cluster from this backup file when the data directory is empty (every node needs the same file)")
-	chaos := flag.Bool("chaos", false, "accept chaos requests (stall-disk, pause, isolate, heal) on the admin API")
-	level := flag.String("log-level", "info", "debug, info, warn or error")
-	profile := flag.String("pprof", "", "serve Go profiles on this address (off by default; for the lab, never published in production)")
-	procs := flag.Int("gomaxprocs", 0, "Go processors (default: what the runtime picks, but at least 2)")
-	httpAddr := flag.String("http", "", "serve the HTTP registry API on this address (off by default)")
-	flag.Parse()
+type nodeFlags struct {
+	id                              uint64
+	cluster, voters, listen, data   string
+	tick, heartbeat, election       time.Duration
+	lease                           time.Duration
+	snapEvery, retain               uint64
+	segment                         int64
+	bugs, fsync                     string
+	syncStorage, writeFirst, chaos  bool
+	maxInflight, maxMsgBytes, batch int
+	maxPending                      uint64
+	restore                         string
+	level                           slog.Level
+	profile, http                   string
+	procs                           int
+}
 
-	var lvl slog.Level
-	if err := lvl.UnmarshalText([]byte(*level)); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
-	}
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: lvl}))
-	nodes, err := parseCluster(*cluster)
+func parseFlags() nodeFlags {
+	var f nodeFlags
+	flag.Uint64Var(&f.id, "id", 0, "this node's ID")
+	flag.StringVar(&f.cluster, "cluster", "", "every node as id=host:port, comma separated")
+	flag.StringVar(&f.voters, "voters", "", "the voters a fresh cluster starts with (default: every node in -cluster); a node outside it waits to be added")
+	flag.StringVar(&f.listen, "listen", "", "address to listen on (default: this node's port from -cluster, on all interfaces)")
+	flag.StringVar(&f.data, "data", "data", "data directory")
+	flag.DurationVar(&f.tick, "tick", 10*time.Millisecond, "tick interval")
+	flag.DurationVar(&f.heartbeat, "heartbeat", 100*time.Millisecond, "heartbeat interval")
+	flag.DurationVar(&f.election, "election", time.Second, "minimum election timeout")
+	flag.DurationVar(&f.lease, "lease", 0, "leader lease for lease reads (0 turns them off)")
+	flag.Uint64Var(&f.snapEvery, "snapshot-every", 10000, "applied entries between snapshots")
+	flag.Uint64Var(&f.retain, "retain", 5000, "entries kept behind a snapshot for slow followers")
+	flag.Int64Var(&f.segment, "segment-bytes", 64<<20, "log segment size")
+	flag.StringVar(&f.bugs, "bug", "", "planted bugs (only in builds made for testing)")
+	flag.StringVar(&f.fsync, "fsync", "group", "group (one fsync for everything queued), ready (one per write), entry (one per entry), or off (unsafe, test builds only)")
+	flag.BoolVar(&f.syncStorage, "sync-storage", false, "wait for the disk inside the event loop, for measuring what asynchronous storage buys")
+	flag.BoolVar(&f.writeFirst, "write-before-send", false, "the leader writes entries before sending them, instead of in parallel")
+	flag.IntVar(&f.maxInflight, "max-inflight", 0, "append messages in flight per follower (1 turns pipelining off)")
+	flag.IntVar(&f.maxMsgBytes, "max-msg-bytes", 0, "bytes of entries per append message (1 sends one entry per message)")
+	flag.IntVar(&f.batch, "batch", 0, "events the loop takes before each Ready (default 256; 1 handles every event on its own)")
+	flag.Uint64Var(&f.maxPending, "max-pending", 4096, "uncommitted entries a leader holds before it refuses new writes (0 never refuses)")
+	flag.StringVar(&f.restore, "restore", "", "start a new cluster from this backup file when the data directory is empty (every node needs the same file)")
+	flag.BoolVar(&f.chaos, "chaos", false, "accept chaos requests (stall-disk, pause, isolate, heal) on the admin API")
+	flag.TextVar(&f.level, "log-level", slog.LevelInfo, "debug, info, warn or error")
+	flag.StringVar(&f.profile, "pprof", "", "serve Go profiles on this address (off by default; for the lab, never published in production)")
+	flag.IntVar(&f.procs, "gomaxprocs", 0, "Go processors (default: what the runtime picks, but at least 2)")
+	flag.StringVar(&f.http, "http", "", "serve the HTTP registry API on this address (off by default)")
+	flag.Parse()
+	return f
+}
+
+func (f nodeFlags) config(logger *slog.Logger) (server.Config, string, error) {
+	nodes, err := parseCluster(f.cluster)
 	if err != nil {
-		logger.Error("bad -cluster", "err", err)
-		os.Exit(2)
+		return server.Config{}, "", fmt.Errorf("-cluster: %w", err)
 	}
-	voters, err := parseIDs(*voterList)
+	voters, err := parseIDs(f.voters)
 	if err != nil {
-		logger.Error("bad -voters", "err", err)
-		os.Exit(2)
+		return server.Config{}, "", fmt.Errorf("-voters: %w", err)
 	}
-	bugs, err := planted.Parse(*bugList)
-	if err != nil {
-		logger.Error("bad -bug", "err", err)
-		os.Exit(2)
+	bugs, err := planted.Parse(f.bugs)
+	switch {
+	case err != nil:
+		return server.Config{}, "", fmt.Errorf("-bug: %w", err)
+	case bugs != 0 && plantable != "yes":
+		return server.Config{}, "", fmt.Errorf("-bug %s: planted bugs are only available in test builds", f.bugs)
+	case f.fsync == server.FsyncOff && plantable != "yes":
+		return server.Config{}, "", errors.New("-fsync off is only available in test builds")
 	}
-	if bugs != 0 && plantable != "yes" {
-		logger.Error("planted bugs are only available in test builds", "bug", *bugList)
-		os.Exit(2)
-	}
-	if *fsync == server.FsyncOff && plantable != "yes" {
-		logger.Error("turning fsync off is only available in test builds")
-		os.Exit(2)
-	}
-	addr := *listen
+	addr := f.listen
 	if addr == "" {
-		_, port, err := net.SplitHostPort(nodes[raft.NodeID(*id)])
+		_, port, err := net.SplitHostPort(nodes[raft.NodeID(f.id)])
 		if err != nil {
-			logger.Error("no address for this node in -cluster", "id", *id)
-			os.Exit(2)
+			return server.Config{}, "", fmt.Errorf("-cluster has no address for node %d", f.id)
 		}
 		addr = ":" + port
 	}
-	cfg := server.Config{
-		ID:              raft.NodeID(*id),
+	return server.Config{
+		ID:              raft.NodeID(f.id),
 		Nodes:           nodes,
 		Voters:          voters,
-		DataDir:         *data,
-		Tick:            *tick,
-		HeartbeatTick:   ticks(*heartbeat, *tick),
-		ElectionTick:    ticks(*election, *tick),
-		LeaseTicks:      ticks(*lease, *tick),
-		SnapshotEvery:   *snapEvery,
-		Retain:          *retain,
-		SegmentBytes:    *segment,
+		DataDir:         f.data,
+		Tick:            f.tick,
+		HeartbeatTick:   ticks(f.heartbeat, f.tick),
+		ElectionTick:    ticks(f.election, f.tick),
+		LeaseTicks:      ticks(f.lease, f.tick),
+		SnapshotEvery:   f.snapEvery,
+		Retain:          f.retain,
+		SegmentBytes:    f.segment,
 		Bugs:            bugs,
 		Logger:          logger,
-		FsyncMode:       *fsync,
-		SyncStorage:     *syncStorage,
-		WriteBeforeSend: *writeFirst,
-		MaxInflight:     *maxInflight,
-		MaxMsgBytes:     *maxMsgBytes,
-		Batch:           *batch,
-		MaxPending:      *maxPending,
-		Chaos:           *chaos,
+		FsyncMode:       f.fsync,
+		SyncStorage:     f.syncStorage,
+		WriteBeforeSend: f.writeFirst,
+		MaxInflight:     f.maxInflight,
+		MaxMsgBytes:     f.maxMsgBytes,
+		Batch:           f.batch,
+		MaxPending:      f.maxPending,
+		Chaos:           f.chaos,
+	}, addr, nil
+}
+
+func restoreBackup(file string, cfg server.Config) error {
+	f, sum, err := backup.Load(file)
+	if err != nil {
+		return fmt.Errorf("reading the backup %s: %w", file, err)
 	}
-	if *restore != "" {
-		f, sum, err := backup.Load(*restore)
-		if err != nil {
-			logger.Error("reading the backup", "file", *restore, "err", err)
-			os.Exit(1)
-		}
-		ids := voters
-		if len(ids) == 0 {
-			for id := range nodes {
-				ids = append(ids, id)
-			}
-		}
-		done, err := server.Restore(*data, ids, f)
-		if err != nil {
-			logger.Error("restoring", "err", err)
-			os.Exit(1)
-		}
-		if done {
-			logger.Info("restored a backup", "rev", sum.Rev, "keys", sum.Keys)
-		} else {
-			logger.Info("the data directory already holds a log; the backup is not used", "file", *restore)
+	ids := cfg.Voters
+	if len(ids) == 0 {
+		ids = slices.Collect(maps.Keys(cfg.Nodes))
+	}
+	done, err := server.Restore(cfg.DataDir, ids, f)
+	if err != nil {
+		return fmt.Errorf("restoring: %w", err)
+	}
+	if done {
+		cfg.Logger.Info("restored a backup", "rev", sum.Rev, "keys", sum.Keys)
+	} else {
+		cfg.Logger.Info("the data directory already holds a log; the backup is not used", "file", file)
+	}
+	return nil
+}
+
+type node struct {
+	srv      *server.Server
+	grpc     *grpc.Server
+	ln       net.Listener
+	closeAPI func()
+	logger   *slog.Logger
+}
+
+func start(f nodeFlags, cfg server.Config, addr string) (*node, error) {
+	if f.restore != "" {
+		if err := restoreBackup(f.restore, cfg); err != nil {
+			return nil, err
 		}
 	}
 	srv, err := server.New(cfg)
 	if err != nil {
-		logger.Error("starting", "err", err)
-		os.Exit(1)
+		return nil, err
 	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		logger.Error("listening", "addr", addr, "err", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("listening: %w", err)
 	}
-	closeAPI := func() {}
-	if *httpAddr != "" {
-		if closeAPI, err = serveAPI(*httpAddr, raft.NodeID(*id), nodes, srv, logger); err != nil {
-			logger.Error("serving the HTTP API", "addr", *httpAddr, "err", err)
-			os.Exit(1)
+	n := &node{srv: srv, grpc: grpc.NewServer(transport.ServerOptions()...), ln: ln, closeAPI: func() {}, logger: cfg.Logger}
+	if f.http != "" {
+		if n.closeAPI, err = serveAPI(f.http, cfg.ID, cfg.Nodes, srv, cfg.Logger); err != nil {
+			return nil, fmt.Errorf("serving the HTTP API: %w", err)
 		}
 	}
-	g := grpc.NewServer(transport.ServerOptions()...)
-	srv.Register(g)
+	srv.Register(n.grpc)
+	return n, nil
+}
+
+func (n *node) serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	go func() {
-		if err := g.Serve(ln); err != nil {
-			logger.Error("serving", "err", err)
+		if err := n.grpc.Serve(n.ln); err != nil {
+			n.logger.Error("serving", "err", err)
 		}
 	}()
-	runtime.GOMAXPROCS(goProcs(*procs, runtime.GOMAXPROCS(0)))
-	if *profile != "" {
-		runtime.SetMutexProfileFraction(10)
-		runtime.SetBlockProfileRate(int(100 * time.Microsecond))
-		go serveProfiles(*profile, logger)
-	}
-	logger.Info("node started", "id", *id, "addr", addr, "http", *httpAddr, "nodes", len(nodes), "election", *election, "lease", *lease)
 	running, stopRunning := context.WithCancel(context.Background())
 	go func() {
 		<-ctx.Done()
 		stop()
-		closeAPI()
+		n.closeAPI()
 		stopRunning()
 	}()
-	if err := srv.Run(running); err != nil {
-		stop()
-		g.Stop()
+	err := n.srv.Run(running)
+	stop()
+	if err != nil {
+		n.grpc.Stop()
+		return err
+	}
+	n.grpc.GracefulStop()
+	return nil
+}
+
+func main() {
+	f := parseFlags()
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: f.level}))
+	cfg, addr, err := f.config(logger)
+	if err != nil {
+		logger.Error("bad flags", "err", err)
+		os.Exit(2)
+	}
+	n, err := start(f, cfg, addr)
+	if err != nil {
+		logger.Error("starting", "err", err)
+		os.Exit(1)
+	}
+	runtime.GOMAXPROCS(goProcs(f.procs, runtime.GOMAXPROCS(0)))
+	if f.profile != "" {
+		runtime.SetMutexProfileFraction(10)
+		runtime.SetBlockProfileRate(int(100 * time.Microsecond))
+		go serveProfiles(f.profile, logger)
+	}
+	logger.Info("node started", "id", f.id, "addr", addr, "http", f.http, "nodes", len(cfg.Nodes), "election", f.election, "lease", f.lease)
+	if err := n.serve(); err != nil {
 		logger.Error("fatal", "err", err)
 		os.Exit(70)
 	}
-	g.GracefulStop()
 	logger.Info("node stopped")
 }

@@ -19,7 +19,31 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/sim"
 )
 
+type config struct {
+	opts     sim.Options
+	catch    sim.Category
+	seed     uint64
+	trace    bool
+	viz      string
+	from     uint64
+	count    int
+	parallel int
+	first    bool
+}
+
 func main() {
+	c, err := parseFlags()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "-catch or -bug can never fire:", err)
+		os.Exit(2)
+	}
+	if c.seed != 0 {
+		os.Exit(c.replay())
+	}
+	os.Exit(c.batch())
+}
+
+func parseFlags() (config, error) {
 	seed := flag.Uint64("seed", 0, "run one seed and print its result")
 	trace := flag.Bool("trace", false, "with -seed, print every event")
 	viz := flag.String("viz", "", "with -seed, write the history's linearizability visualization to this HTML file")
@@ -79,114 +103,123 @@ func main() {
 	}
 	opts.Bugs = bugs
 	opts.MuteSafety = *mute
-	if err := opts.Validate(catch); err != nil {
-		fmt.Fprintln(os.Stderr, "-catch or -bug can never fire:", err)
-		os.Exit(2)
-	}
+	c := config{opts: opts, catch: catch, seed: *seed, trace: *trace, viz: *viz, from: *from, count: *count, parallel: *parallel, first: *first}
+	return c, opts.Validate(catch)
+}
 
-	if *seed != 0 {
-		if *trace {
-			opts.Trace = os.Stdout
-		}
-		res := sim.Run(*seed, opts)
-		printResult(res, catch)
-		if *viz != "" {
-			if err := visualize(res, *viz); err != nil {
-				fmt.Fprintln(os.Stderr, "visualization:", err)
-			}
-		}
-		fmt.Print(res.Stack)
-		if _, out := verdict(res, catch); out != clean {
-			os.Exit(1)
-		}
-		return
+func (c config) replay() int {
+	if c.trace {
+		c.opts.Trace = os.Stdout
 	}
+	res := sim.Run(c.seed, c.opts)
+	printResult(res, c.catch)
+	if c.viz != "" {
+		if err := visualize(res, c.viz); err != nil {
+			fmt.Fprintln(os.Stderr, "visualization:", err)
+		}
+	}
+	fmt.Print(res.Stack)
+	if _, out := verdict(res, c.catch); out != clean {
+		return 1
+	}
+	return 0
+}
 
+type tally struct {
+	ran                  int
+	failed               []sim.Result
+	total                sim.Stats
+	checkTotal, checkMax time.Duration
+	unknown, short       []uint64
+	categories, detected map[sim.Category]int
+	lowest               uint64
+}
+
+func (t *tally) add(res sim.Result, catch sim.Category) outcome {
+	t.ran++
+	for cat := range res.Detected {
+		t.detected[cat]++
+	}
+	t.total = t.total.Add(res.Stats)
+	t.checkTotal += res.CheckTook
+	t.checkMax = max(t.checkMax, res.CheckTook)
+	if res.Check == porcupine.Unknown {
+		t.unknown = append(t.unknown, res.Seed)
+	}
+	cat, out := verdict(res, catch)
+	switch out {
+	case caught:
+		t.failed = append(t.failed, res)
+		t.categories[cat]++
+		if t.lowest == 0 || res.Seed < t.lowest {
+			t.lowest = res.Seed
+		}
+	case cutShort:
+		t.short = append(t.short, res.Seed)
+	}
+	return out
+}
+
+func (c config) batch() int {
 	start := time.Now()
 	var next atomic.Uint64
-	next.Store(*from)
-	last := *from + uint64(*count)
+	next.Store(c.from)
+	last := c.from + uint64(c.count)
 	var mu sync.Mutex
-	var failed []sim.Result
-	var total sim.Stats
-	var checkTotal, checkMax time.Duration
-	var unknown, short []uint64
-	ran := 0
-	categories := map[sim.Category]int{}
-	detected := map[sim.Category]int{}
-	var lowest uint64
+	t := tally{categories: map[sim.Category]int{}, detected: map[sim.Category]int{}}
 	var stop atomic.Bool
 	var wg sync.WaitGroup
-	for range *parallel {
+	for range c.parallel {
 		wg.Go(func() {
-			for {
-				s := next.Add(1) - 1
-				if s >= last || stop.Load() {
-					return
-				}
-				res := sim.Run(s, opts)
+			for s := next.Add(1) - 1; s < last && !stop.Load(); s = next.Add(1) - 1 {
+				res := sim.Run(s, c.opts)
 				mu.Lock()
-				ran++
-				for cat := range res.Detected {
-					detected[cat]++
-				}
-				total = total.Add(res.Stats)
-				checkTotal += res.CheckTook
-				checkMax = max(checkMax, res.CheckTook)
-				if res.Check == porcupine.Unknown {
-					unknown = append(unknown, res.Seed)
-				}
-				switch cat, out := verdict(res, catch); out {
-				case caught:
-					failed = append(failed, res)
-					categories[cat]++
-					if lowest == 0 || res.Seed < lowest {
-						lowest = res.Seed
-					}
-					if *first {
+				if t.add(res, c.catch) == caught {
+					if c.first {
 						stop.Store(true)
 					} else {
-						printResult(res, catch)
+						printResult(res, c.catch)
 					}
-				case cutShort:
-					short = append(short, res.Seed)
 				}
 				mu.Unlock()
 			}
 		})
 	}
 	wg.Wait()
-	elapsed := time.Since(start)
+	return c.report(t, time.Since(start))
+}
+
+func (c config) report(t tally, elapsed time.Duration) int {
 	fmt.Printf("%d seeds from %d in %v (%.1f ms per seed per core), %d failed\n",
-		ran, *from, elapsed.Round(time.Millisecond), float64(elapsed.Milliseconds())*float64(*parallel)/float64(max(ran, 1)), len(failed))
-	fmt.Printf("totals: %+v\n", total)
-	fmt.Printf("linearizability checks: %v in total, %v at most, %d timed out\n", checkTotal.Round(time.Millisecond), checkMax.Round(time.Millisecond), len(unknown))
-	if len(unknown) > 0 {
-		slices.Sort(unknown)
-		fmt.Printf("seeds whose check timed out: %v\n", unknown)
+		t.ran, c.from, elapsed.Round(time.Millisecond), float64(elapsed.Milliseconds())*float64(c.parallel)/float64(max(t.ran, 1)), len(t.failed))
+	fmt.Printf("totals: %+v\n", t.total)
+	fmt.Printf("linearizability checks: %v in total, %v at most, %d timed out\n", t.checkTotal.Round(time.Millisecond), t.checkMax.Round(time.Millisecond), len(t.unknown))
+	if len(t.unknown) > 0 {
+		slices.Sort(t.unknown)
+		fmt.Printf("seeds whose check timed out: %v\n", t.unknown)
 	}
-	if len(detected) > 0 {
-		fmt.Printf("seeds where each check fired: %v\n", detected)
+	if len(t.detected) > 0 {
+		fmt.Printf("seeds where each check fired: %v\n", t.detected)
 	}
-	if len(short) > 0 {
-		slices.Sort(short)
-		fmt.Printf("seeds another check stopped before %s could be judged: %v\n", catch, short)
+	if len(t.short) > 0 {
+		slices.Sort(t.short)
+		fmt.Printf("seeds another check stopped before %s could be judged: %v\n", c.catch, t.short)
 	}
-	if len(failed) == 0 {
-		if len(short) > 0 {
-			os.Exit(1)
+	if len(t.failed) == 0 {
+		if len(t.short) > 0 {
+			return 1
 		}
-		return
+		return 0
 	}
-	fmt.Printf("failures by category: %v; lowest failing seed %d, the %dth of the batch\n", categories, lowest, lowest-*from+1)
-	if *first {
-		for _, f := range failed {
-			if f.Seed == lowest {
-				printResult(f, catch)
+	fmt.Printf("failures by category: %v; lowest failing seed %d, the %dth of the batch\n", t.categories, t.lowest, t.lowest-c.from+1)
+	if c.first {
+		for _, f := range t.failed {
+			if f.Seed == t.lowest {
+				printResult(f, c.catch)
 			}
 		}
 	}
-	os.Exit(1)
+	return 1
 }
 
 type outcome int
