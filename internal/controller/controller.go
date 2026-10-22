@@ -93,27 +93,27 @@ type Controller struct {
 	load   loadMeter
 	viewed audience
 
-	mu      sync.Mutex
-	nodes   []NodeView
-	silent  []time.Time
-	prev    []*pb.StatusResponse
-	prevAt  time.Time
-	leader  int
-	term    uint64
-	voters  string
-	events  []Event
-	windows []Window
-	fault   *Fault
-	last    *Fault
-	faults  int
-	byAddr  map[string][]time.Time
+	mu       sync.Mutex
+	nodes    []NodeView
+	silent   []time.Time
+	prev     []*pb.StatusResponse
+	prevAt   time.Time
+	leader   int
+	term     uint64
+	voters   string
+	events   []Event
+	windows  []Window
+	fault    *Fault
+	last     *Fault
+	faults   int
+	visitors limiter
 }
 
 func New(cfg Config) (*Controller, error) {
 	if err := cfg.defaults(); err != nil {
 		return nil, err
 	}
-	c := &Controller{cfg: cfg, start: time.Now(), byAddr: map[string][]time.Time{}}
+	c := &Controller{cfg: cfg, start: time.Now(), visitors: limiter{per: cfg.PerAddress, window: cfg.PerWindow, byAddr: map[string][]time.Time{}}}
 	for _, a := range cfg.Nodes {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {

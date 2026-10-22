@@ -401,3 +401,41 @@ func TestANodeIsShownDownOnlyAfterItHasBeenSilentForAWhile(t *testing.T) {
 		t.Fatal("one missed poll after coming back shows the node as down")
 	}
 }
+
+func TestTheVisitorLimitForgetsAnAddressOnceItsWindowHasPassed(t *testing.T) {
+	l := limiter{per: 2, window: time.Minute, byAddr: map[string][]time.Time{}}
+	now := time.Now()
+	if !l.allow("a", now) || !l.allow("a", now.Add(time.Second)) || l.allow("a", now.Add(2*time.Second)) {
+		t.Fatal("two faults per minute from one address, then a refusal")
+	}
+	if !l.allow("b", now.Add(2*time.Minute)) || len(l.byAddr) != 1 {
+		t.Fatalf("after the window the first address is still kept: %v", l.byAddr)
+	}
+	if !l.allow("a", now.Add(2*time.Minute)) {
+		t.Fatal("an address was refused after its window passed")
+	}
+}
+
+func TestAFaultThatCouldNotStartTellsTheVisitorWithoutTheRPCError(t *testing.T) {
+	c, err := New(Config{Nodes: []string{"127.0.0.1:1"}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	api := httptest.NewServer(c.Handler())
+	defer api.Close()
+	resp, err := http.Post(api.URL+"/api/chaos", "application/json", strings.NewReader(`{"action":"isolate","node":1,"seconds":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err := errors.Join(err, resp.Body.Close()); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadGateway || strings.TrimSpace(string(body)) != `{"error":"isolate on node 1 could not be started"}` {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+	if s := c.Snapshot(); s.Fault != nil {
+		t.Fatalf("a fault that never started is still running: %+v", s.Fault)
+	}
+}
