@@ -109,3 +109,33 @@ func TestMembersChangeAndLeadershipMovesOverTheWire(t *testing.T) {
 		t.Fatalf("node 4 forgot the configuration across a restart: %v", st.GetVoters())
 	}
 }
+
+func TestATransferEndsWhenANodeOtherThanTheTargetTakesOver(t *testing.T) {
+	c := newTestCluster(t, 5, func(cfg *Config) { cfg.Chaos = true })
+	old := c.leader(5 * time.Second)
+	target := old%5 + 1
+	chaos(t, c, target, pb.ChaosAction_CHAOS_ACTION_ISOLATE, time.Minute)
+	admin := c.admin(old)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := admin.TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: uint64(target)})
+		done <- err
+	}()
+	for c.running[old].srv.Status().GetTransferee() != uint64(target) {
+		if ctx.Err() != nil {
+			t.Fatal("the transfer never started")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	chaos(t, c, old, pb.ChaosAction_CHAOS_ACTION_PAUSE, time.Second)
+	start := time.Now()
+	err := <-done
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("the transfer ended with %v after %v, want FailedPrecondition once another node leads", err, time.Since(start).Round(time.Millisecond))
+	}
+	if lead := c.leader(5 * time.Second); lead == old || lead == target {
+		t.Fatalf("node %d leads, want one of the nodes that were neither paused nor isolated", lead)
+	}
+}

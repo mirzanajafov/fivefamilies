@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	ErrTransferAborted = errors.New("server: the transfer gave up, the target did not take over within an election timeout")
+	ErrTransferAborted = errors.New("server: the transfer ended without the target taking over")
 	errLeaseNotFound   = errors.New("server: lease not found")
 )
 
@@ -53,7 +53,8 @@ func (s *Server) TransferLeadership(ctx context.Context, to raft.NodeID) error {
 			return nil
 		case to == s.cfg.ID && st.GetRole() == pb.Role_ROLE_LEADER:
 			return nil
-		case st.GetRole() == pb.Role_ROLE_LEADER && st.GetTransferee() == 0:
+		case st.GetRole() == pb.Role_ROLE_LEADER && st.GetTransferee() == 0,
+			st.GetRole() != pb.Role_ROLE_LEADER && st.GetLeader() != 0:
 			return ErrTransferAborted
 		}
 		select {
