@@ -13,6 +13,7 @@ import (
 
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
 	"github.com/mirzanajafov/fivefamilies/client"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type RegistryOptions struct {
@@ -88,7 +89,7 @@ func (s *sighting) when(name string, gone bool) (time.Time, bool) {
 
 func (s *sighting) await(ctx context.Context, name string, gone bool, limit time.Duration) (time.Time, error) {
 	var at time.Time
-	err := Poll(ctx, 5*time.Millisecond, limit, func(context.Context) (bool, error) {
+	err := rig.Poll(ctx, 5*time.Millisecond, limit, func(context.Context) (bool, error) {
 		t, ok := s.when(name, gone)
 		at = t
 		return ok, nil
@@ -109,7 +110,7 @@ func Registry(ctx context.Context, opts RegistryOptions, out string) (RegistryRe
 		res.Err = err.Error()
 	}
 	if out != "" {
-		if serr := SaveJSON(out, "registry.json", res); serr != nil {
+		if serr := rig.SaveJSON(out, "registry.json", res); serr != nil {
 			return res, errors.Join(err, serr)
 		}
 	}
@@ -123,8 +124,8 @@ func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, err
 	if err != nil {
 		return res, err
 	}
-	defer c.stop(opts.Log, false)
-	if _, err := Steady(ctx, c.adm); err != nil {
+	defer c.stop(opts.Log)
+	if _, err := c.adm.Steady(ctx); err != nil {
 		return res, err
 	}
 	cl, err := client.New(c.addrs, client.Options{})
@@ -140,10 +141,10 @@ func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, err
 	}
 	sg := &sighting{seen: map[string]time.Time{}, gone: map[string]time.Time{}}
 	go sg.follow(seen)
-	r := &registryRun{d: c.d, sg: sg, opts: opts, rng: rand.New(rand.NewPCG(opts.Seed, 11))}
+	r := &registryRun{d: c.d, endpoints: strings.Join(rig.NetworkAddrs(c.d.Nodes), ","), sg: sg, opts: opts, rng: rand.New(rand.NewPCG(opts.Seed, 11))}
 	var runErr error
 	for t := 0; t < 2*opts.Trials && ctx.Err() == nil; t++ {
-		leader, err := Steady(ctx, c.adm)
+		leader, err := c.adm.Steady(ctx)
 		if err != nil {
 			runErr = err
 			break
@@ -168,10 +169,11 @@ func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, err
 }
 
 type registryRun struct {
-	d    *Docker
-	sg   *sighting
-	opts RegistryOptions
-	rng  *rand.Rand
+	d         *Docker
+	endpoints string
+	sg        *sighting
+	opts      RegistryOptions
+	rng       *rand.Rand
 }
 
 func (r *registryRun) trial(ctx context.Context, t, leader int) (RegistryTrial, error) {
@@ -180,13 +182,9 @@ func (r *registryRun) trial(ctx context.Context, t, leader int) (RegistryTrial, 
 		variant = "instance+leader"
 	}
 	tr := RegistryTrial{Variant: variant, Instance: fmt.Sprintf("i%d", t)}
-	var inside []string
-	for i := 1; i <= r.d.Nodes; i++ {
-		inside = append(inside, fmt.Sprintf("n%d:3161", i))
-	}
-	name := fmt.Sprintf("%s-reg-%d", r.d.Project, t)
-	_, runErr := r.d.Cmd(ctx, nil, "run", "-d", "--name", name, "--network", r.d.Project+"_lab", "--entrypoint", "ffctl", "fivefamilies-lab-node",
-		"-endpoints", strings.Join(inside, ","), "register", "bench", tr.Instance, "10.9.9.9:80", r.opts.TTL.String())
+	name := fmt.Sprintf("%s-reg-%d", r.d.Name, t)
+	_, runErr := r.d.Cmd(ctx, nil, "run", "-d", "--name", name, "--network", r.d.Name+"_lab", "--entrypoint", "ffctl", "fivefamilies-lab-node",
+		"-endpoints", r.endpoints, "register", "bench", tr.Instance, "10.9.9.9:80", r.opts.TTL.String())
 	if runErr == nil {
 		if err := r.killAndTime(ctx, &tr, name, leader); err != nil {
 			tr.Err = err.Error()
@@ -209,7 +207,7 @@ func (r *registryRun) killAndTime(ctx context.Context, tr *RegistryTrial, name s
 		return err
 	}
 	tr.Held = time.Duration(r.rng.Int64N(int64(r.opts.TTL))) + r.opts.TTL
-	Wait(ctx, time.Until(appeared.Add(tr.Held)))
+	rig.Wait(ctx, time.Until(appeared.Add(tr.Held)))
 	killed := time.Now()
 	var instanceErr, leaderErr error
 	var wg sync.WaitGroup

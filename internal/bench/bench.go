@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
-	"github.com/mirzanajafov/fivefamilies/internal/lab"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 const benchProject = "ffbench"
@@ -57,7 +57,7 @@ func quote(args []string) string {
 
 type composeCluster struct {
 	dir  string
-	d    *lab.Docker
+	d    *rig.Project
 	gens int
 }
 
@@ -71,7 +71,7 @@ func (c *composeCluster) start(ctx context.Context, project string, services []s
 	if err := os.WriteFile(file, []byte(composeFile(services)), 0o644); err != nil {
 		return err
 	}
-	c.d = &lab.Docker{Project: project, File: file, Nodes: len(services)}
+	c.d = &rig.Project{Name: project, File: file}
 	if err := c.d.Down(ctx); err != nil {
 		return err
 	}
@@ -91,8 +91,8 @@ func (c *composeCluster) Down() error {
 
 func (c *composeCluster) runGenerator(ctx context.Context, genCPUs string, command, args []string) (loadgen.Report, error) {
 	c.gens++
-	name := fmt.Sprintf("%s-gen-%d", c.d.Project, c.gens)
-	run := append([]string{"run", "--rm", "--name", name, "--network", c.d.Project + "_bench", "--cpuset-cpus", genCPUs}, command...)
+	name := fmt.Sprintf("%s-gen-%d", c.d.Name, c.gens)
+	run := append([]string{"run", "--rm", "--name", name, "--network", c.d.Name + "_bench", "--cpuset-cpus", genCPUs}, command...)
 	out, err := c.d.Cmd(ctx, nil, append(run, args...)...)
 	if err != nil {
 		_, rmErr := c.d.Cmd(context.Background(), nil, "rm", "-f", name)
@@ -125,22 +125,6 @@ type ffCluster struct {
 	composeCluster
 }
 
-func (b *ffCluster) addrs() []string {
-	var out []string
-	for i := 1; i <= b.Nodes; i++ {
-		out = append(out, fmt.Sprintf("127.0.0.1:315%d", i))
-	}
-	return out
-}
-
-func (b *ffCluster) inside() string {
-	var out []string
-	for i := 1; i <= b.Nodes; i++ {
-		out = append(out, fmt.Sprintf("n%d:3161", i))
-	}
-	return strings.Join(out, ",")
-}
-
 func (b *ffCluster) services() []service {
 	var cluster []string
 	for i := 1; i <= b.Nodes; i++ {
@@ -169,17 +153,17 @@ func (b *ffCluster) Up(ctx context.Context) error {
 	if err := b.start(ctx, benchProject, b.services()); err != nil {
 		return err
 	}
-	adm, err := lab.DialAdmin(b.addrs())
+	adm, err := rig.DialAdmin(rig.HostAddrs(b.Nodes))
 	if err != nil {
 		return err
 	}
 	defer adm.Close()
-	_, err = lab.Steady(ctx, adm)
+	_, err = adm.Steady(ctx)
 	return err
 }
 
 func (b *ffCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
-	return b.runGenerator(ctx, genCPUs, []string{"--entrypoint", "ffbench", b.Image, "-nodes", b.inside()}, args)
+	return b.runGenerator(ctx, genCPUs, []string{"--entrypoint", "ffbench", b.Image, "-nodes", strings.Join(rig.NetworkAddrs(b.Nodes), ",")}, args)
 }
 
 type Step struct {
@@ -279,27 +263,27 @@ func sweep(ctx context.Context, sys sweepable, c Curve, opts sweepOptions) (Curv
 func settle(ctx context.Context, probe func(context.Context) (uint64, bool)) error {
 	var last uint64
 	was := false
-	err := lab.Poll(ctx, 500*time.Millisecond, 2*time.Minute, func(ctx context.Context) (bool, error) {
+	err := rig.Poll(ctx, 500*time.Millisecond, 2*time.Minute, func(ctx context.Context) (bool, error) {
 		at, idle := probe(ctx)
 		quiet := idle && was && at == last
 		last, was = at, idle
 		return quiet, nil
 	})
-	if errors.Is(err, lab.ErrGaveUp) {
+	if errors.Is(err, rig.ErrGaveUp) {
 		return fmt.Errorf("the cluster was still working through its backlog: %w", err)
 	}
 	return err
 }
 
 func (b *ffCluster) Quiet(ctx context.Context) error {
-	adm, err := lab.DialAdmin(b.addrs())
+	adm, err := rig.DialAdmin(rig.HostAddrs(b.Nodes))
 	if err != nil {
 		return err
 	}
 	defer adm.Close()
 	return settle(ctx, func(ctx context.Context) (uint64, bool) {
 		sts := adm.Progress(ctx, time.Second)
-		l, _ := lab.LeaderOf(sts)
+		l, _ := rig.LeaderOf(sts)
 		if l == 0 {
 			return 0, false
 		}

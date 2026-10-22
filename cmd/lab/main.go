@@ -61,7 +61,7 @@ func checkRun(read client.ReadMode, bugs planted.Bug, faults []lab.FaultKind, el
 	return nil
 }
 
-func failover(ctx context.Context, args []string) error {
+func runFailover(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("failover", flag.ContinueOnError)
 	elections := fs.String("election", "150ms,300ms,600ms,1s", "election timeouts to sweep; the heartbeat is a third of each")
 	trials := fs.Int("trials", 10, "leader kills per election timeout")
@@ -109,7 +109,7 @@ func failover(ctx context.Context, args []string) error {
 	return nil
 }
 
-func registry(ctx context.Context, args []string) error {
+func runRegistry(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("registry", flag.ContinueOnError)
 	election := fs.String("election", "1s", "election timeout")
 	heartbeat := fs.String("heartbeat", "100ms", "heartbeat interval")
@@ -142,7 +142,7 @@ func registry(ctx context.Context, args []string) error {
 	return nil
 }
 
-func profile(ctx context.Context, args []string) error {
+func runProfile(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("profile", flag.ContinueOnError)
 	nodes := fs.Int("nodes", 5, "cluster size")
 	rate := fs.Float64("rate", 4000, "operations per second while profiling")
@@ -384,9 +384,9 @@ func runLab(ctx context.Context, args []string) error {
 
 func main() {
 	commands := map[string]func(context.Context, []string) error{
-		"failover": failover,
-		"registry": registry,
-		"profile":  profile,
+		"failover": runFailover,
+		"registry": runRegistry,
+		"profile":  runProfile,
 		"bench":    runBench,
 	}
 	run, args := runLab, os.Args[1:]

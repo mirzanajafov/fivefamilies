@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
-	"github.com/mirzanajafov/fivefamilies/internal/lab"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type ProfileOptions struct {
@@ -74,12 +74,12 @@ func fetchProfile(ctx context.Context, url, file string) error {
 }
 
 func (b *ffCluster) leader(ctx context.Context) (int, error) {
-	adm, err := lab.DialAdmin(b.addrs())
+	adm, err := rig.DialAdmin(rig.HostAddrs(b.Nodes))
 	if err != nil {
 		return 0, err
 	}
 	defer adm.Close()
-	return lab.Steady(ctx, adm)
+	return adm.Steady(ctx)
 }
 
 func (b *ffCluster) phase(ctx context.Context, o ProfileOptions, name string, rate float64, seconds int) ProfilePhase {
@@ -113,7 +113,7 @@ func collect(ctx context.Context, o ProfileOptions, p *ProfilePhase, seconds int
 	if err := os.MkdirAll(raw, 0o755); err != nil {
 		return err
 	}
-	if !lab.Wait(ctx, 4*time.Second) {
+	if !rig.Wait(ctx, 4*time.Second) {
 		return ctx.Err()
 	}
 	var mu sync.Mutex
@@ -140,7 +140,7 @@ func collect(ctx context.Context, o ProfileOptions, p *ProfilePhase, seconds int
 			get(n, "trace", fmt.Sprintf("trace?seconds=%d", int(o.Trace/time.Second)))
 		}
 	}
-	if lab.Wait(ctx, time.Duration(seconds)*time.Second/2) {
+	if rig.Wait(ctx, time.Duration(seconds)*time.Second/2) {
 		get(p.Leader, "goroutine", "goroutine")
 	}
 	fetches.Wait()
@@ -181,7 +181,7 @@ func Profile(ctx context.Context, o ProfileOptions) (ProfileReport, error) {
 		s := p.Report.Summary
 		o.Log("%s: achieved %.0f/s, p50 %v, p99 %v, %d errors, leader n%d %s", step.name, s.Achieved, s.All.P50, s.All.P99, s.All.Error, p.Leader, p.Err)
 		rep.Phases = append(rep.Phases, p)
-		if err := lab.SaveJSON(o.Out, "profile.json", rep); err != nil {
+		if err := rig.SaveJSON(o.Out, "profile.json", rep); err != nil {
 			return rep, err
 		}
 		if ctx.Err() != nil {

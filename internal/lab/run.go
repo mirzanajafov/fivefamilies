@@ -14,6 +14,7 @@ import (
 
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/check"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type Options struct {
@@ -71,9 +72,13 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	defer c.stop(opts.Log, opts.Keep)
-	err = Poll(ctx, 200*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
-		l, _ := LeaderOf(c.adm.Statuses(ctx, time.Second))
+	if opts.Keep {
+		defer c.adm.Close()
+	} else {
+		defer c.stop(opts.Log)
+	}
+	err = rig.Poll(ctx, 200*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
+		l, _ := rig.LeaderOf(c.adm.Statuses(ctx, time.Second))
 		return l > 0, nil
 	})
 	if err != nil {
@@ -87,7 +92,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	work.Go(func() { w.run(stopWork) })
 	rep.Faults = injectFaults(ctx, opts, c, start, leaders.current)
 	rep.Problems = append(rep.Problems, restoreNodes(c.d)...)
-	Wait(ctx, opts.Settle)
+	rig.Wait(ctx, opts.Settle)
 	close(stopWork)
 	rep.Leaders = leaders.stop()
 	work.Wait()
@@ -118,14 +123,14 @@ type leaderWatch struct {
 	done    chan struct{}
 }
 
-func watchLeaders(ctx context.Context, adm *Admin, start time.Time) *leaderWatch {
+func watchLeaders(ctx context.Context, adm *rig.Admin, start time.Time) *leaderWatch {
 	ctx, cancel := context.WithCancel(ctx)
 	lw := &leaderWatch{cancel: cancel, done: make(chan struct{})}
 	go func() {
 		defer close(lw.done)
 		lastLeader, lastTerm := -1, uint64(0)
 		for ctx.Err() == nil {
-			l, t := LeaderOf(adm.Statuses(ctx, 300*time.Millisecond))
+			l, t := rig.LeaderOf(adm.Statuses(ctx, 300*time.Millisecond))
 			lw.mu.Lock()
 			lw.leader = l
 			if l != lastLeader || t != lastTerm {
@@ -133,7 +138,7 @@ func watchLeaders(ctx context.Context, adm *Admin, start time.Time) *leaderWatch
 				lastLeader, lastTerm = l, t
 			}
 			lw.mu.Unlock()
-			Wait(ctx, 200*time.Millisecond)
+			rig.Wait(ctx, 200*time.Millisecond)
 		}
 	}()
 	return lw
@@ -183,8 +188,8 @@ func restoreNodes(d *Docker) []string {
 	return problems
 }
 
-func compareStates(ctx context.Context, adm *Admin, rep *Report) error {
-	return Poll(ctx, 500*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
+func compareStates(ctx context.Context, adm *rig.Admin, rep *Report) error {
+	return rig.Poll(ctx, 500*time.Millisecond, 30*time.Second, func(ctx context.Context) (bool, error) {
 		sts := adm.Statuses(ctx, 2*time.Second)
 		if ctx.Err() != nil && slices.Contains(sts, nil) {
 			return false, nil
@@ -210,7 +215,7 @@ func compareStates(ctx context.Context, adm *Admin, rep *Report) error {
 }
 
 func save(dir string, rep Report, w *workload) error {
-	if err := SaveJSON(dir, "report.json", rep); err != nil {
+	if err := rig.SaveJSON(dir, "report.json", rep); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "raw"), 0o755); err != nil {

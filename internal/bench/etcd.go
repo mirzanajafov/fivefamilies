@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
-	"github.com/mirzanajafov/fivefamilies/internal/lab"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 const (
@@ -61,7 +61,7 @@ func (e *etcdCluster) Up(ctx context.Context) error {
 		return err
 	}
 	var last error
-	err := lab.Poll(ctx, 500*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
+	err := rig.Poll(ctx, 500*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
 		pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		_, probeErr := e.Leader(pctx)
 		cancel()
@@ -70,7 +70,7 @@ func (e *etcdCluster) Up(ctx context.Context) error {
 		}
 		return probeErr == nil, nil
 	})
-	if errors.Is(err, lab.ErrGaveUp) && last != nil {
+	if errors.Is(err, rig.ErrGaveUp) && last != nil {
 		err = fmt.Errorf("%w, the last probe said: %w", err, last)
 	}
 	if err != nil {

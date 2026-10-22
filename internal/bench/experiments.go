@@ -12,7 +12,7 @@ import (
 	"time"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
-	"github.com/mirzanajafov/fivefamilies/internal/lab"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type ExperimentOptions struct {
@@ -137,7 +137,7 @@ func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []cu
 		}
 		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
-		if err := lab.SaveJSON(o.Out, file, curves); err != nil {
+		if err := rig.SaveJSON(o.Out, file, curves); err != nil {
 			return curves, err
 		}
 	}
@@ -228,18 +228,6 @@ func maxElections(sts []*pb.StatusResponse) uint64 {
 	return m
 }
 
-func agreedLeader(ctx context.Context, adm *lab.Admin) (int, error) {
-	var leader int
-	err := lab.Poll(ctx, 100*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
-		leader = lab.AgreedOn(adm.Statuses(ctx, time.Second))
-		return leader > 0, nil
-	})
-	if err != nil {
-		return 0, fmt.Errorf("the nodes did not agree on a leader: %w", err)
-	}
-	return leader, nil
-}
-
 func faultName(a pb.ChaosAction) string {
 	return strings.ToLower(strings.ReplaceAll(strings.TrimPrefix(a.String(), "CHAOS_ACTION_"), "_", "-"))
 }
@@ -253,7 +241,7 @@ func E1b(ctx context.Context, o ExperimentOptions) (E1bResult, error) {
 	res := E1bResult{Rows: []E1bRow{}}
 	err := runE1b(ctx, o, func(row E1bRow) error {
 		res.Rows = append(res.Rows, row)
-		return lab.SaveJSON(o.Out, "e1b.json", res)
+		return rig.SaveJSON(o.Out, "e1b.json", res)
 	})
 	if err == nil {
 		return res, nil
@@ -261,7 +249,7 @@ func E1b(ctx context.Context, o ExperimentOptions) (E1bResult, error) {
 	err = cmp.Or(ctx.Err(), err)
 	if len(res.Rows) > 0 {
 		res.Err = err.Error()
-		if serr := lab.SaveJSON(o.Out, "e1b.json", res); serr != nil {
+		if serr := rig.SaveJSON(o.Out, "e1b.json", res); serr != nil {
 			return res, errors.Join(err, serr)
 		}
 	}
@@ -328,7 +316,7 @@ func measureE1b(ctx context.Context, o ExperimentOptions, v e1bVariant, injectio
 	if err := b.Up(ctx); err != nil {
 		return row, err
 	}
-	adm, err := lab.DialAdmin(b.addrs())
+	adm, err := rig.DialAdmin(rig.HostAddrs(b.Nodes))
 	if err != nil {
 		return row, err
 	}
@@ -344,7 +332,7 @@ func measureE1b(ctx context.Context, o ExperimentOptions, v e1bVariant, injectio
 	if o.Quick {
 		faults = faults[:1]
 	}
-	lab.Wait(lctx, 2*time.Second)
+	rig.Wait(lctx, 2*time.Second)
 	for _, f := range faults {
 		out := injectE1b(lctx, o, adm, v, f, injections, rng)
 		if lctx.Err() != nil {
@@ -365,10 +353,10 @@ func measureE1b(ctx context.Context, o ExperimentOptions, v e1bVariant, injectio
 	return row, nil
 }
 
-func injectE1b(ctx context.Context, o ExperimentOptions, adm *lab.Admin, v e1bVariant, f e1bFault, injections int, rng *rand.Rand) FaultOutcome {
+func injectE1b(ctx context.Context, o ExperimentOptions, adm *rig.Admin, v e1bVariant, f e1bFault, injections int, rng *rand.Rand) FaultOutcome {
 	out := FaultOutcome{Kind: faultName(f.action), Duration: f.d, Target: f.target}
 	for range injections {
-		leader, err := agreedLeader(ctx, adm)
+		leader, err := adm.Agreed(ctx)
 		if err != nil {
 			break
 		}
@@ -384,7 +372,7 @@ func injectE1b(ctx context.Context, o ExperimentOptions, adm *lab.Admin, v e1bVa
 			o.Log("chaos on %d: %v", n, err)
 			continue
 		}
-		lab.Wait(ctx, f.d+4*v.t+time.Second)
+		rig.Wait(ctx, f.d+4*v.t+time.Second)
 		after := maxElections(adm.Statuses(ctx, time.Second))
 		out.Injections++
 		if after > before {

@@ -1,4 +1,4 @@
-package lab
+package rig
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var ErrGaveUp = errors.New("lab: gave up")
+var ErrGaveUp = errors.New("rig: gave up")
 
 func Wait(ctx context.Context, d time.Duration) bool {
 	select {

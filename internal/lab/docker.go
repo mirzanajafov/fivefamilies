@@ -1,41 +1,17 @@
 package lab
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type Docker struct {
-	Project string
-	File    string
-	Nodes   int
-	ips     map[int]string
-}
-
-func (d *Docker) Cmd(ctx context.Context, env []string, args ...string) (string, error) {
-	c := exec.CommandContext(ctx, "docker", args...)
-	if env != nil {
-		c.Env = append(c.Environ(), env...)
-	}
-	var out, errb bytes.Buffer
-	c.Stdout, c.Stderr = &out, &errb
-	if err := c.Run(); err != nil {
-		return out.String(), fmt.Errorf("docker %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
-	}
-	return strings.TrimSpace(out.String()), nil
-}
-
-func (d *Docker) Compose(ctx context.Context, env []string, args ...string) error {
-	_, err := d.Cmd(ctx, env, append([]string{"compose", "-p", d.Project, "-f", d.File}, args...)...)
-	return err
-}
-
-func (d *Docker) Container(svc string) string {
-	return d.Project + "-" + svc + "-1"
+	rig.Project
+	Nodes int
+	ips   map[int]string
 }
 
 func (d *Docker) Up(ctx context.Context, env []string) error {
@@ -54,10 +30,6 @@ func (d *Docker) Up(ctx context.Context, env []string) error {
 		d.ips[i] = ip
 	}
 	return nil
-}
-
-func (d *Docker) Down(ctx context.Context) error {
-	return d.Compose(ctx, nil, "down", "-v", "--remove-orphans")
 }
 
 func (d *Docker) Kill(ctx context.Context, n int) error {
@@ -132,38 +104,28 @@ func (d *Docker) Exited(ctx context.Context, n int) (string, bool) {
 	return fmt.Sprintf("node %d is not running (state %q): %s", n, out, logs), true
 }
 
-func hostAddrs(nodes int) []string {
-	var out []string
-	for i := 1; i <= nodes; i++ {
-		out = append(out, fmt.Sprintf("127.0.0.1:315%d", i))
-	}
-	return out
-}
-
 type labCluster struct {
 	d     *Docker
-	adm   *Admin
+	adm   *rig.Admin
 	addrs []string
 }
 
 func startLab(ctx context.Context, project, file string, env []string) (*labCluster, error) {
-	d := &Docker{Project: project, File: file, Nodes: 5}
-	if err := d.Up(ctx, env); err != nil {
+	d := &Docker{Project: rig.Project{Name: project, File: file}, Nodes: 5}
+	addrs := rig.HostAddrs(d.Nodes)
+	adm, err := rig.DialAdmin(addrs)
+	if err != nil {
 		return nil, err
 	}
-	addrs := hostAddrs(d.Nodes)
-	adm, err := DialAdmin(addrs)
-	if err != nil {
-		return nil, errors.Join(err, d.Down(context.Background()))
+	if err := d.Up(ctx, env); err != nil {
+		adm.Close()
+		return nil, err
 	}
 	return &labCluster{d: d, adm: adm, addrs: addrs}, nil
 }
 
-func (c *labCluster) stop(log func(format string, args ...any), keep bool) {
+func (c *labCluster) stop(log func(format string, args ...any)) {
 	c.adm.Close()
-	if keep {
-		return
-	}
 	if err := c.d.Down(context.Background()); err != nil {
 		log("tearing down the cluster: %v", err)
 	}

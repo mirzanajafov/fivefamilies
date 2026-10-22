@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type FailoverOptions struct {
@@ -71,7 +72,7 @@ func gaps(samples []loadgen.FailoverSample, from, to int64) time.Duration {
 }
 
 func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]loadgen.FailoverSample, error) {
-	network := d.Project + "_lab"
+	network := d.Name + "_lab"
 	args := []string{"run", "--rm", "--network", network, "--entrypoint", "failgen", "fivefamilies-lab-node",
 		"-rate", fmt.Sprint(opts.Rate), "-duration", (opts.Before + opts.After).String(), "-timeout", opts.Timeout.String(), fmt.Sprintf("-cold=%v", opts.Cold)}
 	c := exec.CommandContext(ctx, "docker", args...)
@@ -97,7 +98,7 @@ func Failover(ctx context.Context, opts FailoverOptions, out string) (FailoverRe
 		res.Err = err.Error()
 	}
 	if out != "" {
-		if serr := SaveJSON(out, fmt.Sprintf("election-%s.json", opts.Election), res); serr != nil {
+		if serr := rig.SaveJSON(out, fmt.Sprintf("election-%s.json", opts.Election), res); serr != nil {
 			return res, errors.Join(err, serr)
 		}
 	}
@@ -111,15 +112,15 @@ func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, err
 	if err != nil {
 		return res, err
 	}
-	defer c.stop(opts.Log, false)
+	defer c.stop(opts.Log)
 	var runErr error
 	for t := 0; t < opts.Trials && ctx.Err() == nil; t++ {
-		leader, err := Steady(ctx, c.adm)
+		leader, err := c.adm.Steady(ctx)
 		if err != nil {
 			runErr = err
 			break
 		}
-		res.Trials = append(res.Trials, killLeader(ctx, c.d, opts, leader))
+		res.Trials = append(res.Trials, failoverTrial(ctx, c.d, opts, leader))
 	}
 	var us []time.Duration
 	for _, tr := range res.Trials {
@@ -134,7 +135,7 @@ func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, err
 	return res, runErr
 }
 
-func killLeader(ctx context.Context, d *Docker, opts FailoverOptions, leader int) Trial {
+func failoverTrial(ctx context.Context, d *Docker, opts FailoverOptions, leader int) Trial {
 	type genResult struct {
 		samples []loadgen.FailoverSample
 		err     error
@@ -144,7 +145,7 @@ func killLeader(ctx context.Context, d *Docker, opts FailoverOptions, leader int
 		s, err := d.generate(ctx, opts)
 		ch <- genResult{s, err}
 	}()
-	Wait(ctx, opts.Before)
+	rig.Wait(ctx, opts.Before)
 	killErr := d.Kill(ctx, leader)
 	g := <-ch
 	startErr := d.Start(ctx, leader)
