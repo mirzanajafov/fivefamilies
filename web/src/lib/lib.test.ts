@@ -1,5 +1,6 @@
 import { describe as suite, expect, it } from 'vitest'
-import { ago, rate } from './format'
+import { adminIn, errorIn, snapshotIn } from './api'
+import { ago, ms, rate } from './format'
 import { describe, family, outcome, role } from './words'
 import type { Fault, NodeView } from './types'
 
@@ -49,7 +50,7 @@ suite('words', () => {
       old_term: 6,
       failover: { election_ns: 1.28e9, client_gap_ns: 1.81e9, new_leader: 4 },
     }
-    expect(outcome(f)).toBe('Family III was killed. Family IV took over after 1280 ms, and clients waited 1810 ms between two acknowledged writes.')
+    expect(outcome(f)).toBe('Family III was killed. Family IV took over after 1,280 ms, and clients waited 1,810 ms between two acknowledged writes.')
     expect(outcome({ ...f, on_leader: false })).toBe('Family III was killed. It was not the Don, so nobody had to wait.')
   })
 })
@@ -58,6 +59,28 @@ suite('format', () => {
   it('rounds rates and ages', () => {
     expect(rate(19.93)).toBe('19.9')
     expect(rate(250.4)).toBe('250')
+    expect(rate(14_000)).toBe('14,000')
     expect(ago(new Date(1000).toISOString(), 1000 + 90_000)).toBe('1m ago')
+  })
+  it('shows short times with a decimal and long ones whole', () => {
+    expect(ms(3.25e6)).toBe('3.3 ms')
+    expect(ms(1_306e6)).toBe('1,306 ms')
+  })
+})
+
+suite('api', () => {
+  const snapshot = { nodes: [], events: [], windows: [], load: { active: false, ops_per_s: 0, viewers: 0 }, limits: { max_seconds: 15, cooldown_seconds: 10 } }
+  it('takes a snapshot only with the lists and parts the dashboard reads', () => {
+    expect(snapshotIn(JSON.stringify(snapshot))).toEqual(snapshot)
+    expect(snapshotIn(JSON.stringify({ ...snapshot, events: null }))).toBeUndefined()
+    expect(snapshotIn(JSON.stringify({ ...snapshot, limits: null }))).toBeUndefined()
+    expect(snapshotIn('not json')).toBeUndefined()
+  })
+  it('reads an error and the admin flag only when they have the right type', () => {
+    expect(errorIn({ error: 'refused' })).toBe('refused')
+    expect(errorIn({ error: 7 })).toBeUndefined()
+    expect(errorIn(undefined)).toBeUndefined()
+    expect(adminIn({ admin: true })).toBe(true)
+    expect(adminIn({ admin: 'true' })).toBe(false)
   })
 })

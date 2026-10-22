@@ -1,6 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { errorIn } from '@/lib/api'
+import { useNow } from '@/lib/hooks'
 import type { Snapshot } from '@/lib/types'
 import { actionNames, family, faultActions, faultLabels, numeral, realness } from '@/lib/words'
 
@@ -10,37 +12,24 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
   const [seconds, setSeconds] = useState(5)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string>()
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 250)
-    return () => clearInterval(t)
-  }, [])
+  const now = useNow(250)
   const max = admin ? 60 : snapshot.limits.max_seconds
   const fault = snapshot.fault
   const left = fault ? Math.max(0, Math.ceil((Date.parse(fault.ends) - now) / 1000)) : 0
   const cooldown = !admin && snapshot.limits.next_allowed ? Math.max(0, Math.ceil((Date.parse(snapshot.limits.next_allowed) - now) / 1000)) : 0
   const blocked = busy || !!fault || cooldown > 0
 
-  async function send(body: object) {
+  async function post(path: string, body?: object) {
     setBusy(true)
     setMessage(undefined)
     try {
-      const res = await fetch('/api/chaos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!res.ok) {
-        const { error } = (await res.json().catch(() => ({}))) as { error?: string }
-        setMessage(error ?? `refused (${res.status})`)
-      }
+      const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) })
+      if (!res.ok) setMessage(errorIn(await res.json().catch(() => undefined)) ?? `refused (${res.status})`)
     } catch {
       setMessage('the dashboard could not reach the controller')
     } finally {
       setBusy(false)
     }
-  }
-
-  async function heal() {
-    setBusy(true)
-    await fetch('/api/heal', { method: 'POST' }).catch(() => undefined)
-    setBusy(false)
   }
 
   return (
@@ -96,7 +85,7 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
         <button
           type="button"
           disabled={blocked}
-          onClick={() => void send({ action, node, seconds: Math.min(seconds, max) })}
+          onClick={() => void post('/api/chaos', { action, node, seconds: Math.min(seconds, max) })}
           className="rounded-lg bg-[var(--blood)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
         >
           {action === 'kill' ? 'Kill' : action === 'pause' ? 'Freeze' : action === 'isolate' ? 'Cut off' : 'Slow down'} {family(node)}
@@ -104,7 +93,7 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
         <button
           type="button"
           disabled={blocked || !snapshot.leader}
-          onClick={() => void send({ action: 'step-down' })}
+          onClick={() => void post('/api/chaos', { action: 'step-down' })}
           className="rounded-lg border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-40"
         >
           Ask the Don to step down
@@ -113,7 +102,7 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
           <button
             type="button"
             disabled={busy}
-            onClick={() => void heal()}
+            onClick={() => void post('/api/heal')}
             className="rounded-lg border border-[var(--gold)] px-4 py-2 text-sm disabled:opacity-40"
           >
             Heal everything
@@ -123,7 +112,7 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
       <p className="min-h-5 text-sm" role="status">
         {fault ? (
           <span className="text-[var(--blood)]">
-            {family(fault.node)} is {faultLabels[fault.action] ?? fault.action}
+            {family(fault.node)} is {faultLabels[fault.action]}
             {left > 0 ? ` for ${left} more s` : ', the Commission is settling'}
           </span>
         ) : cooldown > 0 ? (

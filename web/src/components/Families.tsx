@@ -12,7 +12,7 @@ export function Families({ nodes, leader }: { nodes: NodeView[]; leader: number 
           <div key={n.id} className="grid grid-cols-[7.5rem_1fr] items-center gap-3 text-sm sm:grid-cols-[8rem_1fr_9rem]">
             <div>
               <div className={`font-medium ${isDon ? 'text-[var(--gold)]' : ''}`}>{family(n.id)}</div>
-              <div className={`text-xs ${n.fault ? 'text-[var(--blood)]' : 'muted'}`}>{n.fault ? (faultLabels[n.fault] ?? n.fault) : role(n)}</div>
+              <div className={`text-xs ${n.fault ? 'text-[var(--blood)]' : 'muted'}`}>{n.fault ? faultLabels[n.fault] : role(n)}</div>
             </div>
             <div aria-label={`log up to ${n.last}, committed ${n.commit}`}>
               <div className="relative h-2.5 overflow-hidden rounded-full bg-[var(--line)]">

@@ -1,35 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useLive } from '@/lib/live'
-import { rate } from '@/lib/format'
+import { useAdmin, useNow } from '@/lib/hooks'
+import { ms, rate } from '@/lib/format'
 import { family, outcome } from '@/lib/words'
 import { ChaosPanel } from './ChaosPanel'
 import { Commission } from './Commission'
 import { Families } from './Families'
 import { Timeline, Windows } from './Ledger'
-
-function Panel({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
-  return (
-    <section className={`panel p-4 sm:p-5 ${className}`}>
-      <h2 className="serif mb-3 text-lg font-semibold">{title}</h2>
-      {children}
-    </section>
-  )
-}
+import { Panel } from './Panel'
 
 export function Dashboard() {
   const { snapshot, connected } = useLive()
-  const [admin, setAdmin] = useState(false)
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    fetch('/api/session')
-      .then((r) => r.json())
-      .then((s: { admin: boolean }) => setAdmin(s.admin))
-      .catch(() => undefined)
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
+  const [admin] = useAdmin()
+  const now = useNow(1000)
 
   if (!snapshot) {
     return <p className="muted mt-10 text-center">{connected ? 'Listening to the Commission…' : 'Connecting to the Commission…'}</p>
@@ -56,7 +40,7 @@ export function Dashboard() {
         </Panel>
         <div className="grid content-start gap-4">
           <Panel title="Chaos">
-            <ChaosPanel snapshot={snapshot} admin={admin} />
+            <ChaosPanel snapshot={snapshot} admin={admin ?? false} />
           </Panel>
           <Panel title="Last fault">
             {last ? <p className="text-sm leading-relaxed">{outcome(last)}</p> : <p className="muted text-sm">Nothing has been broken yet.</p>}
@@ -64,11 +48,11 @@ export function Dashboard() {
               <dl className="mt-3 grid grid-cols-2 gap-3 text-center">
                 <div className="rounded-lg border border-[var(--line)] p-2">
                   <dt className="muted text-xs">New Don after</dt>
-                  <dd className="serif text-2xl tabular-nums">{(last.failover.election_ns / 1e6).toFixed(0)} ms</dd>
+                  <dd className="serif text-2xl tabular-nums">{ms(last.failover.election_ns)}</dd>
                 </div>
                 <div className="rounded-lg border border-[var(--line)] p-2">
                   <dt className="muted text-xs">Clients waited</dt>
-                  <dd className="serif text-2xl tabular-nums">{(last.failover.client_gap_ns / 1e6).toFixed(0)} ms</dd>
+                  <dd className="serif text-2xl tabular-nums">{ms(last.failover.client_gap_ns)}</dd>
                 </div>
               </dl>
             ) : null}

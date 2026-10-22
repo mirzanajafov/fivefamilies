@@ -1,34 +1,38 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { errorIn } from '@/lib/api'
+import { useAdmin } from '@/lib/hooks'
 
 export function AdminBox() {
-  const [admin, setAdmin] = useState<boolean>()
+  const [admin, setAdmin] = useAdmin()
   const [token, setToken] = useState('')
   const [error, setError] = useState<string>()
-  useEffect(() => {
-    fetch('/api/session')
-      .then((r) => r.json())
-      .then((s: { admin: boolean }) => setAdmin(s.admin))
-      .catch(() => setAdmin(false))
-  }, [])
+
+  async function session(init: RequestInit): Promise<Response | undefined> {
+    setError(undefined)
+    try {
+      return await fetch('/api/session', init)
+    } catch {
+      setError('the dashboard could not reach its server')
+      return undefined
+    }
+  }
 
   async function login(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
-    setError(undefined)
-    const res = await fetch('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
-    const body = (await res.json().catch(() => ({}))) as { admin?: boolean; error?: string }
+    const res = await session({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
     setToken('')
+    if (!res) return
     if (!res.ok) {
-      setError(body.error ?? 'refused')
+      setError(errorIn(await res.json().catch(() => undefined)) ?? 'refused')
       return
     }
     setAdmin(true)
   }
 
   async function logout() {
-    await fetch('/api/session', { method: 'DELETE' })
-    setAdmin(false)
+    if ((await session({ method: 'DELETE' }))?.ok) setAdmin(false)
   }
 
   return (

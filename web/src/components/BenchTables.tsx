@@ -1,9 +1,8 @@
+import { ms, rate } from '@/lib/format'
 import type { Curve, E1bRow, Point } from '@/lib/results'
 
-const ms = (ns: number) => (ns >= 10e6 ? `${Math.round(ns / 1e6).toLocaleString('en-US')} ms` : `${(ns / 1e6).toFixed(1)} ms`)
 const per = (v: number) => (v === 0 ? '0' : v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2))
 const msgs = (v: number) => (v ? per(v) : 'not counted')
-const rate = (v: number) => Math.round(v).toLocaleString('en-US')
 
 export function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
   const first = head.length > 5 ? 'py-1.5 pr-4 min-w-[10rem]' : 'py-1.5 pr-4'

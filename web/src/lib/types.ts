@@ -1,7 +1,10 @@
+export type Role = '' | 'follower' | 'precandidate' | 'candidate' | 'leader'
+export type FaultAction = 'kill' | 'pause' | 'isolate' | 'stall-disk' | 'step-down'
+
 export type NodeView = {
   id: number
   up: boolean
-  state: string
+  state: Role
   term: number
   leader: number
   commit: number
@@ -12,7 +15,7 @@ export type NodeView = {
   voter: boolean
   learner: boolean
   msgs_per_s: number
-  fault?: string
+  fault?: FaultAction
 }
 
 type EventBase = {
@@ -28,7 +31,7 @@ export type Window = {
   from: string
   to: string
   ops: number
-  result: string
+  result: 'Ok' | 'Illegal' | 'Unknown' | 'unchecked'
   took_ns: number
   note?: string
 }
@@ -41,12 +44,12 @@ type Failover = {
 
 export type Fault = {
   id: number
-  action: string
+  action: FaultAction
   node: number
   duration_ns: number
   started: string
   ends: string
-  by: string
+  by: 'admin' | 'visitor'
   on_leader: boolean
   old_leader: number
   old_term: number
