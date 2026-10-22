@@ -413,20 +413,18 @@ func TestANodeIsShownDownOnlyAfterItHasBeenSilentForAWhile(t *testing.T) {
 func TestTheVisitorLimitForgetsAnAddressOnceItsWindowHasPassed(t *testing.T) {
 	l := limiter{per: 2, window: time.Minute}
 	now := time.Now()
-	l.add("a", now)
-	l.add("a", now.Add(time.Second))
-	if !l.full("a", now.Add(2*time.Second)) {
-		t.Fatal("two faults per minute from one address, and a third was let through")
+	if !l.allow("a", now) || !l.allow("a", now.Add(time.Second)) || l.allow("a", now.Add(2*time.Second)) {
+		t.Fatal("two faults per minute from one address, then a refusal")
 	}
-	if l.full("b", now.Add(2*time.Minute)) || len(l.byAddr) != 0 {
+	if !l.allow("b", now.Add(2*time.Minute)) || len(l.byAddr) != 1 {
 		t.Fatalf("after the window the first address is still kept: %v", l.byAddr)
 	}
-	if l.full("a", now.Add(2*time.Minute)) {
+	if !l.allow("a", now.Add(2*time.Minute)) {
 		t.Fatal("an address was refused after its window passed")
 	}
 }
 
-func TestAFaultThatCannotStartAnswersWithoutTheRPCErrorAndCostsNothing(t *testing.T) {
+func TestAFaultThatCannotStartAnswersWithoutTheRPCErrorAndLeavesNoCooldown(t *testing.T) {
 	c, err := New(Config{Nodes: []string{"127.0.0.1:1"}, PerAddress: 1, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
 		t.Fatal(err)
@@ -437,13 +435,14 @@ func TestAFaultThatCannotStartAnswersWithoutTheRPCErrorAndCostsNothing(t *testin
 	if code, body := postChaos(t, api.URL, `{"action":"step-down"}`, "1.1.1.1", false); code != http.StatusConflict || body != `{"error":"there is no leader to step down"}` {
 		t.Fatalf("a step-down before anyone leads: %d %s", code, body)
 	}
-	for range 2 {
-		if code, body := postChaos(t, api.URL, `{"action":"isolate","node":1,"seconds":1}`, "1.1.1.1", false); code != http.StatusBadGateway || body != `{"error":"isolate on node 1 could not be started"}` {
-			t.Fatalf("an isolation whose RPC fails, with one fault per address allowed: %d %s", code, body)
-		}
+	if code, body := postChaos(t, api.URL, `{"action":"isolate","node":1,"seconds":1}`, "1.1.1.1", false); code != http.StatusBadGateway || body != `{"error":"isolate on node 1 could not be started"}` {
+		t.Fatalf("an isolation whose RPC fails: %d %s", code, body)
 	}
 	if s := c.Snapshot(); s.Fault != nil || s.Last != nil {
 		t.Fatalf("a fault that never started is running or starts a cooldown: %+v %+v", s.Fault, s.Last)
+	}
+	if code, _ := postChaos(t, api.URL, `{"action":"isolate","node":1,"seconds":1}`, "1.1.1.1", false); code != http.StatusTooManyRequests {
+		t.Fatalf("a second try from an address allowed one fault answered %d, want 429 because a failed attempt can still reach the node", code)
 	}
 }
 

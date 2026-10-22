@@ -62,7 +62,7 @@ type limiter struct {
 	byAddr map[string][]time.Time
 }
 
-func (l *limiter) full(addr string, now time.Time) bool {
+func (l *limiter) allow(addr string, now time.Time) bool {
 	for a, times := range l.byAddr {
 		if times = slices.DeleteFunc(times, func(t time.Time) bool { return now.Sub(t) > l.window }); len(times) == 0 {
 			delete(l.byAddr, a)
@@ -70,14 +70,14 @@ func (l *limiter) full(addr string, now time.Time) bool {
 			l.byAddr[a] = times
 		}
 	}
-	return len(l.byAddr[addr]) >= l.per
-}
-
-func (l *limiter) add(addr string, at time.Time) {
+	if len(l.byAddr[addr]) >= l.per {
+		return false
+	}
 	if l.byAddr == nil {
 		l.byAddr = map[string][]time.Time{}
 	}
-	l.byAddr[addr] = append(l.byAddr[addr], at)
+	l.byAddr[addr] = append(l.byAddr[addr], now)
+	return true
 }
 
 func (c *Controller) serveChaos(w http.ResponseWriter, r *http.Request) {
@@ -89,36 +89,34 @@ func (c *Controller) serveChaos(w http.ResponseWriter, r *http.Request) {
 	if req.Action == "slow-disk" {
 		req.Action = "stall-disk"
 	}
-	f, no := c.chaos(r.Context(), req, c.admin(r), c.clientAddr(r))
-	if no != nil {
-		writeJSON(w, no.failure.status(), map[string]string{"error": no.msg})
+	f, refused := c.chaos(r.Context(), req, c.admin(r), c.clientAddr(r))
+	if refused != nil {
+		writeJSON(w, refused.failure.status(), map[string]string{"error": refused.msg})
 		return
 	}
 	writeJSON(w, http.StatusOK, f)
 }
 
 func (c *Controller) chaos(ctx context.Context, req chaosRequest, admin bool, addr string) (*Fault, *refusal) {
-	d, no := c.validate(req, admin)
-	if no != nil {
-		return nil, no
+	d, refused := c.validate(req, admin)
+	if refused != nil {
+		return nil, refused
 	}
-	f, no := c.admit(req.Action, req.Node, d, admin, addr)
-	if no != nil {
-		return nil, no
+	f, refused := c.admit(req.Action, req.Node, d, admin, addr)
+	if refused != nil {
+		return nil, refused
 	}
-	err := c.inject(ctx, f.Action, f.Node, f.Duration)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err != nil {
+	if err := c.inject(ctx, f.Action, f.Node, f.Duration); err != nil {
 		c.cfg.Logger.Warn("chaos", "action", f.Action, "node", f.Node, "err", err)
+		c.mu.Lock()
+		defer c.mu.Unlock()
 		if c.fault == f {
 			c.fault = nil
 		}
 		return nil, refuse(notStarted, "%s on node %d could not be started", f.Action, f.Node)
 	}
-	if !admin {
-		c.perAddress.add(addr, f.Started)
-	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.event("fault", f.Node, 0, fmt.Sprintf("%s on node %d for %v (%s)", f.Action, f.Node, f.Duration, f.By))
 	return f.clone(), nil
 }
@@ -158,7 +156,7 @@ func (c *Controller) admit(action string, node int, d time.Duration, admin bool,
 		if wait := c.cooldownLeftLocked(now); wait > 0 {
 			return nil, refuse(limited, "the Commission is still settling, so try again in %d s", int(math.Ceil(wait.Seconds())))
 		}
-		if c.perAddress.full(addr, now) {
+		if !c.perAddress.allow(addr, now) {
 			return nil, refuse(limited, "%d faults per %v from one address", c.cfg.PerAddress, c.cfg.PerWindow)
 		}
 	}
