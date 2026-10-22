@@ -71,9 +71,13 @@ func newTestNode(t *testing.T, id raft.NodeID, voters []raft.NodeID) (*Node, *re
 	return newTestNodeConfig(t, id, voters, Config{})
 }
 
+func testRaftConfig(id raft.NodeID, voters []raft.NodeID) raft.Config {
+	return raft.Config{ID: id, Voters: voters, ElectionTick: 10, HeartbeatTick: 1, Rand: rand.NewPCG(1, uint64(id))}
+}
+
 func newTestNodeConfig(t *testing.T, id raft.NodeID, voters []raft.NodeID, cfg Config) (*Node, *recEnv, *recApp) {
 	t.Helper()
-	r, err := raft.New(raft.Config{ID: id, Voters: voters, ElectionTick: 10, HeartbeatTick: 1, Rand: rand.NewPCG(1, uint64(id))}, raft.Restore{})
+	r, err := raft.New(testRaftConfig(id, voters), raft.Restore{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,10 +493,11 @@ func (o *transferOutcome) done(leader raft.NodeID, term uint64, err error) {
 func leaderOfThree(t *testing.T) (*Node, *recEnv) {
 	t.Helper()
 	n, env, _ := newTestNode(t, 1, []raft.NodeID{1, 2, 3})
-	return campaignedLeader(t, n, env)
+	becomeLeader(t, n, env)
+	return n, env
 }
 
-func campaignedLeader(t *testing.T, n *Node, env *recEnv) (*Node, *recEnv) {
+func becomeLeader(t *testing.T, n *Node, env *recEnv) {
 	t.Helper()
 	n.Raft().Campaign()
 	settle(t, n, env)
@@ -501,7 +506,6 @@ func campaignedLeader(t *testing.T, n *Node, env *recEnv) (*Node, *recEnv) {
 	if n.Raft().State() != raft.StateLeader {
 		t.Fatalf("state %s, want leader", n.Raft().State())
 	}
-	return n, env
 }
 
 func TestATransferEndsWithTheNodeThatTookOverWhoeverItIs(t *testing.T) {
@@ -573,12 +577,15 @@ func TestATransferAnswersAtOnceWhenItCannotStartOrHasNothingToDo(t *testing.T) {
 }
 
 func TestATransferWaitsThroughALostQuorumForTheNextLeader(t *testing.T) {
-	r, err := raft.New(raft.Config{ID: 1, Voters: []raft.NodeID{1, 2, 3}, ElectionTick: 10, HeartbeatTick: 1, CheckQuorum: true, Rand: rand.NewPCG(1, 1)}, raft.Restore{})
+	cfg := testRaftConfig(1, []raft.NodeID{1, 2, 3})
+	cfg.CheckQuorum = true
+	r, err := raft.New(cfg, raft.Restore{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	env := &recEnv{}
-	n, _ := campaignedLeader(t, New(r, env, &recApp{}, Config{}), env)
+	n := New(r, env, &recApp{}, Config{})
+	becomeLeader(t, n, env)
 	var o transferOutcome
 	n.TransferLeadership(2, o.done)
 	n.Advance(20 * n.cfg.Tick)
@@ -590,5 +597,17 @@ func TestATransferWaitsThroughALostQuorumForTheNextLeader(t *testing.T) {
 	settle(t, n, env)
 	if o.calls != 1 || o.err != nil || o.leader != 3 {
 		t.Fatalf("outcome %+v, want node 3 once it leads", o)
+	}
+}
+
+func TestATransferThatAnotherTransferReplacedFails(t *testing.T) {
+	n, env := leaderOfThree(t)
+	var first, second transferOutcome
+	n.TransferLeadership(2, first.done)
+	n.Advance(20 * n.cfg.Tick)
+	n.TransferLeadership(3, second.done)
+	settle(t, n, env)
+	if first.calls != 1 || !errors.Is(first.err, ErrTransferAborted) || !strings.Contains(first.err.Error(), "node 2") || second.calls != 0 {
+		t.Fatalf("first %+v, second %+v, want the first failed naming node 2 and the second still waiting", first, second)
 	}
 }

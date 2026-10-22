@@ -355,7 +355,11 @@ func (n *Node) TransferLeadership(to raft.NodeID, done Transferred) {
 		done(n.r.Leader(), n.r.Term(), &NotLeaderError{Leader: n.r.Leader()})
 		return
 	}
-	if err := n.r.TransferLeadership(to); err != nil || to == n.r.ID() {
+	if to == n.r.ID() {
+		done(n.r.ID(), n.r.Term(), nil)
+		return
+	}
+	if err := n.r.TransferLeadership(to); err != nil {
 		done(n.r.Leader(), n.r.Term(), err)
 		return
 	}
@@ -369,11 +373,14 @@ func (n *Node) settleTransfers() {
 	term, lead := n.r.Term(), n.r.Leader()
 	pending := n.transfers
 	n.transfers = nil
+	leading := n.r.State() == raft.StateLeader
 	for _, w := range pending {
+		moved := term > w.term && lead != raft.None
+		gaveUp := term == w.term && leading && n.r.Transferring() != w.to
 		switch {
-		case term > w.term && lead != raft.None && lead != n.r.ID():
+		case moved && lead != n.r.ID():
 			w.done(lead, term, nil)
-		case term > w.term && lead == n.r.ID(), term == w.term && n.r.State() == raft.StateLeader && n.r.Transferring() == raft.None:
+		case moved, gaveUp:
 			w.done(lead, term, fmt.Errorf("%w: node %d did not take over", ErrTransferAborted, w.to))
 		default:
 			n.transfers = append(n.transfers, w)
