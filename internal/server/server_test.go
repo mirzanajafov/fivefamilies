@@ -190,7 +190,7 @@ func (c *testCluster) leaderOtherThan(old raft.NodeID, timeout time.Duration) ra
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	c.t.Fatalf("no leader within %v", timeout)
+	c.t.Fatalf("no leader other than node %d within %v", old, timeout)
 	return raft.None
 }
 
