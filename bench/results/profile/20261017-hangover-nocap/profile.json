@@ -23,16 +23,16 @@
       "report": {
         "summary": {
           "config": {
-            "Rate": 4000,
-            "Duration": 24000000000,
-            "Warmup": 3000000000,
-            "ReadFraction": 0,
-            "Keys": 1000,
-            "ValueBytes": 128,
-            "MaxInflight": 10000,
-            "Timeout": 2000000000,
-            "Poisson": false,
-            "Seed": 1
+            "rate": 4000,
+            "duration_ns": 24000000000,
+            "warmup_ns": 3000000000,
+            "read_fraction": 0,
+            "keys": 1000,
+            "value_bytes": 128,
+            "max_inflight": 10000,
+            "timeout_ns": 2000000000,
+            "poisson": false,
+            "seed": 1
           },
           "offered_per_s": 4000,
           "achieved_per_s": 4000,
@@ -87,49 +87,49 @@
         "read_mode": "index",
         "per_node_delta": [
           {
-            "Fsyncs": 2492,
-            "Batches": 28869,
-            "Entries": 96074,
-            "Sent": 99344,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 2492,
+            "wal_batches": 28869,
+            "entries": 96074,
+            "msgs_sent": 99344,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 2489,
-            "Batches": 29927,
-            "Entries": 96119,
-            "Sent": 99362,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 2489,
+            "wal_batches": 29927,
+            "entries": 96119,
+            "msgs_sent": 99362,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 2505,
-            "Batches": 29810,
-            "Entries": 96074,
-            "Sent": 99424,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 2505,
+            "wal_batches": 29810,
+            "entries": 96074,
+            "msgs_sent": 99424,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 2588,
-            "Batches": 30964,
-            "Entries": 96074,
-            "Sent": 99455,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 2588,
+            "wal_batches": 30964,
+            "entries": 96074,
+            "msgs_sent": 99455,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 3026,
-            "Batches": 98749,
-            "Entries": 96017,
-            "Sent": 397141,
-            "Writes": 95990,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 3026,
+            "wal_batches": 98749,
+            "entries": 96017,
+            "msgs_sent": 397141,
+            "writes": 95990,
+            "reads": 0,
+            "elections": 0
           }
         ],
         "fsyncs_per_op": 0.13645833333333332,
@@ -157,16 +157,16 @@
       "report": {
         "summary": {
           "config": {
-            "Rate": 10000,
-            "Duration": 19000000000,
-            "Warmup": 3000000000,
-            "ReadFraction": 0,
-            "Keys": 1000,
-            "ValueBytes": 128,
-            "MaxInflight": 10000,
-            "Timeout": 2000000000,
-            "Poisson": false,
-            "Seed": 1
+            "rate": 10000,
+            "duration_ns": 19000000000,
+            "warmup_ns": 3000000000,
+            "read_fraction": 0,
+            "keys": 1000,
+            "value_bytes": 128,
+            "max_inflight": 10000,
+            "timeout_ns": 2000000000,
+            "poisson": false,
+            "seed": 1
           },
           "offered_per_s": 10000,
           "achieved_per_s": 217.68421052631578,
@@ -224,49 +224,49 @@
         "read_mode": "index",
         "per_node_delta": [
           {
-            "Fsyncs": 95,
-            "Batches": 116,
-            "Entries": 54208,
-            "Sent": 8526,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 95,
+            "wal_batches": 116,
+            "entries": 54208,
+            "msgs_sent": 8526,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 100,
-            "Batches": 123,
-            "Entries": 54120,
-            "Sent": 9370,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 100,
+            "wal_batches": 123,
+            "entries": 54120,
+            "msgs_sent": 9370,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 100,
-            "Batches": 127,
-            "Entries": 54173,
-            "Sent": 9159,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 100,
+            "wal_batches": 127,
+            "entries": 54173,
+            "msgs_sent": 9159,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 80,
-            "Batches": 106,
-            "Entries": 53729,
-            "Sent": 8011,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 80,
+            "wal_batches": 106,
+            "entries": 53729,
+            "msgs_sent": 8011,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 4334,
-            "Batches": 20006,
-            "Entries": 47731,
-            "Sent": 28732,
-            "Writes": 48817,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 4334,
+            "wal_batches": 20006,
+            "entries": 47731,
+            "msgs_sent": 28732,
+            "writes": 48817,
+            "reads": 0,
+            "elections": 0
           }
         ],
         "fsyncs_per_op": 1.1385396518375241,
@@ -283,16 +283,16 @@
       "report": {
         "summary": {
           "config": {
-            "Rate": 4000,
-            "Duration": 24000000000,
-            "Warmup": 3000000000,
-            "ReadFraction": 0,
-            "Keys": 1000,
-            "ValueBytes": 128,
-            "MaxInflight": 10000,
-            "Timeout": 2000000000,
-            "Poisson": false,
-            "Seed": 1
+            "rate": 4000,
+            "duration_ns": 24000000000,
+            "warmup_ns": 3000000000,
+            "read_fraction": 0,
+            "keys": 1000,
+            "value_bytes": 128,
+            "max_inflight": 10000,
+            "timeout_ns": 2000000000,
+            "poisson": false,
+            "seed": 1
           },
           "offered_per_s": 4000,
           "achieved_per_s": 4000,
@@ -347,49 +347,49 @@
         "read_mode": "index",
         "per_node_delta": [
           {
-            "Fsyncs": 2606,
-            "Batches": 42191,
-            "Entries": 96010,
-            "Sent": 100980,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 2606,
+            "wal_batches": 42191,
+            "entries": 96010,
+            "msgs_sent": 100980,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 2602,
-            "Batches": 42177,
-            "Entries": 96025,
-            "Sent": 100845,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 2602,
+            "wal_batches": 42177,
+            "entries": 96025,
+            "msgs_sent": 100845,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 2621,
-            "Batches": 42996,
-            "Entries": 96011,
-            "Sent": 100954,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 2621,
+            "wal_batches": 42996,
+            "entries": 96011,
+            "msgs_sent": 100954,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 2674,
-            "Batches": 43759,
-            "Entries": 96010,
-            "Sent": 100939,
-            "Writes": 0,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 2674,
+            "wal_batches": 43759,
+            "entries": 96010,
+            "msgs_sent": 100939,
+            "writes": 0,
+            "reads": 0,
+            "elections": 0
           },
           {
-            "Fsyncs": 2916,
-            "Batches": 100259,
-            "Entries": 95997,
-            "Sent": 403495,
-            "Writes": 95994,
-            "Reads": 0,
-            "Elections": 0
+            "fsyncs": 2916,
+            "wal_batches": 100259,
+            "entries": 95997,
+            "msgs_sent": 403495,
+            "writes": 95994,
+            "reads": 0,
+            "elections": 0
           }
         ],
         "fsyncs_per_op": 0.13978125,
