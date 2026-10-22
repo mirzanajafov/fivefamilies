@@ -98,8 +98,10 @@ func (c *composeCluster) runGenerator(ctx context.Context, genCPUs string, comma
 		_, rmErr := c.d.cmd(context.Background(), nil, "rm", "-f", name)
 		return r, errors.Join(err, rmErr)
 	}
-	if err := json.Unmarshal([]byte(out), &r); err != nil {
-		return r, fmt.Errorf("generator output: %w: %.200s", err, out)
+	dec := json.NewDecoder(strings.NewReader(out))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&r); err != nil {
+		return r, fmt.Errorf("generator output (an image older than the harness?): %w: %.200s", err, out)
 	}
 	return r, nil
 }
@@ -205,7 +207,12 @@ func saturated(s Step, maxP99 time.Duration) bool {
 	return s.Err != "" || !sum.Valid || sum.Achieved < 0.9*s.Rate || sum.All.P99 > maxP99 || float64(sum.All.Error) > 0.01*float64(sum.Scheduled)
 }
 
-func sweep(ctx context.Context, sys system, c Curve, opts SweepOptions) Curve {
+type sweepable interface {
+	Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error)
+	Quiet(ctx context.Context) error
+}
+
+func sweep(ctx context.Context, sys sweepable, c Curve, opts SweepOptions) Curve {
 	stopped := false
 	run := func(rate float64) Step {
 		s := Step{Rate: rate}

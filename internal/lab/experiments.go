@@ -12,7 +12,6 @@ import (
 	"time"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
-	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
 )
 
 type ExperimentOptions struct {
@@ -25,17 +24,11 @@ type ExperimentOptions struct {
 	Log      func(format string, args ...any)
 }
 
-func rounds[T any](o ExperimentOptions, specs []T, name func(T) string) iter.Seq2[int, T] {
+func rounds[T any](repeat int, specs []T) iter.Seq2[int, T] {
 	return func(yield func(int, T) bool) {
-		var picked []T
-		for _, sp := range specs {
-			if o.wants(name(sp)) {
-				picked = append(picked, sp)
-			}
-		}
-		for r := range max(1, o.Repeat) {
-			for i := range picked {
-				if !yield(r+1, picked[(i+r)%len(picked)]) {
+		for r := range max(1, repeat) {
+			for i := range specs {
+				if !yield(r+1, specs[(i+r)%len(specs)]) {
 					return
 				}
 			}
@@ -80,8 +73,7 @@ type curveSpec struct {
 }
 
 type system interface {
-	Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error)
-	Quiet(ctx context.Context) error
+	sweepable
 	Down() error
 }
 
@@ -117,7 +109,7 @@ func (o ExperimentOptions) pick(specs []curveSpec) []curveSpec {
 
 func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []curveSpec) ([]Curve, error) {
 	var curves []Curve
-	for round, sp := range rounds(o, o.pick(specs), func(sp curveSpec) string { return sp.name }) {
+	for round, sp := range rounds(o.Repeat, o.pick(specs)) {
 		o.Log("%s, round %d: starting %d nodes", sp.name, round, sp.nodes)
 		sys, gen, err := sp.start(ctx, o)
 		if err != nil {

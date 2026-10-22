@@ -52,12 +52,18 @@ func Measure(ctx context.Context, t Target, cfg Config, probe Probe) (Report, er
 	}
 	before := make(chan sampled, 1)
 	go func() {
-		time.Sleep(cfg.Warmup)
+		select {
+		case <-time.After(cfg.Warmup):
+		case <-ctx.Done():
+		}
 		c, err := probe(ctx)
 		before <- sampled{c, err}
 	}()
-	s, err := Run(ctx, t, cfg)
+	s, err := run(ctx, t, cfg)
 	if err != nil {
+		return Report{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return Report{}, err
 	}
 	b := <-before

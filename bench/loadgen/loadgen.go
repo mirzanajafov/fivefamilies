@@ -97,7 +97,7 @@ const (
 	maxLagP99  = time.Millisecond
 )
 
-func Run(ctx context.Context, target Target, cfg Config) (Summary, error) {
+func run(ctx context.Context, target Target, cfg Config) (Summary, error) {
 	if err := cfg.normalize(); err != nil {
 		return Summary{}, err
 	}
