@@ -194,9 +194,11 @@ func soloLeader(t *testing.T, id raft.NodeID, st raft.Restore, data ...string) *
 func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
 	modes := map[string]ReadMode{"any": ReadAny, "log": ReadLog, "index": ReadIndex, "lease": ReadLease, "follower": ReadFollower}
 	for s, want := range modes {
-		if got, err := ParseReadMode(s); err != nil || got != want {
-			t.Errorf("read path %q parsed as %s: %v", s, got, err)
-		}
+		t.Run("read path "+s, func(t *testing.T) {
+			if got, err := ParseReadMode(s); err != nil || got != want {
+				t.Errorf("parsed as %s: %v", got, err)
+			}
+		})
 	}
 	for _, s := range []string{"", "leases", "Lease"} {
 		if _, err := ParseReadMode(s); err == nil {
@@ -206,9 +208,11 @@ func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
 	checks := map[string]Category{"safety": CatSafety, "liveness": CatLiveness, "linearizability": CatLinearizability, "state": CatState,
 		"client": CatClient, "panic": CatPanic, "lease": CatLease, "watch": CatWatch}
 	for s, want := range checks {
-		if got, err := ParseCategory(s); err != nil || got != want {
-			t.Errorf("check %q parsed as %s: %v", s, got, err)
-		}
+		t.Run("check "+s, func(t *testing.T) {
+			if got, err := ParseCategory(s); err != nil || got != want {
+				t.Errorf("parsed as %s: %v", got, err)
+			}
+		})
 	}
 	if len(Categories()) != len(checks) || len(ReadModes())+1 != len(modes) {
 		t.Errorf("%d checks and %d read paths, this test names %d and %d", len(Categories()), len(ReadModes())+1, len(checks), len(modes))
@@ -250,12 +254,14 @@ func TestACheckOrBugThatCanNeverFireIsRefused(t *testing.T) {
 		"earlyconf without membership changes":    {func(o *Options) { o.Membership = false }, planted.EarlyConf, ""},
 		"followerread with reads through the log": {func(o *Options) { o.Reads = ReadLog }, planted.FollowerRead, ""},
 	} {
-		o := DefaultOptions()
-		c.off(&o)
-		o.Bugs = c.bug
-		if o.Validate(c.catch) == nil {
-			t.Errorf("%s was accepted", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			o := DefaultOptions()
+			c.off(&o)
+			o.Bugs = c.bug
+			if o.Validate(c.catch) == nil {
+				t.Error("accepted")
+			}
+		})
 	}
 }
 
@@ -331,13 +337,15 @@ func TestDiskCatchesForgottenVotesAndTerms(t *testing.T) {
 		{"second vote in a term", raft.HardState{Term: 5, Vote: 2}, raft.HardState{Term: 5, Vote: 3}},
 	}
 	for _, tc := range cases {
-		c := newChecker(1)
-		d := newDisk(0, nil)
-		d.applyDurable(node.Write{Batch: wal.Batch{HardState: tc.before}}, c, 0)
-		d.applyDurable(node.Write{Batch: wal.Batch{HardState: tc.after}}, c, 0)
-		if !c.failed() {
-			t.Errorf("%s went unnoticed", tc.name)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			c := newChecker(1)
+			d := newDisk(0, nil)
+			d.applyDurable(node.Write{Batch: wal.Batch{HardState: tc.before}}, c, 0)
+			d.applyDurable(node.Write{Batch: wal.Batch{HardState: tc.after}}, c, 0)
+			if !c.failed() {
+				t.Error("went unnoticed")
+			}
+		})
 	}
 }
 

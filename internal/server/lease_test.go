@@ -15,14 +15,14 @@ import (
 func waitGone(t *testing.T, ctx context.Context, cl *client.Client, key string, within time.Duration) time.Duration {
 	t.Helper()
 	start := time.Now()
-	for time.Since(start) < within {
-		if _, found, err := cl.Get(ctx, key, client.ReadIndex); err == nil && !found {
-			return time.Since(start)
-		}
-		time.Sleep(10 * time.Millisecond)
+	gone := eventually(within, func() bool {
+		_, found, err := cl.Get(ctx, key, client.ReadIndex)
+		return err == nil && !found
+	})
+	if !gone {
+		t.Fatalf("%s still there after %v", key, within)
 	}
-	t.Fatalf("%s still there after %v", key, within)
-	return 0
+	return time.Since(start)
 }
 
 func TestLeasesOverTheWire(t *testing.T) {

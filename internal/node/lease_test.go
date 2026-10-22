@@ -64,7 +64,7 @@ func TestALeaseExpiresOnTheLeaderAfterItsTTL(t *testing.T) {
 	grant(t, n, env, 100, "k")
 	tickAndSettle(t, n, env, 10)
 	if _, ok := app.store.Get("k"); !ok {
-		t.Fatal("the lease expired after its TTL in ticks; the tick it was granted in was already partly over, so that can be less than the TTL in time")
+		t.Fatal("the lease expired after its TTL in ticks. The tick it was granted in was already partly over, so that can be less than the TTL in time")
 	}
 	tickAndSettle(t, n, env, 1)
 	if _, ok := app.store.Get("k"); ok {

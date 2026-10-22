@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -137,7 +138,7 @@ func (h *harness) waitFor(what string, within time.Duration, ok func(Snapshot) b
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	h.t.Fatalf("never: %s; last snapshot %+v", what, h.c.Snapshot())
+	h.t.Fatalf("never: %s (last snapshot %+v)", what, h.c.Snapshot())
 	return Snapshot{}
 }
 
@@ -195,6 +196,25 @@ func TestTheControllerFollowsTheClusterAndChecksTheDemoWhileSomeoneWatches(t *te
 	h.waitFor("the demo clients stop once the last viewer is gone for the idle time", 10*time.Second, func(s Snapshot) bool { return !s.Load.Active && s.Load.Viewers == 0 })
 }
 
+func TestAVisitorFaultIsRefusedDuringTheCooldownButAnAdminFaultIsNot(t *testing.T) {
+	h := newHarness(t, 3, func(c *Config) { c.Cooldown = time.Minute })
+	h.waitFor("a leader", 5*time.Second, func(s Snapshot) bool { return s.Leader != 0 })
+	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "1.1.1.1", false); code != http.StatusOK {
+		t.Fatalf("the first fault: %d %s", code, body)
+	}
+	next := h.waitFor("the fault to close", 10*time.Second, func(s Snapshot) bool { return s.Fault == nil && s.Last != nil }).Limits.NextAllowed
+	most := int(math.Ceil(time.Until(next).Seconds()))
+	code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "3.3.3.3", false)
+	least := int(math.Ceil(time.Until(next).Seconds()))
+	var wait int
+	if _, err := fmt.Sscanf(body, `{"error":"the Commission is still settling, so try again in %d s"}`, &wait); code != http.StatusTooManyRequests || err != nil || wait < least || wait > most {
+		t.Fatalf("a fault right after the last one ended: %d %s, want a wait between %d and %d s rounded up", code, body, least, most)
+	}
+	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "3.3.3.3", true); code != http.StatusOK {
+		t.Fatalf("the admin does not wait for the cooldown: %d %s", code, body)
+	}
+}
+
 func TestVisitorsGetBoundedChaos(t *testing.T) {
 	h := newHarness(t, 3, func(c *Config) { c.PerAddress = 2 })
 	h.waitFor("a leader", 5*time.Second, func(s Snapshot) bool { return s.Leader != 0 })
@@ -220,12 +240,6 @@ func TestVisitorsGetBoundedChaos(t *testing.T) {
 	h.waitFor("the fault to close", 10*time.Second, func(s Snapshot) bool { return s.Fault == nil && s.Last.ID == 2 })
 	if code, _ := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "9.9.9.9, 1.1.1.1", false); code != http.StatusTooManyRequests {
 		t.Fatalf("a third fault from the same address behind the proxy: %d", code)
-	}
-	h.c.mu.Lock()
-	h.c.last.Ends = time.Now()
-	h.c.mu.Unlock()
-	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "3.3.3.3", false); code != http.StatusTooManyRequests || !strings.Contains(body, "settling, so try again in 1 s") {
-		t.Fatalf("a fault right after the last one ended: %d %s", code, body)
 	}
 	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":30}`, "1.1.1.1", true); code != http.StatusOK {
 		t.Fatalf("the admin is not limited: %d %s", code, body)
@@ -307,15 +321,17 @@ func TestTheAdminCheck(t *testing.T) {
 	c := &Controller{cfg: Config{AdminToken: "admin-token"}}
 	h := c.Handler()
 	for token, want := range map[string]int{"": http.StatusForbidden, "Bearer nope": http.StatusForbidden, "Bearer admin-token": http.StatusOK} {
-		req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
-		if token != "" {
-			req.Header.Set("Authorization", token)
-		}
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, req)
-		if w.Code != want {
-			t.Fatalf("%q: %d, want %d", token, w.Code, want)
-		}
+		t.Run(fmt.Sprintf("token %q", token), func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+			if token != "" {
+				req.Header.Set("Authorization", token)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if w.Code != want {
+				t.Fatalf("%d, want %d", w.Code, want)
+			}
+		})
 	}
 }
 

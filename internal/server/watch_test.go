@@ -172,12 +172,8 @@ func followerAndWriter(t *testing.T, c *testCluster) (raft.NodeID, []string, *cl
 	t.Helper()
 	leader := c.leader(5 * time.Second)
 	follower := leader%3 + 1
-	deadline := time.Now().Add(5 * time.Second)
-	for c.running[follower].srv.Status().GetLeader() != uint64(leader) {
-		if time.Now().After(deadline) {
-			t.Fatal("the follower never learned the leader")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !eventually(5*time.Second, func() bool { return c.running[follower].srv.Status().GetLeader() == uint64(leader) }) {
+		t.Fatal("the follower never learned the leader")
 	}
 	var others []string
 	for id, addr := range c.nodes {

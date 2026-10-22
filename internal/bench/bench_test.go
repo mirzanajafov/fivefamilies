@@ -19,9 +19,11 @@ func TestFaultNamesAreTheKeysInTheCommittedResults(t *testing.T) {
 		pb.ChaosAction_CHAOS_ACTION_STALL_DISK: "stall-disk",
 		pb.ChaosAction_CHAOS_ACTION_PAUSE:      "pause",
 	} {
-		if got := faultName(action); got != want {
-			t.Errorf("%v is recorded as %q, want %q", action, got, want)
-		}
+		t.Run(action.String(), func(t *testing.T) {
+			if got := faultName(action); got != want {
+				t.Errorf("%v is recorded as %q, want %q", action, got, want)
+			}
+		})
 	}
 }
 
@@ -195,9 +197,11 @@ func TestAQuickRunTakesTheFirstOfTheChosenCurvesOfEachSystem(t *testing.T) {
 		{ExperimentOptions{Quick: true, Only: []string{"ff b", "etcd b"}}, "ff b, etcd b"},
 		{ExperimentOptions{Only: []string{"etcd b"}}, "etcd b"},
 	} {
-		if got := names(tc.o.pick(specs)); got != tc.want {
-			t.Errorf("quick %v, only %v: picked %s, want %s", tc.o.Quick, tc.o.Only, got, tc.want)
-		}
+		t.Run(fmt.Sprintf("quick %v only %v", tc.o.Quick, tc.o.Only), func(t *testing.T) {
+			if got := names(tc.o.pick(specs)); got != tc.want {
+				t.Errorf("picked %s, want %s", got, tc.want)
+			}
+		})
 	}
 }
 

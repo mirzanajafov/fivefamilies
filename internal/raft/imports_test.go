@@ -37,7 +37,7 @@ func TestCoreStaysDeterministic(t *testing.T) {
 			for _, imp := range parsed.Imports {
 				path, _ := strconv.Unquote(imp.Path.Value)
 				if !allowed[path] {
-					t.Errorf("%s imports %s; the core may not use clocks, goroutines, I/O or global randomness", name, path)
+					t.Errorf("%s imports %s, but the core may not use clocks, goroutines, I/O or global randomness", name, path)
 				}
 			}
 		}

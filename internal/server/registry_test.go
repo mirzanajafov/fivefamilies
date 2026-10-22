@@ -39,11 +39,7 @@ func waitFor[T any](t *testing.T, ch <-chan T, within time.Duration, ok func(T) 
 
 func waitRenewals(t *testing.T, reg *client.Registration, n int) {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for reg.Renewals() != n && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if reg.Renewals() != n {
+	if !eventually(time.Second, func() bool { return reg.Renewals() == n }) {
 		t.Fatalf("renewals %d, want %d", reg.Renewals(), n)
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"slices"
 	"testing"
@@ -11,9 +12,11 @@ import (
 
 func TestANodeGetsAtLeastTwoGoProcessorsUnlessToldOtherwise(t *testing.T) {
 	for _, c := range []struct{ asked, picked, want int }{{0, 1, 2}, {0, 2, 2}, {0, 8, 8}, {1, 8, 1}, {3, 1, 3}} {
-		if got := goProcs(c.asked, c.picked); got != c.want {
-			t.Fatalf("goProcs(%d, %d) = %d, want %d", c.asked, c.picked, got, c.want)
-		}
+		t.Run(fmt.Sprintf("asked %d picked %d", c.asked, c.picked), func(t *testing.T) {
+			if got := goProcs(c.asked, c.picked); got != c.want {
+				t.Fatalf("goProcs(%d, %d) = %d, want %d", c.asked, c.picked, got, c.want)
+			}
+		})
 	}
 }
 
@@ -24,9 +27,11 @@ func TestTheHTTPAPIGoesRoundTheNodesFromItsOwn(t *testing.T) {
 		3: {"n3", "n4", "n5", "n1", "n2"},
 		5: {"n5", "n1", "n2", "n3", "n4"},
 	} {
-		if got := roundFrom(self, nodes); !slices.Equal(got, want) {
-			t.Errorf("node %d tries %v, want %v", self, got, want)
-		}
+		t.Run(fmt.Sprint("node ", self), func(t *testing.T) {
+			if got := roundFrom(self, nodes); !slices.Equal(got, want) {
+				t.Errorf("node %d tries %v, want %v", self, got, want)
+			}
+		})
 	}
 }
 

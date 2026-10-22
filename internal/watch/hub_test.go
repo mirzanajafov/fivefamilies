@@ -143,19 +143,17 @@ func TestABeatGoesToEveryWatcherThatHeardNothingSinceTheLastOne(t *testing.T) {
 	if n := len(busy.got); n != 3 {
 		t.Fatalf("a watcher that just got events got %d batches, want the start and two event batches", n)
 	}
-	for name, s := range map[string]*sink{"quiet": quiet, "future": future} {
-		if n := len(s.got); n != 2 {
-			t.Fatalf("%s watcher got %d batches, want the start and one beat", name, n)
+	for _, w := range []struct {
+		name string
+		s    *sink
+		rev  uint64
+	}{{"a caught-up watcher", quiet, 2}, {"a watcher from revision 10", future, 9}} {
+		if n := len(w.s.got); n != 2 {
+			t.Fatalf("%s got %d batches, want the start and one beat", w.name, n)
 		}
-		if b := s.got[1]; !b.Progress || len(b.Events) != 0 {
-			t.Fatalf("%s watcher got %+v from a beat", name, b)
+		if b := w.s.got[1]; !b.Progress || len(b.Events) != 0 || b.Rev != w.rev {
+			t.Fatalf("%s got %+v from a beat, want progress at revision %d", w.name, b, w.rev)
 		}
-	}
-	if rev := quiet.got[1].Rev; rev != 2 {
-		t.Fatalf("a caught-up watcher heard revision %d, want 2", rev)
-	}
-	if rev := future.got[1].Rev; rev != 9 {
-		t.Fatalf("a watcher from revision 10 heard revision %d, want 9", rev)
 	}
 	h.Beat()
 	if n := len(busy.got); n != 4 || !busy.got[3].Progress {

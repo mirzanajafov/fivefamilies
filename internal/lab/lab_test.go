@@ -2,6 +2,7 @@ package lab
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,9 +49,11 @@ func TestLabSurvivesFaults(t *testing.T) {
 
 func TestOnlyKnownFaultsParse(t *testing.T) {
 	for s, want := range map[string][]FaultKind{"all": AllFaults, " none": nil, "kill, pause": {FaultKill, FaultPause}} {
-		if got, err := ParseFaults(s); err != nil || !slices.Equal(got, want) {
-			t.Errorf("%q parsed as %v: %v", s, got, err)
-		}
+		t.Run(fmt.Sprintf("%q", s), func(t *testing.T) {
+			if got, err := ParseFaults(s); err != nil || !slices.Equal(got, want) {
+				t.Errorf("parsed as %v: %v", got, err)
+			}
+		})
 	}
 	for _, s := range []string{"", "kil", "kill,partition"} {
 		if got, err := ParseFaults(s); err == nil {

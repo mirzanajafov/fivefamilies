@@ -26,21 +26,25 @@ func TestRoleNamesAreTheOnesTheDashboardShows(t *testing.T) {
 		pb.Role_ROLE_CANDIDATE:     "candidate",
 		pb.Role_ROLE_LEADER:        "leader",
 	} {
-		if got := RoleName(role); got != want {
-			t.Errorf("%v is shown as %q, want %q", role, got, want)
-		}
+		t.Run(role.String(), func(t *testing.T) {
+			if got := RoleName(role); got != want {
+				t.Errorf("%v is shown as %q, want %q", role, got, want)
+			}
+		})
 	}
 }
 
 func TestOnlyKnownReadModesParse(t *testing.T) {
 	for s, want := range map[string]ReadMode{"index": ReadIndex, "lease": ReadLease, "log": ReadLog} {
-		var got ReadMode
-		if err := got.UnmarshalText([]byte(s)); err != nil || got != want {
-			t.Errorf("%q parsed as %s: %v", s, got, err)
-		}
-		if text, _ := want.MarshalText(); string(text) != s {
-			t.Errorf("%s writes itself as %q", want, text)
-		}
+		t.Run(s, func(t *testing.T) {
+			var got ReadMode
+			if err := got.UnmarshalText([]byte(s)); err != nil || got != want {
+				t.Errorf("parsed as %s: %v", got, err)
+			}
+			if text, _ := want.MarshalText(); string(text) != s {
+				t.Errorf("%s writes itself as %q", want, text)
+			}
+		})
 	}
 	for _, s := range []string{"", "leases", "Index"} {
 		var got ReadMode
