@@ -290,16 +290,7 @@ func TestChaosIsBoundedAndOffByDefault(t *testing.T) {
 	}
 	old := c2.leader(time.Second)
 	chaos(t, c2, old, pb.ChaosAction_CHAOS_ACTION_ISOLATE, 2*time.Second)
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		for id, r := range c2.running {
-			if st := r.srv.Status(); id != old && st.GetRole() == pb.Role_ROLE_LEADER {
-				return
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("isolating the leader did not elect another")
+	c2.leaderOtherThan(old, 3*time.Second)
 }
 
 func TestHealClearsAnIsolationEarly(t *testing.T) {
@@ -444,4 +435,49 @@ func TestOneClientCanWriteFromManyGoroutines(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+func TestALeaseReadQueuedBehindAPauseWaitsForTheTicksThePauseMissed(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos, cfg.ElectionTick, cfg.LeaseTicks = true, 200, 180 })
+	old := c.leader(5 * time.Second)
+	srv := c.running[old].srv
+	kvc := c.kvClient(old)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := kvc.Put(ctx, &pb.PutRequest{Key: "k", Value: []byte("before")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kvc.Get(ctx, &pb.GetRequest{Key: "k", Mode: pb.ReadMode_READ_MODE_INDEX}); err != nil {
+		t.Fatal(err)
+	}
+	chaos(t, c, old, pb.ChaosAction_CHAOS_ACTION_PAUSE, 20*time.Second)
+	chaos(t, c, old, pb.ChaosAction_CHAOS_ACTION_ISOLATE, time.Minute)
+	next := c.leaderOtherThan(old, 10*time.Second)
+	if _, err := c.kvClient(next).Put(ctx, &pb.PutRequest{Key: "k", Value: []byte("after")}); err != nil {
+		t.Fatal(err)
+	}
+	type answer struct {
+		resp *pb.GetResponse
+		err  error
+	}
+	read := make(chan answer, 1)
+	go func() {
+		resp, err := kvc.Get(ctx, &pb.GetRequest{Key: "k", Mode: pb.ReadMode_READ_MODE_LEASE})
+		read <- answer{resp, err}
+	}()
+	for len(srv.calls) == 0 {
+		select {
+		case a := <-read:
+			t.Fatalf("the lease read was answered with %v before it queued behind the pause", a.err)
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if srv.paused.remaining() <= 0 {
+		t.Fatal("the pause ended before the lease read was queued behind it")
+	}
+	chaos(t, c, old, pb.ChaosAction_CHAOS_ACTION_PAUSE, time.Millisecond)
+	a := <-read
+	if status.Code(a.err) != codes.Unavailable {
+		t.Fatalf("the paused leader answered a lease read with %q and %v after node %d had written over it, want Unavailable", a.resp.GetKv().GetValue(), a.err, next)
+	}
 }

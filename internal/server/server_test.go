@@ -142,7 +142,38 @@ func (c *testCluster) addrs() []string {
 	return out
 }
 
+func (c *testCluster) dial(id raft.NodeID) *grpc.ClientConn {
+	c.t.Helper()
+	conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	return conn
+}
+
+func (c *testCluster) conn(id raft.NodeID) *grpc.ClientConn {
+	c.t.Helper()
+	conn := c.dial(id)
+	c.t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+func (c *testCluster) admin(id raft.NodeID) pb.AdminClient {
+	c.t.Helper()
+	return pb.NewAdminClient(c.conn(id))
+}
+
+func (c *testCluster) kvClient(id raft.NodeID) pb.KVClient {
+	c.t.Helper()
+	return pb.NewKVClient(c.conn(id))
+}
+
 func (c *testCluster) leader(timeout time.Duration) raft.NodeID {
+	c.t.Helper()
+	return c.leaderOtherThan(raft.None, timeout)
+}
+
+func (c *testCluster) leaderOtherThan(old raft.NodeID, timeout time.Duration) raft.NodeID {
 	c.t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -150,7 +181,7 @@ func (c *testCluster) leader(timeout time.Duration) raft.NodeID {
 		var term uint64
 		for id, r := range c.running {
 			st := r.srv.Status()
-			if st.GetRole() == pb.Role_ROLE_LEADER && st.GetTerm() >= term {
+			if id != old && st.GetRole() == pb.Role_ROLE_LEADER && st.GetTerm() >= term {
 				leader, term = id, st.GetTerm()
 			}
 		}
@@ -159,16 +190,13 @@ func (c *testCluster) leader(timeout time.Duration) raft.NodeID {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	c.t.Fatal("no leader")
+	c.t.Fatalf("no leader other than node %d within %v", old, timeout)
 	return raft.None
 }
 
 func (c *testCluster) status(id raft.NodeID) *pb.StatusResponse {
 	c.t.Helper()
-	conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		c.t.Fatal(err)
-	}
+	conn := c.dial(id)
 	defer conn.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -451,19 +479,15 @@ func TestCallsShapedByThePreviousBuildStillWork(t *testing.T) {
 	leader := c.leader(5 * time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, err := grpc.NewClient(c.nodes[leader], grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
+	kvc := c.kvClient(leader)
 	if st := c.status(leader); st.GetState() != "leader" || st.GetRole() != pb.Role_ROLE_LEADER {
 		t.Fatalf("status says %q and %v, want both to name the leader", st.GetState(), st.GetRole())
 	}
-	session, err := pb.NewKVClient(conn).Register(ctx, &pb.RegisterRequest{})
+	session, err := kvc.Register(ctx, &pb.RegisterRequest{})
 	if err != nil || session.GetClient() == 0 {
 		t.Fatalf("registering a session the old way: %v %v", session, err)
 	}
-	if _, err := pb.NewKVClient(conn).Get(ctx, &pb.GetRequest{Key: "k"}); err != nil {
+	if _, err := kvc.Get(ctx, &pb.GetRequest{Key: "k"}); err != nil {
 		t.Fatalf("a read without a mode, which was ReadIndex: %v", err)
 	}
 	srv := c.running[leader].srv
@@ -502,15 +526,7 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 	follower := leader%3 + 1
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	connTo := func(id raft.NodeID) *grpc.ClientConn {
-		conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { conn.Close() })
-		return conn
-	}
-	kvc := pb.NewKVClient(connTo(leader))
+	kvc := c.kvClient(leader)
 	session, err := kvc.OpenSession(ctx, &pb.OpenSessionRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -518,8 +534,8 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 	if _, err := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient(), Seq: 2, Key: "k"}); err != nil {
 		t.Fatal(err)
 	}
-	_, notLeader := pb.NewKVClient(connTo(follower)).Put(ctx, &pb.PutRequest{Key: "k"})
-	_, noLease := pb.NewLeaseClient(connTo(leader)).TimeToLive(ctx, &pb.LeaseTimeToLiveRequest{Id: 404})
+	_, notLeader := c.kvClient(follower).Put(ctx, &pb.PutRequest{Key: "k"})
+	_, noLease := pb.NewLeaseClient(c.conn(leader)).TimeToLive(ctx, &pb.LeaseTimeToLiveRequest{Id: 404})
 	_, stale := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient(), Seq: 1, Key: "k"})
 	_, expired := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient() + 1000, Seq: 1, Key: "k"})
 	for _, tc := range []struct {
@@ -546,10 +562,7 @@ func TestAFollowersRefusalNamesTheLeader(t *testing.T) {
 	var got []string
 	for range 20 {
 		follower := c.leader(5*time.Second)%3 + 1
-		conn, dialErr := grpc.NewClient(c.nodes[follower], grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if dialErr != nil {
-			t.Fatal(dialErr)
-		}
+		conn := c.dial(follower)
 		var md metadata.MD
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		_, err = pb.NewKVClient(conn).Put(ctx, &pb.PutRequest{Key: "k"}, grpc.Header(&md))
