@@ -15,7 +15,7 @@ const (
 )
 
 func BuildLabImage(ctx context.Context, root string) error {
-	_, err := Docker(ctx, nil, "build", "-q", "--target", "lab", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", LabImage, root)
+	_, err := Docker(ctx, nil, "build", "-q", "--target", "lab", "-t", LabImage, root)
 	return err
 }
 

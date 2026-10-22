@@ -7,3 +7,4 @@ web
 backups
 bench/results
 **/raw
+*.exe
