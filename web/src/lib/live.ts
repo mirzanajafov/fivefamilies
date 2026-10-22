@@ -16,7 +16,7 @@ export function useLive(): Live {
       source = new EventSource('/api/stream')
       source.onmessage = (e: MessageEvent<string>) => {
         const snapshot = snapshotIn(e.data)
-        setLive((l) => (snapshot ? { snapshot, connected: true, unreadable: false } : { ...l, unreadable: true }))
+        setLive((l) => (snapshot ? { snapshot, connected: true, unreadable: false } : { ...l, connected: true, unreadable: true }))
       }
       source.onerror = () => {
         source?.close()

@@ -1,6 +1,7 @@
 import { describe as suite, expect, it } from 'vitest'
 import { errorIn } from './api'
-import { ago, ms, perSecond, rate } from './format'
+import { readFileSync } from 'node:fs'
+import { ago, ms, rate, wholeRate } from './format'
 import { adminIn } from './session'
 import { snapshotIn } from './snapshot'
 import { describe, family, outcome, role } from './words'
@@ -13,10 +14,7 @@ const node = (over: Partial<NodeView>): NodeView => ({
   term: 3,
   leader: 2,
   commit: 10,
-  applied: 10,
   last: 10,
-  first: 1,
-  snapshot: 0,
   voter: true,
   learner: false,
   msgs_per_s: 0,
@@ -43,13 +41,8 @@ suite('words', () => {
       id: 1,
       action: 'kill',
       node: 3,
-      duration_ns: 3e9,
-      started: '',
       ends: '',
-      by: 'visitor',
       on_leader: true,
-      old_leader: 3,
-      old_term: 6,
       failover: { election_ns: 1.28e9, client_gap_ns: 1.81e9, new_leader: 4 },
     }
     expect(outcome(f)).toBe('Family III was killed. Family IV took over after 1,280 ms, and clients waited 1,810 ms between two acknowledged writes.')
@@ -62,7 +55,7 @@ suite('format', () => {
     expect(rate(19.93)).toBe('19.9')
     expect(rate(250.4)).toBe('250')
     expect(rate(1234.5)).toBe('1235')
-    expect(perSecond(14_000.4)).toBe('14,000')
+    expect(wholeRate(14_000.4)).toBe('14,000')
     expect(ago(new Date(1000).toISOString(), 1000 + 90_000)).toBe('1m ago')
   })
   it('shows short times with a decimal and long ones whole', () => {
@@ -80,7 +73,7 @@ suite('api', () => {
     events: [],
     windows: [],
     load: { active: false, ops_per_s: 0, viewers: 0 },
-    limits: { max_seconds: 15, cooldown_seconds: 10 },
+    limits: { max_seconds: 15 },
   }
   it('takes a snapshot only when every part the dashboard reads has the right type', () => {
     expect(snapshotIn(JSON.stringify(snapshot))).toEqual(snapshot)
@@ -91,6 +84,11 @@ suite('api', () => {
     expect(snapshotIn(JSON.stringify({ ...snapshot, nodes: [{ id: 1, up: true }] }))).toBeUndefined()
     expect(snapshotIn(JSON.stringify({ ...snapshot, nodes: [{ ...node({}), fault: 'melt' }] }))).toBeUndefined()
     expect(snapshotIn('not json')).toBeUndefined()
+  })
+  it('reads a snapshot with every field the controller writes', () => {
+    const full = snapshotIn(readFileSync(new URL('../../../internal/controller/testdata/snapshot.json', import.meta.url), 'utf8'))
+    expect(full?.last?.failover?.new_leader).toBe(3)
+    expect(full?.limits.next_allowed).toBeTypeOf('string')
   })
   it('reads an error and the admin flag only when they have the right type', () => {
     expect(errorIn({ error: 'refused' })).toBe('refused')

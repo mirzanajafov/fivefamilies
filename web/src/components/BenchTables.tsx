@@ -1,4 +1,4 @@
-import { ms, perSecond } from '@/lib/format'
+import { ms, wholeRate } from '@/lib/format'
 import type { Curve, E1bRow, Point } from '@/lib/results'
 
 const per = (v: number) => (v === 0 ? '0' : v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2))
@@ -36,12 +36,12 @@ export function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][
 
 function knee(c: Curve): string {
   if (!c.knee) return 'none'
-  if (c.rounds < 2) return perSecond(c.knee)
-  return c.kneeMin === c.kneeMax ? `${perSecond(c.knee)} (every round)` : `${perSecond(c.knee)} (${perSecond(c.kneeMin)}–${perSecond(c.kneeMax)})`
+  if (c.rounds < 2) return wholeRate(c.knee)
+  return c.kneeMin === c.kneeMax ? `${wholeRate(c.knee)} (every round)` : `${wholeRate(c.knee)} (${wholeRate(c.kneeMin)}–${wholeRate(c.kneeMax)})`
 }
 
 function latency(c: Curve, cells: (p: Point) => string[]): string[] {
-  return c.latency ? [perSecond(c.latency.rate), ...cells(c.latency)] : Array<string>(5).fill('')
+  return c.latency ? [wholeRate(c.latency.rate), ...cells(c.latency)] : Array<string>(5).fill('')
 }
 
 export function WriteCurves({ curves, unit = 'write' }: { curves: Curve[]; unit?: string }) {

@@ -62,7 +62,11 @@ export function AdminBox() {
           </button>
         </form>
       )}
-      {error && <p className="mt-3 text-sm text-[var(--blood)]">{error}</p>}
+      {error && (
+        <p className="mt-3 text-sm text-[var(--blood)]" role="alert">
+          {error}
+        </p>
+      )}
     </section>
   )
 }

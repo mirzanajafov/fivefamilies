@@ -1,0 +1,97 @@
+{
+  "at": "2026-10-22T18:00:00Z",
+  "nodes": [
+    {
+      "id": 3,
+      "up": true,
+      "state": "leader",
+      "term": 7,
+      "leader": 3,
+      "commit": 1203,
+      "applied": 1203,
+      "last": 1204,
+      "first": 1001,
+      "snapshot": 1000,
+      "voter": true,
+      "learner": false,
+      "msgs_per_s": 41.5
+    },
+    {
+      "id": 4,
+      "up": true,
+      "state": "follower",
+      "term": 7,
+      "leader": 3,
+      "commit": 1190,
+      "applied": 1189,
+      "last": 1190,
+      "first": 1001,
+      "snapshot": 1000,
+      "voter": false,
+      "learner": true,
+      "msgs_per_s": 2.25,
+      "fault": "isolate"
+    }
+  ],
+  "leader": 3,
+  "term": 7,
+  "events": [
+    {
+      "at": "2026-10-22T17:59:51Z",
+      "kind": "succession",
+      "node": 3,
+      "term": 7,
+      "text": "node 3 leads term 7"
+    }
+  ],
+  "windows": [
+    {
+      "index": 17,
+      "from": "2026-10-22T17:59:40Z",
+      "to": "2026-10-22T17:59:50Z",
+      "ops": 640,
+      "result": "Unknown",
+      "took_ns": 1500000000,
+      "note": "the check ran out of time"
+    }
+  ],
+  "fault": {
+    "id": 5,
+    "action": "isolate",
+    "node": 4,
+    "duration_ns": 8000000000,
+    "started": "2026-10-22T17:59:59Z",
+    "ends": "2026-10-22T18:00:07Z",
+    "by": "admin",
+    "on_leader": false,
+    "old_leader": 3,
+    "old_term": 7
+  },
+  "last": {
+    "id": 4,
+    "action": "kill",
+    "node": 2,
+    "duration_ns": 5000000000,
+    "started": "2026-10-22T17:59:50Z",
+    "ends": "2026-10-22T17:59:55Z",
+    "by": "visitor",
+    "on_leader": true,
+    "old_leader": 2,
+    "old_term": 6,
+    "failover": {
+      "client_gap_ns": 412000000,
+      "election_ns": 388000000,
+      "new_leader": 3
+    }
+  },
+  "load": {
+    "active": true,
+    "ops_per_s": 63.8,
+    "viewers": 2
+  },
+  "limits": {
+    "max_seconds": 15,
+    "cooldown_seconds": 10,
+    "next_allowed": "2026-10-22T18:00:05Z"
+  }
+}
