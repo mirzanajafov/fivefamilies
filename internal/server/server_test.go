@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -173,11 +174,21 @@ func (c *testCluster) leader(timeout time.Duration) raft.NodeID {
 	return c.leaderOtherThan(raft.None, timeout)
 }
 
+func eventually(within time.Duration, done func() bool) bool {
+	deadline := time.Now().Add(within)
+	for !done() {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return true
+}
+
 func (c *testCluster) leaderOtherThan(old raft.NodeID, timeout time.Duration) raft.NodeID {
 	c.t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		var leader raft.NodeID
+	var leader raft.NodeID
+	found := eventually(timeout, func() bool {
 		var term uint64
 		for id, r := range c.running {
 			st := r.srv.Status()
@@ -185,13 +196,12 @@ func (c *testCluster) leaderOtherThan(old raft.NodeID, timeout time.Duration) ra
 				leader, term = id, st.GetTerm()
 			}
 		}
-		if leader != raft.None {
-			return leader
-		}
-		time.Sleep(10 * time.Millisecond)
+		return leader != raft.None
+	})
+	if !found {
+		c.t.Fatalf("no leader other than node %d within %v", old, timeout)
 	}
-	c.t.Fatalf("no leader other than node %d within %v", old, timeout)
-	return raft.None
+	return leader
 }
 
 func (c *testCluster) status(id raft.NodeID) *pb.StatusResponse {
@@ -246,25 +256,21 @@ func TestAClusterWritesReadsAndSurvivesItsLeader(t *testing.T) {
 	if _, err := cl.Put(ctx, "last", []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		var hashes []uint64
-		var revs []uint64
+	var revs, hashes []uint64
+	converged := eventually(10*time.Second, func() bool {
+		revs, hashes = nil, nil
 		for id := range c.running {
 			st := c.status(id)
 			hashes = append(hashes, st.GetStateHash())
 			revs = append(revs, st.GetHashIndex())
 		}
-		if revs[0] == revs[1] && revs[1] == revs[2] {
-			if hashes[0] != hashes[1] || hashes[1] != hashes[2] {
-				t.Fatalf("same revision %d, different states %v", revs[0], hashes)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("nodes did not converge: revisions %v", revs)
-		}
-		time.Sleep(50 * time.Millisecond)
+		return revs[0] == revs[1] && revs[1] == revs[2]
+	})
+	if !converged {
+		t.Fatalf("nodes did not converge: revisions %v", revs)
+	}
+	if hashes[0] != hashes[1] || hashes[1] != hashes[2] {
+		t.Fatalf("same revision %d, different states %v", revs[0], hashes)
 	}
 }
 
@@ -340,8 +346,8 @@ func TestAWriteGivesUpWhileWaitingBehindAnotherWrite(t *testing.T) {
 		cancel()
 		<-waiting
 	}()
-	for c.running[leader].srv.counts.writes.Load() == 0 {
-		time.Sleep(5 * time.Millisecond)
+	if !eventually(5*time.Second, func() bool { return c.running[leader].srv.counts.writes.Load() > 0 }) {
+		t.Fatal("the write that waits for a quorum never reached the leader's log")
 	}
 	ctx, cancelShort := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancelShort()
@@ -420,12 +426,8 @@ func TestASnapshotThatCannotBeSavedEndsRunWithoutItsLogRecordAndCallsStopWaiting
 		stopRun()
 		<-finished
 	})
-	deadline := time.Now().Add(5 * time.Second)
-	for srv.Status().GetRole() != pb.Role_ROLE_LEADER {
-		if time.Now().After(deadline) {
-			t.Fatal("no leader")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !eventually(5*time.Second, func() bool { return srv.Status().GetRole() == pb.Role_ROLE_LEADER }) {
+		t.Fatal("no leader")
 	}
 	for index := range uint64(8) {
 		if err := os.MkdirAll(filepath.Join(dir, snap.Name(index+1, srv.Status().GetTerm()), "taken"), 0o700); err != nil {
@@ -499,9 +501,11 @@ func TestCallsShapedByThePreviousBuildStillWork(t *testing.T) {
 		{"stall-disk", &srv.stalled},
 		{"pause", &srv.paused},
 	} {
-		if _, err := c.admin(leader).Chaos(ctx, &pb.ChaosRequest{LegacyAction: tc.action, DurationMs: 2000}); err != nil || tc.fault.remaining() <= 0 {
-			t.Fatalf("chaos %q named the old way: %v", tc.action, err)
-		}
+		t.Run(tc.action, func(t *testing.T) {
+			if _, err := c.admin(leader).Chaos(ctx, &pb.ChaosRequest{LegacyAction: tc.action, DurationMs: 2000}); err != nil || tc.fault.remaining() <= 0 {
+				t.Fatalf("chaos %q named the old way: %v", tc.action, err)
+			}
+		})
 	}
 	if _, err := c.admin(leader).Chaos(ctx, &pb.ChaosRequest{LegacyAction: "heal"}); err != nil {
 		t.Fatalf("heal named the old way: %v", err)
@@ -550,9 +554,11 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 		{noLease, codes.NotFound, "lease not found", pb.ErrorReason_ERROR_REASON_LEASE_NOT_FOUND},
 		{outcome(kv.Result{Code: kv.ErrTooManyLeases}), codes.FailedPrecondition, "too many leases", pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES},
 	} {
-		if s := status.Convert(tc.err); s.Code() != tc.code || s.Message() != tc.msg || client.Reason(tc.err) != tc.reason {
-			t.Errorf("got %v %q %v, want %v %q %v", s.Code(), s.Message(), client.Reason(tc.err), tc.code, tc.msg, tc.reason)
-		}
+		t.Run(tc.msg, func(t *testing.T) {
+			if s := status.Convert(tc.err); s.Code() != tc.code || s.Message() != tc.msg || client.Reason(tc.err) != tc.reason {
+				t.Errorf("got %v %q %v, want %v %q %v", s.Code(), s.Message(), client.Reason(tc.err), tc.code, tc.msg, tc.reason)
+			}
+		})
 	}
 }
 
@@ -576,4 +582,56 @@ func TestAFollowersRefusalNamesTheLeader(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 	}
 	t.Fatalf("twenty writes to a follower, the last got %v with the hint %v, want a refusal naming the leader", err, got)
+}
+
+func putMany(t *testing.T, c *testCluster, writers, each int) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	for w := range writers {
+		cl, err := client.New(c.addrs(), client.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cl.Close()
+		wg.Go(func() {
+			for i := range each {
+				if _, err := cl.Put(ctx, fmt.Sprintf("k%d-%d", w, i), []byte("v")); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func TestOneClientCanWriteFromManyGoroutines(t *testing.T) {
+	c := newTestCluster(t, 3, nil)
+	c.leader(5 * time.Second)
+	cl, err := client.New(c.addrs(), client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Go(func() {
+			if _, err := cl.Put(ctx, fmt.Sprintf("k%d", i), []byte("v")); err != nil {
+				t.Errorf("put %d: %v (a session takes one write at a time, so the client must queue them)", i, err)
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func chaos(t *testing.T, c *testCluster, id raft.NodeID, action pb.ChaosAction, d time.Duration) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.admin(id).Chaos(ctx, &pb.ChaosRequest{Action: action, DurationMs: uint64(d / time.Millisecond)}); err != nil {
+		t.Fatalf("%s on %d: %v", action, id, err)
+	}
 }

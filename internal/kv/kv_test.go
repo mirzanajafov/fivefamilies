@@ -190,7 +190,7 @@ func TestRetriedCommandAppliesOnce(t *testing.T) {
 	a.do(Command{Op: OpPut, Key: "k", Value: []byte("someone else")})
 	retry := a.do(put)
 	if !first.Ok || !retry.Ok || retry.Rev != first.Rev {
-		t.Fatalf("first %+v retry %+v; the retry must return the first result", first, retry)
+		t.Fatalf("first %+v retry %+v, but the retry must return the first result", first, retry)
 	}
 	if kv, _ := a.s.Get("k"); string(kv.Value) != "someone else" {
 		t.Fatalf("the retry applied again: %q", kv.Value)
@@ -361,9 +361,10 @@ func TestALeaseTakesItsKeysWithIt(t *testing.T) {
 }
 
 func TestAWriteOnAMissingLeaseChangesNothing(t *testing.T) {
-	a := newApplier(0)
-	a.do(Command{Op: OpPut, Key: "k", Value: []byte("v")})
-	before := a.s.Hash()
+	a, untouched := newApplier(0), newApplier(0)
+	for _, x := range []*applier{a, untouched} {
+		x.do(Command{Op: OpPut, Key: "k", Value: []byte("v")})
+	}
 	for _, c := range []Command{
 		{Op: OpPut, Key: "k", Value: []byte("w"), Lease: 77},
 		{Op: OpCAS, Key: "k", Value: []byte("w"), Expect: []byte("v"), Lease: 77},
@@ -372,10 +373,10 @@ func TestAWriteOnAMissingLeaseChangesNothing(t *testing.T) {
 		if r := a.do(c); r.Code != ErrLeaseNotFound {
 			t.Fatalf("%v on a missing lease: %+v", c.Op, r)
 		}
+		untouched.noop()
 	}
-	a.s.rev = 1
-	if a.s.Hash() != before {
-		t.Fatal("a refused write changed the store")
+	if a.s.Hash() != untouched.s.Hash() {
+		t.Fatal("a refused write changed more than the revision")
 	}
 }
 
