@@ -108,8 +108,8 @@ func main() {
 	}
 	t := &target{cli: cli, serializable: *readMode == "serializable"}
 	cfg := loadgen.Config{Rate: *rate, Duration: *duration, Warmup: *warmup, ReadFraction: *reads, Keys: *keys, ValueBytes: *valueBytes,
-		MaxInflight: *inflight, Timeout: *timeout, Seed: *seed}
-	r, err := loadgen.Measure(context.Background(), t, cfg, true, func(ctx context.Context) ([]loadgen.Counters, error) { return scrapeAll(ctx, all) })
+		MaxInflight: *inflight, Timeout: *timeout, Seed: *seed, Preload: true}
+	r, err := loadgen.Measure(context.Background(), t, cfg, func(ctx context.Context) ([]loadgen.Counters, error) { return scrapeAll(ctx, all) })
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

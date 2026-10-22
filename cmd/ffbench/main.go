@@ -117,8 +117,8 @@ func main() {
 		t.admin = append(t.admin, pb.NewAdminClient(conn))
 	}
 	cfg := loadgen.Config{Rate: *rate, Duration: *duration, Warmup: *warmup, ReadFraction: *reads, Keys: *keys, ValueBytes: *valueBytes,
-		MaxInflight: *inflight, Timeout: *timeout, Poisson: *poisson, Seed: *seed}
-	r, err := loadgen.Measure(context.Background(), t, cfg, *preload, t.counters)
+		MaxInflight: *inflight, Timeout: *timeout, Poisson: *poisson, Seed: *seed, Preload: *preload}
+	r, err := loadgen.Measure(context.Background(), t, cfg, t.counters)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

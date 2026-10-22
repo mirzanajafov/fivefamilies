@@ -104,29 +104,32 @@ func withBase(extra ...string) []string {
 	return append(slices.Clone(baseNode), extra...)
 }
 
-func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []curveSpec) ([]Curve, error) {
-	if o.Quick {
-		var quick []curveSpec
-		for _, sp := range specs {
-			if !slices.ContainsFunc(quick, func(q curveSpec) bool { return q.etcd == sp.etcd }) {
-				quick = append(quick, sp)
-			}
+func (o ExperimentOptions) pick(specs []curveSpec) []curveSpec {
+	var picked []curveSpec
+	for _, sp := range specs {
+		if !o.wants(sp.name) || o.Quick && slices.ContainsFunc(picked, func(p curveSpec) bool { return p.etcd == sp.etcd }) {
+			continue
 		}
-		specs = quick
+		picked = append(picked, sp)
 	}
+	return picked
+}
+
+func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []curveSpec) ([]Curve, error) {
 	var curves []Curve
-	for round, sp := range rounds(o, specs, func(sp curveSpec) string { return sp.name }) {
+	for round, sp := range rounds(o, o.pick(specs), func(sp curveSpec) string { return sp.name }) {
 		o.Log("%s, round %d: starting %d nodes", sp.name, round, sp.nodes)
 		sys, gen, err := sp.start(ctx, o)
 		if err != nil {
 			o.tearDown(sp.name, sys.Down)
 			return curves, fmt.Errorf("%s: %w", sp.name, err)
 		}
-		c := sweep(ctx, sys.Generate, sys.Quiet, Curve{Name: sp.name, Nodes: sp.nodes, NodeFlags: sp.node, GenFlags: gen}, o.sweep())
+		c := sweep(ctx, sys, Curve{Name: sp.name, Nodes: sp.nodes, NodeFlags: sp.node, GenFlags: gen}, o.sweep())
 		c.Round = round
+		cut := ctx.Err()
 		o.tearDown(sp.name, sys.Down)
-		if err := ctx.Err(); err != nil {
-			return curves, err
+		if cut != nil {
+			return curves, cut
 		}
 		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
@@ -248,7 +251,11 @@ func E1b(ctx context.Context, o ExperimentOptions) (E1bResult, error) {
 		res.Rows = append(res.Rows, row)
 		return SaveJSON(o.Out, "e1b.json", res)
 	})
-	if err = cmp.Or(ctx.Err(), err); err != nil && len(res.Rows) > 0 {
+	if err == nil {
+		return res, nil
+	}
+	err = cmp.Or(ctx.Err(), err)
+	if len(res.Rows) > 0 {
 		res.Err = err.Error()
 		if serr := SaveJSON(o.Out, "e1b.json", res); serr != nil {
 			return res, errors.Join(err, serr)

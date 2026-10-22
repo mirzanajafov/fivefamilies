@@ -37,11 +37,11 @@ type Report struct {
 
 type Probe func(ctx context.Context) ([]Counters, error)
 
-func Measure(ctx context.Context, t Target, cfg Config, preload bool, probe Probe) (Report, error) {
+func Measure(ctx context.Context, t Target, cfg Config, probe Probe) (Report, error) {
 	if err := cfg.normalize(); err != nil {
 		return Report{}, err
 	}
-	if preload {
+	if cfg.Preload {
 		if err := writeEveryKey(ctx, t, cfg); err != nil {
 			return Report{}, fmt.Errorf("preload: %w", err)
 		}

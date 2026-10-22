@@ -70,9 +70,9 @@ func TestAMeasurementPreloadsEveryKeyAndCountsOnlyTheMeasuredWindow(t *testing.T
 		probes = probes[1:]
 		return []Counters{c}, nil
 	}
-	cfg := Config{Rate: 200, Duration: 100 * time.Millisecond, Warmup: 50 * time.Millisecond, ReadFraction: 1, Keys: 5, ValueBytes: 8}
+	cfg := Config{Rate: 200, Duration: 100 * time.Millisecond, Warmup: 50 * time.Millisecond, ReadFraction: 1, Keys: 5, ValueBytes: 8, Preload: true}
 	start := time.Now()
-	r, err := Measure(context.Background(), k, cfg, true, probe)
+	r, err := Measure(context.Background(), k, cfg, probe)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +94,8 @@ func TestAMeasurementPreloadsEveryKeyAndCountsOnlyTheMeasuredWindow(t *testing.T
 }
 
 func TestAPreloadThatNeverSucceedsNamesTheKey(t *testing.T) {
-	cfg := Config{Rate: 200, Duration: 100 * time.Millisecond, Keys: 1, Timeout: time.Millisecond}
-	_, err := Measure(context.Background(), &keyRecorder{refuse: true}, cfg, true, func(context.Context) ([]Counters, error) { return nil, nil })
+	cfg := Config{Rate: 200, Duration: 100 * time.Millisecond, Keys: 1, Timeout: time.Millisecond, Preload: true}
+	_, err := Measure(context.Background(), &keyRecorder{refuse: true}, cfg, func(context.Context) ([]Counters, error) { return nil, nil })
 	if err == nil || !strings.Contains(err.Error(), key(0)) {
 		t.Fatalf("got %v, want the preload's failure for %s", err, key(0))
 	}

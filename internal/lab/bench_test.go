@@ -31,7 +31,7 @@ type fakeCluster struct {
 	busy     bool
 }
 
-func (f *fakeCluster) gen(_ context.Context, _ string, args ...string) (loadgen.Report, error) {
+func (f *fakeCluster) Generate(_ context.Context, _ string, args ...string) (loadgen.Report, error) {
 	rate, err := strconv.ParseFloat(args[1], 64)
 	if err != nil {
 		return loadgen.Report{}, err
@@ -42,7 +42,11 @@ func (f *fakeCluster) gen(_ context.Context, _ string, args ...string) (loadgen.
 	return loadgen.Report{Summary: s}, nil
 }
 
-func (f *fakeCluster) quiet(context.Context) error {
+func (f *fakeCluster) Down() error {
+	return nil
+}
+
+func (f *fakeCluster) Quiet(context.Context) error {
 	f.quiets++
 	if f.busy {
 		return errors.New("still busy")
@@ -52,7 +56,7 @@ func (f *fakeCluster) quiet(context.Context) error {
 
 func (f *fakeCluster) sweep(opts SweepOptions) Curve {
 	opts.Factor, opts.Max, opts.MaxP99 = 2, 64000, time.Second
-	return sweep(context.Background(), f.gen, f.quiet, Curve{Name: "fake"}, opts)
+	return sweep(context.Background(), f, Curve{Name: "fake"}, opts)
 }
 
 func TestTheSweepStopsAtTheKneeAndMeasuresBelowIt(t *testing.T) {
@@ -169,5 +173,29 @@ func TestRepeatsAreInterleavedAndRotated(t *testing.T) {
 	}
 	if s := strings.Join(got, " "); s != "1a 1b 1c 2b 2c 2a 3c 3a 3b" {
 		t.Fatalf("order %s", s)
+	}
+}
+
+func TestAQuickRunTakesTheFirstOfTheChosenCurvesOfEachSystem(t *testing.T) {
+	specs := []curveSpec{{name: "ff a"}, {name: "etcd a", etcd: true}, {name: "ff b"}, {name: "etcd b", etcd: true}}
+	names := func(specs []curveSpec) string {
+		var out []string
+		for _, sp := range specs {
+			out = append(out, sp.name)
+		}
+		return strings.Join(out, ", ")
+	}
+	for _, tc := range []struct {
+		o    ExperimentOptions
+		want string
+	}{
+		{ExperimentOptions{}, "ff a, etcd a, ff b, etcd b"},
+		{ExperimentOptions{Quick: true}, "ff a, etcd a"},
+		{ExperimentOptions{Quick: true, Only: []string{"ff b", "etcd b"}}, "ff b, etcd b"},
+		{ExperimentOptions{Only: []string{"etcd b"}}, "etcd b"},
+	} {
+		if got := names(tc.o.pick(specs)); got != tc.want {
+			t.Errorf("quick %v, only %v: picked %s, want %s", tc.o.Quick, tc.o.Only, got, tc.want)
+		}
 	}
 }

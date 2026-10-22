@@ -32,6 +32,7 @@ type Config struct {
 	Timeout      time.Duration `json:"timeout_ns"`
 	Poisson      bool          `json:"poisson"`
 	Seed         uint64        `json:"seed"`
+	Preload      bool          `json:"preload"`
 }
 
 func (c *Config) normalize() error {

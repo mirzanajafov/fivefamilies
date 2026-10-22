@@ -40,17 +40,17 @@ func (g *generator) watch(ctx context.Context, start time.Time, record func(load
 			if err != nil {
 				if !down[i] {
 					down[i] = true
-					record(loadgen.FailoverSample{Kind: "unreachable", Node: i + 1, Done: now})
+					record(loadgen.FailoverSample{Kind: loadgen.SampleUnreachable, Node: i + 1, Done: now})
 				}
 				continue
 			}
 			if down[i] {
 				down[i] = false
-				record(loadgen.FailoverSample{Kind: "reachable", Node: i + 1, Done: now})
+				record(loadgen.FailoverSample{Kind: loadgen.SampleReachable, Node: i + 1, Done: now})
 			}
 			if st.GetRole() == pb.Role_ROLE_LEADER && (i+1 != lastLeader || st.GetTerm() != lastTerm) && st.GetTerm() >= lastTerm {
 				lastLeader, lastTerm = i+1, st.GetTerm()
-				record(loadgen.FailoverSample{Kind: "leader", Leader: i + 1, Term: st.GetTerm(), Done: now})
+				record(loadgen.FailoverSample{Kind: loadgen.SampleLeader, Leader: i + 1, Term: st.GetTerm(), Done: now})
 			}
 		}
 		time.Sleep(10 * time.Millisecond)

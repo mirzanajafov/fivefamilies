@@ -157,12 +157,12 @@ func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, err
 		var writes []loadgen.FailoverSample
 		for _, s := range g.samples {
 			switch {
-			case s.Kind == "unreachable" && s.Node == leader && trial.Detected == 0:
+			case s.Kind == loadgen.SampleUnreachable && s.Node == leader && trial.Detected == 0:
 				trial.Detected = time.Duration(s.Done)
-			case s.Kind == "leader" && s.Leader != leader && trial.Detected > 0 && trial.NewLeader == 0:
+			case s.Kind == loadgen.SampleLeader && s.Leader != leader && trial.Detected > 0 && trial.NewLeader == 0:
 				trial.NewLeader = time.Duration(s.Done)
 			}
-			if s.Kind != "" {
+			if s.Kind != loadgen.SampleWrite {
 				continue
 			}
 			writes = append(writes, s)

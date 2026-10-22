@@ -88,10 +88,10 @@ func (c *composeCluster) Down() error {
 	return errors.Join(errs...)
 }
 
-func (c *composeCluster) runGenerator(ctx context.Context, genCPUs string, image, args []string) (loadgen.Report, error) {
+func (c *composeCluster) runGenerator(ctx context.Context, genCPUs string, command, args []string) (loadgen.Report, error) {
 	c.gens++
 	name := fmt.Sprintf("%s-gen-%d", c.d.Project, c.gens)
-	run := append([]string{"run", "--rm", "--name", name, "--network", c.d.Project + "_bench", "--cpuset-cpus", genCPUs}, image...)
+	run := append([]string{"run", "--rm", "--name", name, "--network", c.d.Project + "_bench", "--cpuset-cpus", genCPUs}, command...)
 	out, err := c.d.cmd(ctx, nil, append(run, args...)...)
 	var r loadgen.Report
 	if err != nil {
@@ -205,20 +205,16 @@ func saturated(s Step, maxP99 time.Duration) bool {
 	return s.Err != "" || !sum.Valid || sum.Achieved < 0.9*s.Rate || sum.All.P99 > maxP99 || float64(sum.All.Error) > 0.01*float64(sum.Scheduled)
 }
 
-type generator func(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error)
-
-type quieter func(ctx context.Context) error
-
-func sweep(ctx context.Context, gen generator, quiet quieter, c Curve, opts SweepOptions) Curve {
+func sweep(ctx context.Context, sys system, c Curve, opts SweepOptions) Curve {
 	stopped := false
 	run := func(rate float64) Step {
 		s := Step{Rate: rate}
-		if err := quiet(ctx); err != nil {
+		if err := sys.Quiet(ctx); err != nil {
 			s.Err, stopped = err.Error(), true
 			return s
 		}
 		args := append([]string{"-rate", fmt.Sprint(rate), "-duration", opts.Duration.String(), "-warmup", opts.Warmup.String()}, c.GenFlags...)
-		r, err := gen(ctx, opts.GenCPUs, args...)
+		r, err := sys.Generate(ctx, opts.GenCPUs, args...)
 		s.Report = r
 		if err != nil {
 			s.Err = err.Error()

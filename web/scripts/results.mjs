@@ -54,14 +54,7 @@ function failover() {
 function registry() {
   const run = newestComplete('registry', (f) => !f.error && Object.keys(f.variants ?? {}).length > 0)
   const f = run && read('registry', run, 'registry.json')
-  if (!f) return null
-  const variants = Object.fromEntries(
-    Object.entries(f.variants).map(([name, v]) => [
-      name,
-      { ...v, median_ns: median(f.trials.filter((t) => t.variant === name && !t.error).map((t) => t.gone_ns)) },
-    ]),
-  )
-  return { run, ttl: f.options.ttl_ns, election: f.options.election, variants }
+  return f ? { run, ttl: f.options.ttl_ns, election: f.options.election, variants: f.variants } : null
 }
 
 function lab() {
