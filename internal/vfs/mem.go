@@ -179,6 +179,7 @@ func (m *Mem) tear(rng *rand.Rand, f *memFile) {
 		for i := max(s, f.synced); i < min(s+m.SectorSize, end); i++ {
 			f.data[i] = byte(rng.Uint32())
 		}
+		f.data = f.data[:min(s+m.SectorSize, end)]
 	}
 	f.synced = len(f.data)
 }
