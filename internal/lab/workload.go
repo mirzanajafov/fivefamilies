@@ -14,11 +14,6 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/check/live"
 )
 
-type record struct {
-	check.Op
-	Err string `json:"error,omitempty"`
-}
-
 type workload struct {
 	addrs     []string
 	workers   int
@@ -28,7 +23,8 @@ type workload struct {
 	seed      uint64
 	start     time.Time
 	mu        sync.Mutex
-	ops       []record
+	ops       []check.Op
+	errs      []string
 }
 
 func (w *workload) now() int64 {
@@ -75,11 +71,15 @@ func (w *workload) worker(id int, stop <-chan struct{}) {
 		default:
 			in.Kind = check.Delete
 		}
-		op := w.do(c, id, in)
+		op, err := w.do(c, id, in)
+		var msg string
+		if err != nil {
+			msg = err.Error()
+		}
 		w.mu.Lock()
-		w.ops = append(w.ops, op)
+		w.ops, w.errs = append(w.ops, op), append(w.errs, msg)
 		w.mu.Unlock()
-		if op.Err != "" {
+		if err != nil {
 			continue
 		}
 		switch {
@@ -94,25 +94,17 @@ func (w *workload) worker(id int, stop <-chan struct{}) {
 	}
 }
 
-func (w *workload) do(c *client.Client, id int, in check.Input) record {
+func (w *workload) do(c *client.Client, id int, in check.Input) (check.Op, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), w.opTimeout)
 	defer cancel()
 	call := w.now()
 	out, err := live.Execute(ctx, c, in, w.read)
-	r := record{Op: check.Op{Client: id, Input: in, Output: out, Call: call, Return: w.now()}}
-	if err != nil {
-		r.Err = err.Error()
-	}
-	return r
+	return check.Op{Client: id, Input: in, Output: out, Call: call, Return: w.now()}, err
 }
 
 func (w *workload) history() ([]porcupine.Operation, int, int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	ops := make([]check.Op, len(w.ops))
-	for i, r := range w.ops {
-		ops[i] = r.Op
-	}
-	hist, unknown := check.History(ops)
-	return hist, unknown, len(ops) - len(hist)
+	hist, unknown := check.History(w.ops)
+	return hist, unknown, len(w.ops) - len(hist)
 }

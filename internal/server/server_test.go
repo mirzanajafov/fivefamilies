@@ -545,6 +545,7 @@ func TestAFollowersRefusalPointsTheRouterAtTheLeader(t *testing.T) {
 	defer cancel()
 	for attempt := 1; ; attempt++ {
 		leader := c.leader(5 * time.Second)
+		term := c.status(leader).GetTerm()
 		follower := leader%3 + 1
 		for c.status(follower).GetLeader() != uint64(leader) && ctx.Err() == nil {
 			time.Sleep(10 * time.Millisecond)
@@ -556,16 +557,13 @@ func TestAFollowersRefusalPointsTheRouterAtTheLeader(t *testing.T) {
 		var md metadata.MD
 		_, err = pb.NewKVClient(conn).Put(ctx, &pb.PutRequest{Key: "k"}, grpc.Header(&md))
 		conn.Close()
-		if client.Reason(err) != pb.ErrorReason_ERROR_REASON_NOT_LEADER {
-			t.Fatalf("a write to a follower: %v", err)
-		}
 		r := route.NewRouter([]string{c.nodes[follower], c.nodes[6-leader-follower], c.nodes[leader]})
 		r.MoveOn(0, md)
 		switch {
-		case r.Target() == 2:
+		case client.Reason(err) == pb.ErrorReason_ERROR_REASON_NOT_LEADER && r.Target() == 2:
 			return
-		case c.status(follower).GetLeader() == uint64(leader):
-			t.Fatalf("the router moved to %d, want 2, the leader the follower knows", r.Target())
+		case c.status(leader).GetTerm() == term:
+			t.Fatalf("with the leadership unchanged, a write to a follower got %v and the router moved to %d, want 2", err, r.Target())
 		case attempt == 3:
 			t.Fatal("the leadership kept moving")
 		}

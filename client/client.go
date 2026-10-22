@@ -213,7 +213,7 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 			return zero, ctx.Err()
 		}
 		if status.Code(err) != codes.ResourceExhausted {
-			if !c.router.MoveOn(target, md) {
+			if redirected := c.router.MoveOn(target, md); !redirected {
 				c.watch.MoveOn(target, nil)
 			}
 		}
