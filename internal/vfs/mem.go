@@ -17,11 +17,11 @@ type Mem struct {
 	files      map[string]*memFile
 	removed    []*memFile
 	SectorSize int
-	Garble     float64
+	Hole       float64
 }
 
 func NewMem() *Mem {
-	return &Mem{files: map[string]*memFile{}, SectorSize: 512, Garble: 0.3}
+	return &Mem{files: map[string]*memFile{}, SectorSize: 512, Hole: 0.3}
 }
 
 type memHandle struct {
@@ -172,13 +172,11 @@ func (m *Mem) tear(rng *rand.Rand, f *memFile) {
 		end = max(end, f.synced)
 	}
 	f.data = f.data[:end]
-	if end > f.synced && rng.Float64() < m.Garble {
+	if end > f.synced && rng.Float64() < m.Hole {
 		first := f.synced - f.synced%m.SectorSize
 		sectors := (end - first + m.SectorSize - 1) / m.SectorSize
 		s := first + rng.IntN(sectors)*m.SectorSize
-		for i := max(s, f.synced); i < min(s+m.SectorSize, end); i++ {
-			f.data[i] = byte(rng.Uint32())
-		}
+		clear(f.data[max(s, f.synced):min(s+m.SectorSize, end)])
 	}
 	f.synced = len(f.data)
 }

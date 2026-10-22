@@ -1,6 +1,7 @@
 package wal
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -187,32 +188,102 @@ func TestTornTailAtEveryByte(t *testing.T) {
 	}
 }
 
-func TestGarbageInTheTailIsCut(t *testing.T) {
-	rng := rand.New(rand.NewPCG(3, 4))
-	for range 300 {
+func rewrite(t *testing.T, fs *vfs.Mem, name string, data []byte) {
+	t.Helper()
+	if err := fs.Truncate(name, 0); err != nil {
+		t.Fatal(err)
+	}
+	appendTo(t, fs, name, data)
+}
+
+func TestAnUnpersistedSectorInTheTailIsCut(t *testing.T) {
+	build := func() (*vfs.Mem, string, int, []byte) {
 		fs := vfs.NewMem()
 		l, _, _ := open(t, fs, 0)
 		mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 1, 3), true)
 		names, _ := fs.List()
 		synced, _ := fs.ReadFile(names[0])
-		mustWrite(t, l, raft.HardState{Term: 2}, entries(2, 2, 5), false)
+		mustWrite(t, l, raft.HardState{Term: 2}, entries(2, 2, 60), false)
 		full, _ := fs.ReadFile(names[0])
-		pos := len(synced) + rng.IntN(len(full)-len(synced))
-		tail := slices.Clone(full[len(synced):])
-		tail[pos-len(synced)] ^= byte(1 + rng.IntN(255))
-		if err := fs.Truncate(names[0], int64(len(synced))); err != nil {
-			t.Fatal(err)
-		}
-		appendTo(t, fs, names[0], tail)
-		_, st, _, err := Open(fs, Options{Salt: saltSource(2)})
-		if err != nil {
-			t.Fatalf("flipped byte %d: %v", pos, err)
-		}
-		candidates := prefixes(state{hs: raft.HardState{Term: 1}, ents: entries(1, 1, 3)}, entries(2, 2, 5), raft.HardState{Term: 2})
-		if !matchesOne(st, candidates) {
-			t.Fatalf("flipped byte %d: restored %+v", pos, st)
-		}
+		return fs, names[0], len(synced), full
 	}
+	_, _, synced, full := build()
+	candidates := prefixes(state{hs: raft.HardState{Term: 1}, ents: entries(1, 1, 3)}, entries(2, 2, 60), raft.HardState{Term: 2})
+	holes := 0
+	for s := synced - synced%sectorSize; s < len(full); s += sectorSize {
+		fs, name, _, data := build()
+		clear(data[max(s, synced):min(s+sectorSize, len(data))])
+		rewrite(t, fs, name, data)
+		_, st, rec, err := Open(fs, Options{Salt: saltSource(2)})
+		if err != nil {
+			t.Fatalf("a hole at sector %d: %v", s/sectorSize, err)
+		}
+		if !matchesOne(st, candidates) || rec.TornBytes == 0 {
+			t.Fatalf("a hole at sector %d: restored %+v, cut %d bytes", s/sectorSize, st, rec.TornBytes)
+		}
+		holes++
+	}
+	if holes < 2 {
+		t.Fatalf("the unsynced write spans %d sectors, want a hole with intact sectors after it", holes)
+	}
+}
+
+func TestAFlippedByteInAWholeRecordRefusesToOpen(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		at   func(first, data []byte) int
+	}{
+		{"a record with good ones after it", func(first, _ []byte) int { return len(first) + recordHeader }},
+		{"the last record, a vote", func(_, data []byte) int { return len(data) - 1 }},
+		{"the segment's salt", func(_, _ []byte) int { return 17 }},
+		{"a length larger than any record", func(first, _ []byte) int { return len(first) + 3 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := vfs.NewMem()
+			l, _, _ := open(t, fs, 0)
+			mustWrite(t, l, raft.HardState{Term: 1, Vote: 1, Commit: 1}, entries(1, 1, 1), true)
+			names, _ := fs.List()
+			first, _ := fs.ReadFile(names[0])
+			mustWrite(t, l, raft.HardState{Term: 2, Vote: 2, Commit: 2}, entries(2, 2, 4), true)
+			mustWrite(t, l, raft.HardState{Term: 3, Vote: 3, Commit: 4}, nil, true)
+			if err := l.Close(); err != nil {
+				t.Fatal(err)
+			}
+			data, _ := fs.ReadFile(names[0])
+			data[tc.at(first, data)] ^= 0xff
+			rewrite(t, fs, names[0], data)
+			if _, _, _, err := Open(fs, Options{Salt: saltSource(2)}); !errors.Is(err, ErrCorrupt) {
+				t.Fatalf("%v, want ErrCorrupt", err)
+			}
+			if got, _ := fs.ReadFile(names[0]); !bytes.Equal(got, data) {
+				t.Fatal("a refused log was changed")
+			}
+		})
+	}
+}
+
+func TestABadRecordWhoseLastSectorEndsInAZeroIsNotTakenForAHole(t *testing.T) {
+	for pad := 1; pad < sectorSize; pad++ {
+		fs := vfs.NewMem()
+		l, _, _ := open(t, fs, 0)
+		mustWrite(t, l, raft.HardState{Term: 1, Vote: 1, Commit: 1}, []raft.Entry{{Term: 1, Index: 1, Data: bytes.Repeat([]byte("x"), pad)}}, true)
+		names, _ := fs.List()
+		before, _ := fs.ReadFile(names[0])
+		mustWrite(t, l, raft.HardState{}, []raft.Entry{{Term: 1, Index: 2}, {Term: 1, Index: 3, Data: []byte("after")}}, true)
+		data, _ := fs.ReadFile(names[0])
+		salt, _ := readHeader(data, 1)
+		n, _, _, _ := readRecord(data[len(before):], salt)
+		if end := len(before) + n; end != sectorSize+1 || data[end-1] != 0 {
+			continue
+		}
+		data[len(before)+4] ^= 0xff
+		rewrite(t, fs, names[0], data)
+		if _, _, _, err := Open(fs, Options{Salt: saltSource(2)}); !errors.Is(err, ErrCorrupt) {
+			t.Fatalf("a no-op entry one byte into the next sector with a bad checksum: %v, want ErrCorrupt", err)
+		}
+		return
+	}
+	t.Fatal("no padding puts the no-op entry's last byte at the start of a sector")
 }
 
 func TestCorruptionBeforeTheLastSegmentRefusesToOpen(t *testing.T) {

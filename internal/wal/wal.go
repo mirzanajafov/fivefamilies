@@ -16,6 +16,7 @@ import (
 const (
 	headerSize    = 24
 	recordHeader  = 9
+	sectorSize    = 512
 	maxRecord     = 64 << 20
 	segmentSuffix = ".wal"
 )
@@ -201,7 +202,7 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 		}
 		salt, ok := readHeader(data, seq)
 		if !ok {
-			if !last {
+			if !last || (len(data) >= headerSize && !zeros(data[:headerSize])) {
 				return nil, raft.Restore{}, rec, corrupt("segment %s has a bad header", name)
 			}
 			if err := fs.Remove(name); err != nil {
@@ -217,7 +218,7 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 		for off < len(data) {
 			n, typ, payload, ok := readRecord(data[off:], salt)
 			if !ok {
-				if !last {
+				if !last || !tornAt(data, off) {
 					return nil, raft.Restore{}, rec, corrupt("segment %s has a bad record at offset %d", name, off)
 				}
 				rec.TornBytes += int64(len(data) - off)
@@ -287,6 +288,38 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 	hs := r.hs
 	hs.Commit = max(min(hs.Commit, r.last()), r.off)
 	return l, raft.Restore{HardState: hs, Snapshot: r.snap, Entries: r.ents}, rec, nil
+}
+
+func tornAt(data []byte, off int) bool {
+	rest := data[off:]
+	if len(rest) < recordHeader {
+		return true
+	}
+	n := uint64(binary.LittleEndian.Uint32(rest))
+	if n > maxRecord {
+		return false
+	}
+	if n > uint64(len(rest)-recordHeader) {
+		return true
+	}
+	end := off + recordHeader + int(n)
+	for from := off; from < end; {
+		to := min(from-from%sectorSize+sectorSize, len(data))
+		if zeros(data[from:to]) {
+			return true
+		}
+		from = to
+	}
+	return false
+}
+
+func zeros(b []byte) bool {
+	for _, x := range b {
+		if x != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func truncateTail(fs vfs.FS, name string, size int64) error {
