@@ -1,8 +1,8 @@
 import data from '@/generated/results.json'
 
-export type FailoverRow = { election: string; median: number; min: number; max: number; electionMedian: number; trials: number }
-export type RegistryVariant = { median_ns: number; min_ns: number; max_ns: number; n: number }
-export type LabRun = {
+type FailoverRow = { election: string; median: number; min: number; max: number; electionMedian: number; trials: number }
+type RegistryVariant = { median_ns: number; min_ns: number; max_ns: number; n: number }
+type LabRun = {
   run: string
   seed: number
   seconds: number
@@ -46,7 +46,7 @@ export type Curve = {
   steps: Point[]
 }
 
-export type Curves = { run: string; curves: Curve[] } | null
+type Curves = { run: string; curves: Curve[] } | null
 
 export type E1bRow = {
   election: number
