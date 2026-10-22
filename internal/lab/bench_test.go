@@ -205,6 +205,9 @@ func TestAReportFromAnOlderGeneratorIsRefused(t *testing.T) {
 	if _, err := decodeReport(`{"summary": {"config": {"rate": 500}}, "nodes": 5}`); err != nil {
 		t.Fatalf("a current report: %v", err)
 	}
+	if _, err := decodeReport(`{"nodes": 5} {"nodes": 3}`); !errors.Is(err, errUnreadableReport) {
+		t.Fatalf("two reports came back as %v, want them refused", err)
+	}
 	_, err := decodeReport(`{"summary": {"config": {"Rate": 500, "Duration": 10000000000}}, "per_node_delta": [{"Batches": 3}], "entries_per_fsync": 2}`)
 	if !errors.Is(err, errUnreadableReport) {
 		t.Fatalf("a report with the old field names came back as %v, want it refused", err)

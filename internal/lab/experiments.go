@@ -36,18 +36,6 @@ func rounds(repeat int, specs []curveSpec) iter.Seq2[int, curveSpec] {
 	}
 }
 
-func (o ExperimentOptions) wants(name string) bool {
-	if len(o.Only) == 0 {
-		return true
-	}
-	for _, w := range o.Only {
-		if name == w {
-			return true
-		}
-	}
-	return false
-}
-
 func (o ExperimentOptions) sweep() SweepOptions {
 	s := SweepOptions{Start: 500, Floor: 30, Factor: 2, Max: 64000, Refine: 2, Duration: 10 * time.Second, Warmup: 3 * time.Second, GenCPUs: o.GenCPUs, MaxP99: time.Second}
 	if o.Quick {
@@ -99,10 +87,11 @@ func withBase(extra ...string) []string {
 func (o ExperimentOptions) pick(specs []curveSpec) []curveSpec {
 	var picked []curveSpec
 	for _, sp := range specs {
-		if !o.wants(sp.name) || o.Quick && slices.ContainsFunc(picked, func(p curveSpec) bool { return p.etcd == sp.etcd }) {
-			continue
+		chosen := len(o.Only) == 0 || slices.Contains(o.Only, sp.name)
+		systemSeen := slices.ContainsFunc(picked, func(p curveSpec) bool { return p.etcd == sp.etcd })
+		if chosen && (!o.Quick || !systemSeen) {
+			picked = append(picked, sp)
 		}
-		picked = append(picked, sp)
 	}
 	return picked
 }

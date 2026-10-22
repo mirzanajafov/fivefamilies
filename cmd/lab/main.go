@@ -226,7 +226,7 @@ func bench(ctx context.Context, args []string) error {
 	nodeCPUs := fs.String("node-cpus", "4,5,6,7,8,9,10", "one cpuset per node, comma separated")
 	genCPUs := fs.String("gen-cpus", "12-15", "the generator's cpuset")
 	quick := fs.Bool("quick", false, "one short configuration per experiment and system, to check the harness")
-	only := fs.String("only", "", "run only the curves with these names, separated by semicolons")
+	only := fs.String("only", "", "run only the curves with these names, separated by semicolons, and only the experiments that have them")
 	repeat := fs.Int("repeat", 1, "run every curve this many times, interleaved and rotated")
 	build := fs.Bool("build", false, "build the lab image first")
 	if err := parse(fs, args); err != nil {
@@ -258,6 +258,9 @@ func bench(ctx context.Context, args []string) error {
 		}
 	}
 	for _, e := range exps {
+		if len(onlyNames) > 0 && !slices.ContainsFunc(lab.CurveNames(e), func(name string) bool { return slices.Contains(onlyNames, name) }) {
+			continue
+		}
 		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Repeat: *repeat, Only: onlyNames, Log: logf}
 		var err error
 		if e == "e1b" {

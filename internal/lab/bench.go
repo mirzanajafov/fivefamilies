@@ -109,6 +109,9 @@ func decodeReport(out string) (loadgen.Report, error) {
 	if err := dec.Decode(&r); err != nil {
 		return r, fmt.Errorf("%w: %w: %.200s", errUnreadableReport, err, out)
 	}
+	if dec.More() {
+		return r, fmt.Errorf("%w: more output after the report: %.200s", errUnreadableReport, out)
+	}
 	return r, nil
 }
 
@@ -263,8 +266,11 @@ func sweep(ctx context.Context, sys sweepable, c Curve, opts SweepOptions) (Curv
 	}
 	if lo > 0 && going() {
 		s50 := run(math.Round(0.5 * lo))
+		c.At50 = &s50
+	}
+	if c.At50 != nil && going() {
 		s80 := run(math.Round(0.8 * lo))
-		c.At50, c.At80 = &s50, &s80
+		c.At80 = &s80
 	}
 	return c, broken
 }
