@@ -78,7 +78,7 @@ func TestAReadBeforeTheLeadersFirstCommitIsRefused(t *testing.T) {
 	r.ReadIndex(1, false)
 	rd := r.Ready()
 	if len(rd.ReadStates) != 1 || rd.ReadStates[0].Ok {
-		t.Fatalf("read states %+v; the empty entry of the term is not committed yet", rd.ReadStates)
+		t.Fatalf("read states %+v, but the empty entry of the term is not committed yet", rd.ReadStates)
 	}
 }
 

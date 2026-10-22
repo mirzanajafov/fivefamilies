@@ -158,7 +158,7 @@ func TestLeaderAppliesOnlyAfterItsOwnWrite(t *testing.T) {
 	}
 	last := env.writes[len(env.writes)-1]
 	if n.PendingWrites() != 1 || last.Sync || len(last.Entries) != 0 || last.HardState.Commit != app.applied[before].Index {
-		t.Fatalf("%d writes pending, last %+v; want only the commit index, written without a sync", n.PendingWrites(), last)
+		t.Fatalf("%d writes pending, last %+v, want only the commit index written without a sync", n.PendingWrites(), last)
 	}
 }
 

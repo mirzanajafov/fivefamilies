@@ -20,7 +20,7 @@ func TestTheWidestGapBetweenAcknowledgedWrites(t *testing.T) {
 		{Done: ms(2000), Ok: true},
 	}
 	if got := gaps(samples, ms(0), ms(800)); got != 880*time.Millisecond {
-		t.Fatalf("widest gap %v, want 880ms (20 to 900; failures don't count)", got)
+		t.Fatalf("widest gap %v, want 880ms (20 to 900, since failures don't count)", got)
 	}
 	if got := gaps(samples, ms(0), ms(100)); got != 880*time.Millisecond {
 		t.Fatalf("a gap that starts inside the window counts in full: %v", got)

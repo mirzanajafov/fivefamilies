@@ -197,7 +197,7 @@ func TestRemovingAVoterCanCommitWhatWasStuck(t *testing.T) {
 	c.drain()
 	wantConf(t, c.node(1), []NodeID{1, 2, 3}, nil)
 	if c.node(1).Committed() < idx+1 {
-		t.Fatalf("commit %d; two of three voters hold the entry and the removal", c.node(1).Committed())
+		t.Fatalf("commit %d, but two of three voters hold the entry and the removal", c.node(1).Committed())
 	}
 }
 
@@ -224,7 +224,7 @@ func TestARemovedNodeCannotDisruptTheCluster(t *testing.T) {
 		c.tick(2, 1)
 	}
 	if c.node(1).State() != StateLeader || c.node(1).Term() != term {
-		t.Fatalf("node 1 is %s at term %d, was leader at %d; a removed node's votes must be ignored", c.node(1).State(), c.node(1).Term(), term)
+		t.Fatalf("node 1 is %s at term %d, was leader at %d, but a removed node's votes must be ignored", c.node(1).State(), c.node(1).Term(), term)
 	}
 	if c.node(3).Term() <= term {
 		t.Fatal("the removed node never campaigned, so the test proves nothing")
@@ -383,7 +383,7 @@ func TestNoLeaseReadsAfterATransferAttempt(t *testing.T) {
 	r := c.node(1)
 	r.ReadIndex(1, true)
 	if rd := r.Ready(); len(rd.ReadStates) != 0 {
-		t.Fatal("a lease read was served in a term where a transfer was attempted; a late TimeoutNow could still elect another leader")
+		t.Fatal("a lease read was served in a term where a transfer was attempted, and a late TimeoutNow could still elect another leader")
 	}
 }
 
@@ -422,7 +422,7 @@ func TestTheLeaderRefusesAReadForwardedByANonMember(t *testing.T) {
 			return
 		}
 	}
-	t.Fatal("the read was dropped; a removed node that does not know it would wait for it until it expires")
+	t.Fatal("the read was dropped, so a removed node that does not know it would wait for it until it expires")
 }
 
 func TestAReadForwardedToAnOldLeaderIsRefusedWithTheNewTerm(t *testing.T) {
@@ -498,7 +498,7 @@ func TestAnEarlyChangeLetsTwoMajoritiesCommitDifferentEntries(t *testing.T) {
 			c.drain()
 		}
 		if c.node(1).State() != StateLeader {
-			t.Fatalf("node 1 is %s; with nodes 4 and 5 it holds a majority of the configuration in its own log", c.node(1).State())
+			t.Fatalf("node 1 is %s, but with nodes 4 and 5 it holds a majority of the configuration in its own log", c.node(1).State())
 		}
 		mine, _ := c.node(1).EntryAt(k + 1)
 		theirs, _ := c.node(2).EntryAt(k + 1)

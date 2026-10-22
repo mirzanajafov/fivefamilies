@@ -277,7 +277,7 @@ func TestFollowerReplacesConflictingSuffix(t *testing.T) {
 		t.Fatalf("entries to persist %v, want 3..4", rd.Entries)
 	}
 	if len(rd.Committed) != 2 || rd.Committed[1].Index != 2 {
-		t.Fatalf("to apply %v; only the restored entries 1..2 are durable", rd.Committed)
+		t.Fatalf("to apply %v, but only the restored entries 1..2 are durable", rd.Committed)
 	}
 }
 

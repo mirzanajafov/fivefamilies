@@ -36,7 +36,7 @@ func TestPlantedBugsAreCaught(t *testing.T) {
 			for _, seed := range c.seeds {
 				r := Run(seed, opts)
 				if r.OK() {
-					t.Errorf("seed %d no longer catches %s; search for a new canary with cmd/sim -bug %s -first", seed, c.bug, c.bug)
+					t.Errorf("seed %d no longer catches %s, so search for a new canary with cmd/sim -bug %s -first", seed, c.bug, c.bug)
 					continue
 				}
 				expected := false

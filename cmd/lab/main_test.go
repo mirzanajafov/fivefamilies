@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestABenchRunRefusesNamesThatMatchNothing(t *testing.T) {
 	for _, tc := range []struct {
@@ -13,8 +16,10 @@ func TestABenchRunRefusesNamesThatMatchNothing(t *testing.T) {
 		{[]string{"e2"}, []string{"5 Nodes"}, false},
 		{[]string{"e2"}, []string{"lease reads, 0.95"}, false},
 	} {
-		if err := checkBench(tc.experiments, tc.only); (err == nil) != tc.ok {
-			t.Errorf("experiments %v, only %v: %v", tc.experiments, tc.only, err)
-		}
+		t.Run(fmt.Sprint(tc.experiments, tc.only), func(t *testing.T) {
+			if err := checkBench(tc.experiments, tc.only); (err == nil) != tc.ok {
+				t.Errorf("experiments %v, only %v: %v", tc.experiments, tc.only, err)
+			}
+		})
 	}
 }

@@ -250,12 +250,14 @@ func TestACheckOrBugThatCanNeverFireIsRefused(t *testing.T) {
 		"earlyconf without membership changes":    {func(o *Options) { o.Membership = false }, planted.EarlyConf, ""},
 		"followerread with reads through the log": {func(o *Options) { o.Reads = ReadLog }, planted.FollowerRead, ""},
 	} {
-		o := DefaultOptions()
-		c.off(&o)
-		o.Bugs = c.bug
-		if o.Validate(c.catch) == nil {
-			t.Errorf("%s was accepted", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			o := DefaultOptions()
+			c.off(&o)
+			o.Bugs = c.bug
+			if o.Validate(c.catch) == nil {
+				t.Errorf("%s was accepted", name)
+			}
+		})
 	}
 }
 

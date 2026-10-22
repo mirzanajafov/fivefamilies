@@ -222,11 +222,13 @@ func TestOnlyABlockingQueryGetsItsWaitOnTopOfTheCallTime(t *testing.T) {
 		"/v1/registry/dimensions?wait=5m":         callTimeout,
 		"/v1/registry/dimensions?index=5&wait=1m": callTimeout + time.Minute,
 	} {
-		f := fake{instances: []client.Instance{}}
-		NewServer(&f, nil).Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", target, nil))
-		if f.timeout != want {
-			t.Errorf("%s: the registry was given %v, want %v", target, f.timeout, want)
-		}
+		t.Run(target, func(t *testing.T) {
+			f := fake{instances: []client.Instance{}}
+			NewServer(&f, nil).Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", target, nil))
+			if f.timeout != want {
+				t.Errorf("%s: the registry was given %v, want %v", target, f.timeout, want)
+			}
+		})
 	}
 }
 
