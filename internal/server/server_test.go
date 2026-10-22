@@ -142,12 +142,18 @@ func (c *testCluster) addrs() []string {
 	return out
 }
 
-func (c *testCluster) conn(id raft.NodeID) *grpc.ClientConn {
+func (c *testCluster) dial(id raft.NodeID) *grpc.ClientConn {
 	c.t.Helper()
 	conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		c.t.Fatal(err)
 	}
+	return conn
+}
+
+func (c *testCluster) conn(id raft.NodeID) *grpc.ClientConn {
+	c.t.Helper()
+	conn := c.dial(id)
 	c.t.Cleanup(func() { conn.Close() })
 	return conn
 }
@@ -164,13 +170,18 @@ func (c *testCluster) kvClient(id raft.NodeID) pb.KVClient {
 
 func (c *testCluster) leader(timeout time.Duration) raft.NodeID {
 	c.t.Helper()
+	return c.leaderOtherThan(raft.None, timeout)
+}
+
+func (c *testCluster) leaderOtherThan(old raft.NodeID, timeout time.Duration) raft.NodeID {
+	c.t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		var leader raft.NodeID
 		var term uint64
 		for id, r := range c.running {
 			st := r.srv.Status()
-			if st.GetRole() == pb.Role_ROLE_LEADER && st.GetTerm() >= term {
+			if id != old && st.GetRole() == pb.Role_ROLE_LEADER && st.GetTerm() >= term {
 				leader, term = id, st.GetTerm()
 			}
 		}
@@ -179,31 +190,13 @@ func (c *testCluster) leader(timeout time.Duration) raft.NodeID {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	c.t.Fatal("no leader")
-	return raft.None
-}
-
-func (c *testCluster) leaderOtherThan(old raft.NodeID, timeout time.Duration) raft.NodeID {
-	c.t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		for id, r := range c.running {
-			if id != old && r.srv.Status().GetRole() == pb.Role_ROLE_LEADER {
-				return id
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	c.t.Fatalf("no node other than %d took the lead", old)
+	c.t.Fatalf("no leader within %v", timeout)
 	return raft.None
 }
 
 func (c *testCluster) status(id raft.NodeID) *pb.StatusResponse {
 	c.t.Helper()
-	conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		c.t.Fatal(err)
-	}
+	conn := c.dial(id)
 	defer conn.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -569,10 +562,7 @@ func TestAFollowersRefusalNamesTheLeader(t *testing.T) {
 	var got []string
 	for range 20 {
 		follower := c.leader(5*time.Second)%3 + 1
-		conn, dialErr := grpc.NewClient(c.nodes[follower], grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if dialErr != nil {
-			t.Fatal(dialErr)
-		}
+		conn := c.dial(follower)
 		var md metadata.MD
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		_, err = pb.NewKVClient(conn).Put(ctx, &pb.PutRequest{Key: "k"}, grpc.Header(&md))
