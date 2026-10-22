@@ -8,35 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
-
-func (c *testCluster) conn(id raft.NodeID) *grpc.ClientConn {
-	c.t.Helper()
-	conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		c.t.Fatal(err)
-	}
-	c.t.Cleanup(func() { conn.Close() })
-	return conn
-}
-
-func (c *testCluster) admin(id raft.NodeID) pb.AdminClient {
-	c.t.Helper()
-	return pb.NewAdminClient(c.conn(id))
-}
-
-func (c *testCluster) kv(id raft.NodeID) pb.KVClient {
-	c.t.Helper()
-	return pb.NewKVClient(c.conn(id))
-}
 
 func (c *testCluster) change(ctx context.Context, change pb.MemberChange, node raft.NodeID) *pb.ChangeMembersResponse {
 	c.t.Helper()

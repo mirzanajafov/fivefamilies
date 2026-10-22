@@ -142,6 +142,26 @@ func (c *testCluster) addrs() []string {
 	return out
 }
 
+func (c *testCluster) conn(id raft.NodeID) *grpc.ClientConn {
+	c.t.Helper()
+	conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	c.t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+func (c *testCluster) admin(id raft.NodeID) pb.AdminClient {
+	c.t.Helper()
+	return pb.NewAdminClient(c.conn(id))
+}
+
+func (c *testCluster) kvClient(id raft.NodeID) pb.KVClient {
+	c.t.Helper()
+	return pb.NewKVClient(c.conn(id))
+}
+
 func (c *testCluster) leader(timeout time.Duration) raft.NodeID {
 	c.t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -502,15 +522,7 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 	follower := leader%3 + 1
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	connTo := func(id raft.NodeID) *grpc.ClientConn {
-		conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { conn.Close() })
-		return conn
-	}
-	kvc := pb.NewKVClient(connTo(leader))
+	kvc := pb.NewKVClient(c.conn(leader))
 	session, err := kvc.OpenSession(ctx, &pb.OpenSessionRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -518,8 +530,8 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 	if _, err := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient(), Seq: 2, Key: "k"}); err != nil {
 		t.Fatal(err)
 	}
-	_, notLeader := pb.NewKVClient(connTo(follower)).Put(ctx, &pb.PutRequest{Key: "k"})
-	_, noLease := pb.NewLeaseClient(connTo(leader)).TimeToLive(ctx, &pb.LeaseTimeToLiveRequest{Id: 404})
+	_, notLeader := pb.NewKVClient(c.conn(follower)).Put(ctx, &pb.PutRequest{Key: "k"})
+	_, noLease := pb.NewLeaseClient(c.conn(leader)).TimeToLive(ctx, &pb.LeaseTimeToLiveRequest{Id: 404})
 	_, stale := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient(), Seq: 1, Key: "k"})
 	_, expired := kvc.Put(ctx, &pb.PutRequest{Client: session.GetClient() + 1000, Seq: 1, Key: "k"})
 	for _, tc := range []struct {

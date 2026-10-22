@@ -23,20 +23,18 @@ func (s *Server) loop(ctx context.Context) error {
 			s.catchUp()
 			s.tendWatches()
 		case m := <-s.inbound:
-			s.catchUp()
-			s.node.Receive(m)
+			s.stepPeer(m)
 		case f := <-s.calls:
-			s.catchUp()
-			f()
+			s.runQueued(f)
 		case seq := <-s.written:
-			s.catchUp()
-			if err := s.node.WriteDone(seq); err != nil {
+			if err := s.finishWrite(seq); err != nil {
 				return err
 			}
 		}
 		if err := s.drain(); err != nil {
 			return err
 		}
+		s.catchUp()
 		if err := s.node.Process(); err != nil {
 			return err
 		}
@@ -56,18 +54,30 @@ func (s *Server) catchUp() {
 	s.lastTick = now
 }
 
+func (s *Server) stepPeer(m raft.Message) {
+	s.catchUp()
+	s.node.Receive(m)
+}
+
+func (s *Server) runQueued(f func()) {
+	s.catchUp()
+	f()
+}
+
+func (s *Server) finishWrite(seq uint64) error {
+	s.catchUp()
+	return s.node.WriteDone(seq)
+}
+
 func (s *Server) drain() error {
 	for range s.cfg.Batch - 1 {
 		select {
 		case m := <-s.inbound:
-			s.catchUp()
-			s.node.Receive(m)
+			s.stepPeer(m)
 		case f := <-s.calls:
-			s.catchUp()
-			f()
+			s.runQueued(f)
 		case seq := <-s.written:
-			s.catchUp()
-			if err := s.node.WriteDone(seq); err != nil {
+			if err := s.finishWrite(seq); err != nil {
 				return err
 			}
 		default:
@@ -81,7 +91,6 @@ func (s *Server) waitForDisk(ctx context.Context) error {
 	for s.node.PendingWrites() > 0 {
 		select {
 		case seq := <-s.written:
-			s.catchUp()
 			if err := s.node.WriteDone(seq); err != nil {
 				return err
 			}
