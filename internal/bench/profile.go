@@ -48,8 +48,13 @@ type ProfileReport struct {
 	Phases   []ProfilePhase `json:"phases"`
 }
 
+const (
+	pprofPort         = 6060
+	pprofHostPortBase = 3160
+)
+
 func pprofAddr(node int) string {
-	return fmt.Sprintf("127.0.0.1:316%d", node)
+	return fmt.Sprintf("127.0.0.1:%d", pprofHostPortBase+node)
 }
 
 func profileURL(node int, path string) string {

@@ -305,7 +305,7 @@ func lease(ctx context.Context, t target, args []string) error {
 			return err
 		}
 		fmt.Println("kept alive for", ttl)
-	default:
+	case "ttl":
 		remaining, ttl, keys, err := t.c.TimeToLive(ctx, id)
 		if err != nil {
 			return err

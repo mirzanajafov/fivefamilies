@@ -247,7 +247,7 @@ type settings struct {
 }
 
 type node struct {
-	s        settings
+	settings settings
 	srv      *server.Server
 	rpc      *grpc.Server
 	ln       net.Listener
@@ -268,7 +268,7 @@ func start(s settings) (*node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listening: %w", err)
 	}
-	n := &node{s: s, srv: srv, rpc: grpc.NewServer(transport.ServerOptions()...), ln: ln, closeAPI: func() {}}
+	n := &node{settings: s, srv: srv, rpc: grpc.NewServer(transport.ServerOptions()...), ln: ln, closeAPI: func() {}}
 	if s.httpAddr != "" {
 		if n.closeAPI, err = serveAPI(s.httpAddr, s.cfg.ID, s.cfg.Nodes, srv, s.cfg.Logger); err != nil {
 			return nil, fmt.Errorf("serving the HTTP API: %w", err)
@@ -279,14 +279,14 @@ func start(s settings) (*node, error) {
 }
 
 func (n *node) serve() error {
-	cfg, logger := n.s.cfg, n.s.cfg.Logger
+	cfg, logger := n.settings.cfg, n.settings.cfg.Logger
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	go func() {
 		if err := n.rpc.Serve(n.ln); err != nil {
 			logger.Error("serving", "err", err)
 		}
 	}()
-	logger.Info("node started", "id", cfg.ID, "addr", n.s.listen, "http", n.s.httpAddr, "nodes", len(cfg.Nodes),
+	logger.Info("node started", "id", cfg.ID, "addr", n.settings.listen, "http", n.settings.httpAddr, "nodes", len(cfg.Nodes),
 		"election", time.Duration(cfg.ElectionTick)*cfg.Tick, "lease", time.Duration(cfg.LeaseTicks)*cfg.Tick)
 	running, stopRunning := context.WithCancel(context.Background())
 	go func() {

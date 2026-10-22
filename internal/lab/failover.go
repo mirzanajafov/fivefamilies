@@ -1,7 +1,6 @@
 package lab
 
 import (
-	"bufio"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -73,16 +72,17 @@ func gaps(samples []loadgen.FailoverSample, from, to int64) time.Duration {
 func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]loadgen.FailoverSample, error) {
 	network := d.Name + "_lab"
 	args := []string{"run", "--rm", "--network", network, "--entrypoint", "failgen", "fivefamilies-lab-node",
+		"-nodes", strings.Join(rig.NetworkAddrs(d.Nodes), ","),
 		"-rate", fmt.Sprint(opts.Rate), "-duration", (opts.Before + opts.After).String(), "-timeout", opts.Timeout.String(), fmt.Sprintf("-cold=%v", opts.Cold)}
 	out, err := rig.Docker(ctx, nil, args...)
 	if err != nil {
 		return nil, fmt.Errorf("generator: %w", err)
 	}
 	var samples []loadgen.FailoverSample
-	sc := bufio.NewScanner(strings.NewReader(out))
-	for sc.Scan() {
+	dec := json.NewDecoder(strings.NewReader(out))
+	for dec.More() {
 		var s loadgen.FailoverSample
-		if err := json.Unmarshal(sc.Bytes(), &s); err != nil {
+		if err := dec.Decode(&s); err != nil {
 			return nil, err
 		}
 		samples = append(samples, s)

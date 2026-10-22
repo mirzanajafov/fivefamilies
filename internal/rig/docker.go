@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-const NodePort = 3161
+const (
+	NodePort     = 3161
+	hostPortBase = 3150
+)
 
 type Project struct {
 	Name string
@@ -51,7 +54,7 @@ func (p Project) Down(ctx context.Context) error {
 func HostAddrs(nodes int) []string {
 	var out []string
 	for i := 1; i <= nodes; i++ {
-		out = append(out, fmt.Sprintf("127.0.0.1:315%d", i))
+		out = append(out, fmt.Sprintf("127.0.0.1:%d", hostPortBase+i))
 	}
 	return out
 }

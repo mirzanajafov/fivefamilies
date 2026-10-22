@@ -137,8 +137,8 @@ func (b *ffCluster) services() []service {
 			ports:   []string{fmt.Sprintf("%s:%d", host[i-1], rig.NodePort)},
 		}
 		if b.Profiles {
-			s.command = append(s.command, "-pprof", ":6060")
-			s.ports = append(s.ports, pprofAddr(i)+":6060")
+			s.command = append(s.command, "-pprof", fmt.Sprintf(":%d", pprofPort))
+			s.ports = append(s.ports, fmt.Sprintf("%s:%d", pprofAddr(i), pprofPort))
 		}
 		out = append(out, s)
 	}
