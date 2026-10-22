@@ -2,7 +2,6 @@ package live
 
 import (
 	"context"
-	"net"
 	"testing"
 	"time"
 
@@ -11,15 +10,7 @@ import (
 )
 
 func TestAnOperationThatGetsNoAnswerHasAnUnknownOutcome(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := ln.Addr().String()
-	if err := ln.Close(); err != nil {
-		t.Fatal(err)
-	}
-	c, err := client.New([]string{addr}, client.Options{AttemptTimeout: 50 * time.Millisecond})
+	c, err := client.New([]string{"127.0.0.1:1"}, client.Options{AttemptTimeout: 50 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}

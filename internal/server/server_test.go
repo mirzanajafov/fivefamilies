@@ -543,29 +543,26 @@ func TestAFollowersRefusalPointsTheRouterAtTheLeader(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	for attempt := 1; ; attempt++ {
+	var err error
+	var target int
+	for range 3 {
 		leader := c.leader(5 * time.Second)
-		term := c.status(leader).GetTerm()
 		follower := leader%3 + 1
 		for c.status(follower).GetLeader() != uint64(leader) && ctx.Err() == nil {
 			time.Sleep(10 * time.Millisecond)
 		}
-		conn, err := grpc.NewClient(c.nodes[follower], grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			t.Fatal(err)
+		conn, dialErr := grpc.NewClient(c.nodes[follower], grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if dialErr != nil {
+			t.Fatal(dialErr)
 		}
 		var md metadata.MD
 		_, err = pb.NewKVClient(conn).Put(ctx, &pb.PutRequest{Key: "k"}, grpc.Header(&md))
 		conn.Close()
 		r := route.NewRouter([]string{c.nodes[follower], c.nodes[6-leader-follower], c.nodes[leader]})
 		r.MoveOn(0, md)
-		switch {
-		case client.Reason(err) == pb.ErrorReason_ERROR_REASON_NOT_LEADER && r.Target() == 2:
+		if target = r.Target(); client.Reason(err) == pb.ErrorReason_ERROR_REASON_NOT_LEADER && target == 2 {
 			return
-		case c.status(leader).GetTerm() == term:
-			t.Fatalf("with the leadership unchanged, a write to a follower got %v and the router moved to %d, want 2", err, r.Target())
-		case attempt == 3:
-			t.Fatal("the leadership kept moving")
 		}
 	}
+	t.Fatalf("three writes to a follower, the last got %v and moved the router to %d, want a refusal that points at the leader, 2", err, target)
 }

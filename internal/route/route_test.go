@@ -62,13 +62,22 @@ func TestTheRouterNeverMovesBackToTheNodeThatFailed(t *testing.T) {
 	}
 }
 
-func TestAHintFromANodeTheRouterAlreadyLeftIsIgnored(t *testing.T) {
-	r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161"})
-	r.MoveOn(0, hint("n3:3161"))
-	if redirected := r.MoveOn(1, hint("n1:3161")); !redirected {
+func TestAHintWinsOverAnEarlierRotation(t *testing.T) {
+	r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161", "n4:3161"})
+	r.MoveOn(0, nil)
+	if !r.MoveOn(0, hint("n4:3161")) {
 		t.Fatal("a hint to another node is a redirect, whoever sent it")
 	}
-	if got := r.Target(); got != 2 {
-		t.Fatalf("target %d, want 2: the late answer from node 1 must not move it back", got)
+	if got := r.Target(); got != 3 {
+		t.Fatalf("target %d, want 3: a node's word on who leads beats the guess the router made after an earlier failure", got)
+	}
+}
+
+func TestOnlyAFailureOfTheTargetRotatesTheRouter(t *testing.T) {
+	r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161"})
+	r.MoveOn(0, nil)
+	r.MoveOn(0, nil)
+	if got := r.Target(); got != 1 {
+		t.Fatalf("target %d, want 1: a second failure of a node the router already left must not rotate it again", got)
 	}
 }

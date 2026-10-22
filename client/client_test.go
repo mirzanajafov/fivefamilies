@@ -126,21 +126,12 @@ func TestTheServersRefusalsComeBackAsTheClientsErrors(t *testing.T) {
 		ErrTooManyLeases: refusal(t, codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES),
 	} {
 		t.Run(want.Error(), func(t *testing.T) {
-			ln, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			g := grpc.NewServer()
 			fake := refusingLeases{refusal: refused}
-			pb.RegisterKVServer(g, fake)
-			pb.RegisterLeaseServer(g, fake)
-			go func() {
-				if err := g.Serve(ln); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-					t.Error(err)
-				}
-			}()
-			t.Cleanup(g.Stop)
-			c, err := New([]string{ln.Addr().String()}, Options{})
+			addr := serve(t, func(g *grpc.Server) {
+				pb.RegisterKVServer(g, fake)
+				pb.RegisterLeaseServer(g, fake)
+			})
+			c, err := New([]string{addr}, Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -182,22 +173,29 @@ func (f *fakeNode) Watch(_ *pb.WatchRequest, stream grpc.ServerStreamingServer[p
 	return stream.Context().Err()
 }
 
-func serveFake(t *testing.T, node *fakeNode) {
+func serve(t *testing.T, register func(*grpc.Server)) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	node.addr = ln.Addr().String()
 	g := grpc.NewServer()
-	pb.RegisterKVServer(g, node)
-	pb.RegisterWatchServer(g, node)
+	register(g)
 	go func() {
 		if err := g.Serve(ln); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			t.Error(err)
 		}
 	}()
 	t.Cleanup(g.Stop)
+	return ln.Addr().String()
+}
+
+func serveFake(t *testing.T, node *fakeNode) {
+	t.Helper()
+	node.addr = serve(t, func(g *grpc.Server) {
+		pb.RegisterKVServer(g, node)
+		pb.RegisterWatchServer(g, node)
+	})
 }
 
 func TestARedirectToTheLeaderKeepsWatchesOnTheNodeThatRedirected(t *testing.T) {
