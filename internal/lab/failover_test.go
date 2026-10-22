@@ -3,11 +3,13 @@ package lab
 import (
 	"testing"
 	"time"
+
+	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
 )
 
 func TestTheWidestGapBetweenAcknowledgedWrites(t *testing.T) {
 	ms := func(n int64) int64 { return n * int64(time.Millisecond) }
-	samples := []sample{
+	samples := []loadgen.FailoverSample{
 		{Done: ms(10), Ok: true},
 		{Done: ms(15), Ok: true},
 		{Done: ms(400), Ok: false},

@@ -18,19 +18,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
+	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
 	"github.com/mirzanajafov/fivefamilies/internal/route"
 )
-
-type sample struct {
-	Kind      string `json:"kind,omitempty"`
-	Leader    int    `json:"leader,omitempty"`
-	Term      uint64 `json:"term,omitempty"`
-	Scheduled int64  `json:"scheduled_ns"`
-	Done      int64  `json:"done_ns"`
-	Node      int    `json:"node"`
-	Ok        bool   `json:"ok"`
-	Err       string `json:"error,omitempty"`
-}
 
 type generator struct {
 	clients []pb.KVClient
@@ -38,7 +28,7 @@ type generator struct {
 	router  *route.Router
 }
 
-func (g *generator) watch(ctx context.Context, start time.Time, record func(sample)) {
+func (g *generator) watch(ctx context.Context, start time.Time, record func(loadgen.FailoverSample)) {
 	lastLeader, lastTerm := 0, uint64(0)
 	down := make([]bool, len(g.admins))
 	for ctx.Err() == nil {
@@ -50,17 +40,17 @@ func (g *generator) watch(ctx context.Context, start time.Time, record func(samp
 			if err != nil {
 				if !down[i] {
 					down[i] = true
-					record(sample{Kind: "unreachable", Node: i + 1, Done: now})
+					record(loadgen.FailoverSample{Kind: "unreachable", Node: i + 1, Done: now})
 				}
 				continue
 			}
 			if down[i] {
 				down[i] = false
-				record(sample{Kind: "reachable", Node: i + 1, Done: now})
+				record(loadgen.FailoverSample{Kind: "reachable", Node: i + 1, Done: now})
 			}
 			if st.GetRole() == pb.Role_ROLE_LEADER && (i+1 != lastLeader || st.GetTerm() != lastTerm) && st.GetTerm() >= lastTerm {
 				lastLeader, lastTerm = i+1, st.GetTerm()
-				record(sample{Kind: "leader", Leader: i + 1, Term: st.GetTerm(), Done: now})
+				record(loadgen.FailoverSample{Kind: "leader", Leader: i + 1, Term: st.GetTerm(), Done: now})
 			}
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -107,9 +97,9 @@ func main() {
 	interval := time.Second / time.Duration(*rate)
 	start := time.Now()
 	var mu sync.Mutex
-	var samples []sample
+	var samples []loadgen.FailoverSample
 	var wg sync.WaitGroup
-	record := func(s sample) {
+	record := func(s loadgen.FailoverSample) {
 		mu.Lock()
 		samples = append(samples, s)
 		mu.Unlock()
@@ -129,7 +119,7 @@ func main() {
 			ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 			defer cancel()
 			node, err := g.put(ctx, "failover", []byte(strconv.Itoa(i)))
-			s := sample{Scheduled: int64(at.Sub(start)), Done: int64(time.Since(start)), Node: node + 1, Ok: err == nil}
+			s := loadgen.FailoverSample{Scheduled: int64(at.Sub(start)), Done: int64(time.Since(start)), Node: node + 1, Ok: err == nil}
 			if err != nil {
 				s.Err = status.Code(err).String()
 			}
@@ -145,7 +135,7 @@ func main() {
 	}
 }
 
-func encodeAll(w io.Writer, samples []sample) error {
+func encodeAll(w io.Writer, samples []loadgen.FailoverSample) error {
 	enc := json.NewEncoder(w)
 	for _, s := range samples {
 		if err := enc.Encode(s); err != nil {

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
 )
 
 type result struct {
@@ -138,7 +140,7 @@ func run(dir, mode string, writers, size int, segment int64, d time.Duration) (r
 	res.Syncs = len(lat)
 	res.PerSec = float64(len(lat)) / d.Seconds()
 	if len(lat) > 0 {
-		res.P50, res.P99, res.Max = lat[len(lat)/2], lat[len(lat)*99/100], lat[len(lat)-1]
+		res.P50, res.P99, res.Max = loadgen.Quantile(lat, 0.5), loadgen.Quantile(lat, 0.99), lat[len(lat)-1]
 	}
 	return res, os.RemoveAll(dir)
 }

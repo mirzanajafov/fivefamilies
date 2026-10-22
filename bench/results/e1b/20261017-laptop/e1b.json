@@ -1,342 +1,344 @@
-[
-  {
-    "election_ns": 150000000,
-    "sync_storage": false,
-    "faults": [
-      {
-        "kind": "stall-disk",
-        "duration_ns": 100000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 300000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 1000000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 1000000000,
-        "target": "follower",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 75000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 150000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 300000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 5,
-        "elections": 5
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 300000000,
-        "target": "follower",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      }
-    ]
-  },
-  {
-    "election_ns": 300000000,
-    "sync_storage": false,
-    "faults": [
-      {
-        "kind": "stall-disk",
-        "duration_ns": 100000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 300000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 1000000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 1000000000,
-        "target": "follower",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 150000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 300000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 600000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 5,
-        "elections": 5
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 600000000,
-        "target": "follower",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      }
-    ]
-  },
-  {
-    "election_ns": 600000000,
-    "sync_storage": false,
-    "faults": [
-      {
-        "kind": "stall-disk",
-        "duration_ns": 100000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 300000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 1000000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 1000000000,
-        "target": "follower",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 300000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 600000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 1200000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 5,
-        "elections": 5
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 1200000000,
-        "target": "follower",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      }
-    ]
-  },
-  {
-    "election_ns": 1000000000,
-    "sync_storage": false,
-    "faults": [
-      {
-        "kind": "stall-disk",
-        "duration_ns": 100000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 300000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 1000000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 1000000000,
-        "target": "follower",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 500000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 1000000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 2000000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 5,
-        "elections": 5
-      },
-      {
-        "kind": "pause",
-        "duration_ns": 2000000000,
-        "target": "follower",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      }
-    ]
-  },
-  {
-    "election_ns": 300000000,
-    "sync_storage": true,
-    "faults": [
-      {
-        "kind": "stall-disk",
-        "duration_ns": 100000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 300000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 1000000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 5,
-        "elections": 5
-      }
-    ]
-  },
-  {
-    "election_ns": 1000000000,
-    "sync_storage": true,
-    "faults": [
-      {
-        "kind": "stall-disk",
-        "duration_ns": 100000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 300000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      },
-      {
-        "kind": "stall-disk",
-        "duration_ns": 1000000000,
-        "target": "leader",
-        "injections": 5,
-        "followed_by_an_election": 0,
-        "elections": 0
-      }
-    ]
-  }
-]
+{
+  "rows": [
+    {
+      "election_ns": 150000000,
+      "sync_storage": false,
+      "faults": [
+        {
+          "kind": "stall-disk",
+          "duration_ns": 100000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 300000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 1000000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 1000000000,
+          "target": "follower",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 75000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 150000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 300000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 5,
+          "elections": 5
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 300000000,
+          "target": "follower",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        }
+      ]
+    },
+    {
+      "election_ns": 300000000,
+      "sync_storage": false,
+      "faults": [
+        {
+          "kind": "stall-disk",
+          "duration_ns": 100000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 300000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 1000000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 1000000000,
+          "target": "follower",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 150000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 300000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 600000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 5,
+          "elections": 5
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 600000000,
+          "target": "follower",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        }
+      ]
+    },
+    {
+      "election_ns": 600000000,
+      "sync_storage": false,
+      "faults": [
+        {
+          "kind": "stall-disk",
+          "duration_ns": 100000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 300000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 1000000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 1000000000,
+          "target": "follower",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 300000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 600000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 1200000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 5,
+          "elections": 5
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 1200000000,
+          "target": "follower",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        }
+      ]
+    },
+    {
+      "election_ns": 1000000000,
+      "sync_storage": false,
+      "faults": [
+        {
+          "kind": "stall-disk",
+          "duration_ns": 100000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 300000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 1000000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 1000000000,
+          "target": "follower",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 500000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 1000000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 2000000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 5,
+          "elections": 5
+        },
+        {
+          "kind": "pause",
+          "duration_ns": 2000000000,
+          "target": "follower",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        }
+      ]
+    },
+    {
+      "election_ns": 300000000,
+      "sync_storage": true,
+      "faults": [
+        {
+          "kind": "stall-disk",
+          "duration_ns": 100000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 300000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 1000000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 5,
+          "elections": 5
+        }
+      ]
+    },
+    {
+      "election_ns": 1000000000,
+      "sync_storage": true,
+      "faults": [
+        {
+          "kind": "stall-disk",
+          "duration_ns": 100000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 300000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        },
+        {
+          "kind": "stall-disk",
+          "duration_ns": 1000000000,
+          "target": "leader",
+          "injections": 5,
+          "followed_by_an_election": 0,
+          "elections": 0
+        }
+      ]
+    }
+  ]
+}

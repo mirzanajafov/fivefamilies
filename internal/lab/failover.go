@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
 )
 
 type FailoverOptions struct {
@@ -26,17 +28,6 @@ type FailoverOptions struct {
 	Project   string                           `json:"-"`
 	File      string                           `json:"-"`
 	Log       func(format string, args ...any) `json:"-"`
-}
-
-type sample struct {
-	Kind      string `json:"kind,omitempty"`
-	Leader    int    `json:"leader,omitempty"`
-	Term      uint64 `json:"term,omitempty"`
-	Scheduled int64  `json:"scheduled_ns"`
-	Done      int64  `json:"done_ns"`
-	Node      int    `json:"node"`
-	Ok        bool   `json:"ok"`
-	Err       string `json:"error,omitempty"`
 }
 
 type Trial struct {
@@ -61,7 +52,7 @@ type FailoverResult struct {
 	Err     string          `json:"error,omitempty"`
 }
 
-func gaps(samples []sample, from, to int64) time.Duration {
+func gaps(samples []loadgen.FailoverSample, from, to int64) time.Duration {
 	var done []int64
 	for _, s := range samples {
 		if s.Ok {
@@ -79,7 +70,7 @@ func gaps(samples []sample, from, to int64) time.Duration {
 	return time.Duration(widest)
 }
 
-func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]sample, error) {
+func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]loadgen.FailoverSample, error) {
 	network := d.Project + "_lab"
 	args := []string{"run", "--rm", "--network", network, "--entrypoint", "failgen", "fivefamilies-lab-node",
 		"-rate", fmt.Sprint(opts.Rate), "-duration", (opts.Before + opts.After).String(), "-timeout", opts.Timeout.String(), fmt.Sprintf("-cold=%v", opts.Cold)}
@@ -88,10 +79,10 @@ func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]sample, 
 	if err != nil {
 		return nil, fmt.Errorf("generator: %w", err)
 	}
-	var samples []sample
+	var samples []loadgen.FailoverSample
 	sc := bufio.NewScanner(strings.NewReader(string(out)))
 	for sc.Scan() {
-		var s sample
+		var s loadgen.FailoverSample
 		if err := json.Unmarshal(sc.Bytes(), &s); err != nil {
 			return nil, err
 		}
@@ -143,7 +134,7 @@ func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, err
 		}
 		trial := Trial{Killed: leader}
 		type genResult struct {
-			samples []sample
+			samples []loadgen.FailoverSample
 			err     error
 		}
 		ch := make(chan genResult, 1)
@@ -163,7 +154,7 @@ func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, err
 			trial.Err = g.err.Error()
 		}
 		trial.Errors = map[string]int{}
-		var writes []sample
+		var writes []loadgen.FailoverSample
 		for _, s := range g.samples {
 			switch {
 			case s.Kind == "unreachable" && s.Node == leader && trial.Detected == 0:
@@ -197,7 +188,7 @@ func runFailover(ctx context.Context, opts FailoverOptions) (FailoverResult, err
 	}
 	if len(us) > 0 {
 		slices.Sort(us)
-		res.Median, res.Min, res.Max = us[len(us)/2], us[0], us[len(us)-1]
+		res.Median, res.Min, res.Max = loadgen.Quantile(us, 0.5), us[0], us[len(us)-1]
 	}
 	return res, runErr
 }

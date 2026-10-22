@@ -130,14 +130,14 @@ func TestAnInvalidOrSlowStepCountsAsSaturated(t *testing.T) {
 
 func TestTheGeneratedComposeFilesPinEveryNode(t *testing.T) {
 	b := &BenchCluster{Nodes: 3, Flags: []string{"-fsync", "entry"}, NodeCPUs: []string{"4", "5", "6"}, Image: "img"}
-	y := b.compose()
+	y := composeFile(b.services())
 	for _, want := range []string{`cpuset: "6"`, `"127.0.0.1:3153:3161"`, `"-cluster", "1=n1:3161,2=n2:3161,3=n3:3161"`, `"-fsync", "entry"`} {
 		if !strings.Contains(y, want) {
 			t.Fatalf("missing %s in\n%s", want, y)
 		}
 	}
 	e := &EtcdCluster{Nodes: 3, NodeCPUs: []string{"4", "5", "6"}, Procs: 2}
-	y = e.compose()
+	y = composeFile(e.services())
 	for _, want := range []string{EtcdImage, `"--heartbeat-interval", "100"`, `"--election-timeout", "1000"`, `"e1=http://e1:2380,e2=http://e2:2380,e3=http://e3:2380"`, `cpuset: "5"`, `GOMAXPROCS=2`} {
 		if !strings.Contains(y, want) {
 			t.Fatalf("missing %s in\n%s", want, y)

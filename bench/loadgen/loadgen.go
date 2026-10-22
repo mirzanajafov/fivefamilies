@@ -22,16 +22,16 @@ type Target interface {
 }
 
 type Config struct {
-	Rate         float64
-	Duration     time.Duration
-	Warmup       time.Duration
-	ReadFraction float64
-	Keys         int
-	ValueBytes   int
-	MaxInflight  int
-	Timeout      time.Duration
-	Poisson      bool
-	Seed         uint64
+	Rate         float64       `json:"rate"`
+	Duration     time.Duration `json:"duration_ns"`
+	Warmup       time.Duration `json:"warmup_ns"`
+	ReadFraction float64       `json:"read_fraction"`
+	Keys         int           `json:"keys"`
+	ValueBytes   int           `json:"value_bytes"`
+	MaxInflight  int           `json:"max_inflight"`
+	Timeout      time.Duration `json:"timeout_ns"`
+	Poisson      bool          `json:"poisson"`
+	Seed         uint64        `json:"seed"`
 }
 
 func (c *Config) normalize() error {
@@ -101,10 +101,7 @@ func Run(ctx context.Context, target Target, cfg Config) (Summary, error) {
 		return Summary{}, err
 	}
 	rng := rand.New(rand.NewPCG(cfg.Seed, 0x6c6f6164))
-	value := make([]byte, cfg.ValueBytes)
-	for i := range value {
-		value[i] = 'a' + byte(i%26)
-	}
+	value := valueOf(cfg.ValueBytes)
 	interval := float64(time.Second) / cfg.Rate
 	total := cfg.Warmup + cfg.Duration
 	var (
@@ -128,7 +125,7 @@ func Run(ctx context.Context, target Target, cfg Config) (Summary, error) {
 			next += interval
 		}
 		waitUntil(start, at)
-		op := Op{Read: rng.Float64() < cfg.ReadFraction, Key: fmt.Sprintf("k%06d", rng.IntN(cfg.Keys))}
+		op := Op{Read: rng.Float64() < cfg.ReadFraction, Key: key(rng.IntN(cfg.Keys))}
 		if !op.Read {
 			op.Value = value
 		}
@@ -164,6 +161,18 @@ func Run(ctx context.Context, target Target, cfg Config) (Summary, error) {
 	return summarize(cfg, records, dropped), nil
 }
 
+func key(i int) string {
+	return fmt.Sprintf("k%06d", i)
+}
+
+func valueOf(size int) []byte {
+	value := make([]byte, size)
+	for i := range value {
+		value[i] = 'a' + byte(i%26)
+	}
+	return value
+}
+
 func waitUntil(start time.Time, at time.Duration) {
 	for {
 		d := at - time.Since(start)
@@ -188,21 +197,30 @@ func errorClass(err error) string {
 	return err.Error()
 }
 
+func Quantile(sorted []time.Duration, q float64) time.Duration {
+	if len(sorted) == 0 {
+		return 0
+	}
+	pos := q * float64(len(sorted)-1)
+	i := int(pos)
+	if i == len(sorted)-1 {
+		return sorted[i]
+	}
+	return sorted[i] + time.Duration((pos-float64(i))*float64(sorted[i+1]-sorted[i]))
+}
+
 func dist(lat []time.Duration, errs int) Dist {
 	d := Dist{N: len(lat), Error: errs}
 	if len(lat) == 0 {
 		return d
 	}
 	slices.Sort(lat)
-	at := func(q float64) time.Duration {
-		i := int(q * float64(len(lat)-1))
-		return lat[i]
-	}
 	var sum time.Duration
 	for _, l := range lat {
 		sum += l
 	}
-	d.P50, d.P90, d.P99, d.P999, d.Max, d.Mean = at(0.5), at(0.9), at(0.99), at(0.999), lat[len(lat)-1], sum/time.Duration(len(lat))
+	d.P50, d.P90, d.P99, d.P999 = Quantile(lat, 0.5), Quantile(lat, 0.9), Quantile(lat, 0.99), Quantile(lat, 0.999)
+	d.Max, d.Mean = lat[len(lat)-1], sum/time.Duration(len(lat))
 	return d
 }
 
@@ -244,19 +262,4 @@ func summarize(cfg Config, records []record, dropped int) Summary {
 		s.Valid, s.Invalid = false, fmt.Sprintf("%d requests dropped at the in-flight limit", dropped)
 	}
 	return s
-}
-
-type Counters struct {
-	Fsyncs, Batches, Entries, Sent, Writes, Reads, Elections uint64
-}
-
-type Report struct {
-	Summary     Summary    `json:"summary"`
-	Nodes       int        `json:"nodes"`
-	ReadMode    string     `json:"read_mode"`
-	PerNode     []Counters `json:"per_node_delta,omitempty"`
-	FsyncsPerOp float64    `json:"fsyncs_per_op"`
-	MsgsPerOp   float64    `json:"msgs_per_op"`
-	EntriesPerF float64    `json:"entries_per_fsync"`
-	Elections   uint64     `json:"elections"`
 }

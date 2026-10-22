@@ -59,23 +59,7 @@ func TestSeeds(t *testing.T) {
 		if !r.OK() {
 			t.Errorf("seed %d failed at %v: %s\n  swarm: %s\n%s", r.Seed, r.At, r.Violation, r.Swarm, r.Stack)
 		}
-		total.Crashes += r.Stats.Crashes
-		total.Pauses += r.Stats.Pauses
-		total.Partitions += r.Stats.Partitions
-		total.SlowDisks += r.Stats.SlowDisks
-		total.Overwrites += r.Stats.Overwrites
-		total.MsgsDuplicated += r.Stats.MsgsDuplicated
-		total.Leaders += r.Stats.Leaders
-		total.MaxTerm = max(total.MaxTerm, r.Stats.MaxTerm)
-		total.ClientOps += r.Stats.ClientOps
-		total.ClientRetries += r.Stats.ClientRetries
-		total.SwapsWon += r.Stats.SwapsWon
-		total.TornTails += r.Stats.TornTails
-		total.Writes += r.Stats.Writes
-		total.Fsyncs += r.Stats.Fsyncs
-		total.Installs += r.Stats.Installs
-		total.LocalReads += r.Stats.LocalReads
-		total.Compactions += r.Stats.Compactions
+		total = total.Add(r.Stats)
 		if r.OK() && r.Check != porcupine.Ok {
 			t.Errorf("seed %d: linearizability check %s", r.Seed, r.Check)
 		}
