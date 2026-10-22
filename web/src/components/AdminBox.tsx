@@ -2,37 +2,34 @@
 
 import { useState } from 'react'
 import { errorIn } from '@/lib/api'
-import { useAdmin } from '@/lib/hooks'
+import { useAdmin } from '@/lib/session'
 
 export function AdminBox() {
   const [admin, setAdmin] = useAdmin()
   const [token, setToken] = useState('')
   const [error, setError] = useState<string>()
 
-  async function session(init: RequestInit): Promise<Response | undefined> {
+  async function session(init: RequestInit): Promise<boolean> {
     setError(undefined)
     try {
-      return await fetch('/api/session', init)
+      const res = await fetch('/api/session', init)
+      if (res.ok) return true
+      setError(errorIn(await res.json().catch(() => undefined)) ?? `refused (${res.status})`)
     } catch {
       setError('the dashboard could not reach its server')
-      return undefined
     }
+    return false
   }
 
   async function login(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
-    const res = await session({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+    const ok = await session({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
     setToken('')
-    if (!res) return
-    if (!res.ok) {
-      setError(errorIn(await res.json().catch(() => undefined)) ?? 'refused')
-      return
-    }
-    setAdmin(true)
+    if (ok) setAdmin(true)
   }
 
   async function logout() {
-    if ((await session({ method: 'DELETE' }))?.ok) setAdmin(false)
+    if (await session({ method: 'DELETE' })) setAdmin(false)
   }
 
   return (
@@ -63,9 +60,9 @@ export function AdminBox() {
           >
             Open
           </button>
-          {error && <p className="text-[var(--blood)]">{error}</p>}
         </form>
       )}
+      {error && <p className="mt-3 text-sm text-[var(--blood)]">{error}</p>}
     </section>
   )
 }

@@ -37,12 +37,11 @@ function failover() {
     .map((name) => {
       const f = read('e1', run, name)
       const ok = f.trials.filter((t) => !t.error)
-      const gaps = ok.map((t) => t.unavailable_ns)
       return {
         election: f.options.election,
         median: f.median_ns,
-        min: Math.min(...gaps),
-        max: Math.max(...gaps),
+        min: f.min_ns,
+        max: f.max_ns,
         electionMedian: median(ok.filter((t) => t.election_ns > 0).map((t) => t.election_ns)),
         trials: f.trials.length,
       }

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { errorIn } from '@/lib/api'
-import { useNow } from '@/lib/hooks'
+import { useNow } from '@/lib/clock'
 import type { Snapshot } from '@/lib/types'
 import { actionNames, family, faultActions, faultLabels, numeral, realness } from '@/lib/words'
 
@@ -117,12 +117,15 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
           </span>
         ) : cooldown > 0 ? (
           <span className="muted">Next fault in {cooldown} s</span>
-        ) : message ? (
-          <span className="text-[var(--blood)]">{message}</span>
         ) : (
           <span className="muted">One fault at a time, healed automatically.</span>
         )}
       </p>
+      {message && (
+        <p className="text-sm text-[var(--blood)]" role="alert">
+          {message}
+        </p>
+      )}
     </div>
   )
 }

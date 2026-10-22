@@ -1,6 +1,8 @@
 import { describe as suite, expect, it } from 'vitest'
-import { adminIn, errorIn, snapshotIn } from './api'
-import { ago, ms, rate } from './format'
+import { errorIn } from './api'
+import { ago, ms, perSecond, rate } from './format'
+import { adminIn } from './session'
+import { snapshotIn } from './snapshot'
 import { describe, family, outcome, role } from './words'
 import type { Fault, NodeView } from './types'
 
@@ -59,7 +61,8 @@ suite('format', () => {
   it('rounds rates and ages', () => {
     expect(rate(19.93)).toBe('19.9')
     expect(rate(250.4)).toBe('250')
-    expect(rate(14_000)).toBe('14,000')
+    expect(rate(1234.5)).toBe('1235')
+    expect(perSecond(14_000.4)).toBe('14,000')
     expect(ago(new Date(1000).toISOString(), 1000 + 90_000)).toBe('1m ago')
   })
   it('shows short times with a decimal and long ones whole', () => {
@@ -69,11 +72,24 @@ suite('format', () => {
 })
 
 suite('api', () => {
-  const snapshot = { nodes: [], events: [], windows: [], load: { active: false, ops_per_s: 0, viewers: 0 }, limits: { max_seconds: 15, cooldown_seconds: 10 } }
-  it('takes a snapshot only with the lists and parts the dashboard reads', () => {
+  const snapshot = {
+    at: '2026-10-22T18:00:00Z',
+    leader: 0,
+    term: 0,
+    nodes: [],
+    events: [],
+    windows: [],
+    load: { active: false, ops_per_s: 0, viewers: 0 },
+    limits: { max_seconds: 15, cooldown_seconds: 10 },
+  }
+  it('takes a snapshot only when every part the dashboard reads has the right type', () => {
     expect(snapshotIn(JSON.stringify(snapshot))).toEqual(snapshot)
+    const withNode = { ...snapshot, nodes: [node({ fault: 'kill' })] }
+    expect(snapshotIn(JSON.stringify(withNode))).toEqual(withNode)
     expect(snapshotIn(JSON.stringify({ ...snapshot, events: null }))).toBeUndefined()
     expect(snapshotIn(JSON.stringify({ ...snapshot, limits: null }))).toBeUndefined()
+    expect(snapshotIn(JSON.stringify({ ...snapshot, nodes: [{ id: 1, up: true }] }))).toBeUndefined()
+    expect(snapshotIn(JSON.stringify({ ...snapshot, nodes: [{ ...node({}), fault: 'melt' }] }))).toBeUndefined()
     expect(snapshotIn('not json')).toBeUndefined()
   })
   it('reads an error and the admin flag only when they have the right type', () => {

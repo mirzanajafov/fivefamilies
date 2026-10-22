@@ -1,7 +1,8 @@
 'use client'
 
 import { useLive } from '@/lib/live'
-import { useAdmin, useNow } from '@/lib/hooks'
+import { useNow } from '@/lib/clock'
+import { useAdmin } from '@/lib/session'
 import { ms, rate } from '@/lib/format'
 import { family, outcome } from '@/lib/words'
 import { ChaosPanel } from './ChaosPanel'
@@ -11,11 +12,12 @@ import { Timeline, Windows } from './Ledger'
 import { Panel } from './Panel'
 
 export function Dashboard() {
-  const { snapshot, connected } = useLive()
+  const { snapshot, connected, unreadable } = useLive()
   const [admin] = useAdmin()
   const now = useNow(1000)
 
   if (!snapshot) {
+    if (unreadable) return <p className="mt-10 text-center text-[var(--blood)]">The controller sent a snapshot this page can&apos;t read.</p>
     return <p className="muted mt-10 text-center">{connected ? 'Listening to the Commission…' : 'Connecting to the Commission…'}</p>
   }
   const last = snapshot.last
@@ -26,6 +28,9 @@ export function Dashboard() {
         Break a family below and watch the rest keep their word: every ten seconds the clients&apos; history is checked for linearizability.
       </p>
       {!connected && <p className="text-sm text-[var(--blood)]">The stream dropped and the page is reconnecting. What you see may be stale.</p>}
+      {connected && unreadable && (
+        <p className="text-sm text-[var(--blood)]">The controller&apos;s last snapshot couldn&apos;t be read, so what you see may be stale.</p>
+      )}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <Panel title="The Commission">
           <Commission nodes={snapshot.nodes} leader={snapshot.leader} term={snapshot.term} />
