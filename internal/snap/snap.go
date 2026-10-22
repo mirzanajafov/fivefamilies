@@ -19,7 +19,6 @@ const (
 
 var (
 	magic      = [8]byte{'F', 'F', 'S', 'N', 'A', 'P', 0, 2}
-	magicV1    = [8]byte{'F', 'F', 'S', 'N', 'A', 'P', 0, 1}
 	castagnoli = crc32.MakeTable(crc32.Castagnoli)
 	ErrCorrupt = errors.New("snap: corrupt snapshot")
 )
@@ -44,7 +43,7 @@ func Load(fs vfs.FS, index, term uint64) (raft.Snapshot, error) {
 	if err != nil {
 		return raft.Snapshot{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
 	}
-	if len(b) < headerSize || ([8]byte(b[:8]) != magic && [8]byte(b[:8]) != magicV1) {
+	if len(b) < headerSize || [8]byte(b[:8]) != magic {
 		return raft.Snapshot{}, fmt.Errorf("%w: bad header", ErrCorrupt)
 	}
 	if binary.LittleEndian.Uint64(b[8:]) != index || binary.LittleEndian.Uint64(b[16:]) != term {
@@ -56,9 +55,6 @@ func Load(fs vfs.FS, index, term uint64) (raft.Snapshot, error) {
 	}
 	if binary.LittleEndian.Uint32(b[32:]) != crc32.Checksum(body, castagnoli) {
 		return raft.Snapshot{}, fmt.Errorf("%w: checksum mismatch", ErrCorrupt)
-	}
-	if [8]byte(b[:8]) == magicV1 {
-		return raft.Snapshot{Index: index, Term: term, Data: body}, nil
 	}
 	conf, data, ok := readConf(body)
 	if !ok {

@@ -173,14 +173,6 @@ func (s *Store) Rev() uint64 {
 	return s.rev
 }
 
-func (s *Store) Len() int {
-	return s.tree.Len()
-}
-
-func (s *Store) Sessions() int {
-	return len(s.sessions)
-}
-
 func (s *Store) Get(key string) (KeyValue, bool) {
 	return s.tree.Get(KeyValue{Key: key})
 }
