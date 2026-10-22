@@ -183,14 +183,14 @@ func (r *registryRun) trial(ctx context.Context, t, leader int) (RegistryTrial, 
 	}
 	tr := RegistryTrial{Variant: variant, Instance: fmt.Sprintf("i%d", t)}
 	name := fmt.Sprintf("%s-reg-%d", r.d.Name, t)
-	_, runErr := r.d.Cmd(ctx, nil, "run", "-d", "--name", name, "--network", r.d.Name+"_lab", "--entrypoint", "ffctl", "fivefamilies-lab-node",
+	_, runErr := rig.Docker(ctx, nil, "run", "-d", "--name", name, "--network", r.d.Name+"_lab", "--entrypoint", "ffctl", "fivefamilies-lab-node",
 		"-endpoints", r.endpoints, "register", "bench", tr.Instance, "10.9.9.9:80", r.opts.TTL.String())
 	if runErr == nil {
 		if err := r.killAndTime(ctx, &tr, name, leader); err != nil {
 			tr.Err = err.Error()
 		}
 	}
-	if _, err := r.d.Cmd(context.Background(), nil, "rm", "-f", name); err != nil && tr.Err == "" {
+	if _, err := rig.Docker(context.Background(), nil, "rm", "-f", name); err != nil && tr.Err == "" {
 		tr.Err = err.Error()
 	}
 	if tr.Leader > 0 {
@@ -211,7 +211,7 @@ func (r *registryRun) killAndTime(ctx context.Context, tr *RegistryTrial, name s
 	killed := time.Now()
 	var instanceErr, leaderErr error
 	var wg sync.WaitGroup
-	wg.Go(func() { _, instanceErr = r.d.Cmd(context.Background(), nil, "kill", name) })
+	wg.Go(func() { _, instanceErr = rig.Docker(context.Background(), nil, "kill", name) })
 	if tr.Variant == "instance+leader" {
 		tr.Leader = leader
 		wg.Go(func() { leaderErr = r.d.Kill(context.Background(), leader) })

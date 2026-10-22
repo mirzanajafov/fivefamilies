@@ -56,9 +56,9 @@ func quote(args []string) string {
 }
 
 type composeCluster struct {
-	dir  string
-	d    *rig.Project
-	gens int
+	dir     string
+	project *rig.Project
+	gens    int
 }
 
 func (c *composeCluster) start(ctx context.Context, project string, services []service) error {
@@ -71,17 +71,14 @@ func (c *composeCluster) start(ctx context.Context, project string, services []s
 	if err := os.WriteFile(file, []byte(composeFile(services)), 0o644); err != nil {
 		return err
 	}
-	c.d = &rig.Project{Name: project, File: file}
-	if err := c.d.Down(ctx); err != nil {
-		return err
-	}
-	return c.d.Compose(ctx, nil, "up", "-d")
+	c.project = &rig.Project{Name: project, File: file}
+	return c.project.Recreate(ctx, nil)
 }
 
 func (c *composeCluster) Down() error {
 	var errs []error
-	if c.d != nil {
-		errs = append(errs, c.d.Down(context.Background()))
+	if c.project != nil {
+		errs = append(errs, c.project.Down(context.Background()))
 	}
 	if c.dir != "" {
 		errs = append(errs, os.RemoveAll(c.dir))
@@ -91,11 +88,11 @@ func (c *composeCluster) Down() error {
 
 func (c *composeCluster) runGenerator(ctx context.Context, genCPUs string, command, args []string) (loadgen.Report, error) {
 	c.gens++
-	name := fmt.Sprintf("%s-gen-%d", c.d.Name, c.gens)
-	run := append([]string{"run", "--rm", "--name", name, "--network", c.d.Name + "_bench", "--cpuset-cpus", genCPUs}, command...)
-	out, err := c.d.Cmd(ctx, nil, append(run, args...)...)
+	name := fmt.Sprintf("%s-gen-%d", c.project.Name, c.gens)
+	run := append([]string{"run", "--rm", "--name", name, "--network", c.project.Name + "_bench", "--cpuset-cpus", genCPUs}, command...)
+	out, err := rig.Docker(ctx, nil, append(run, args...)...)
 	if err != nil {
-		_, rmErr := c.d.Cmd(context.Background(), nil, "rm", "-f", name)
+		_, rmErr := rig.Docker(context.Background(), nil, "rm", "-f", name)
 		return loadgen.Report{}, errors.Join(err, rmErr)
 	}
 	return decodeReport(out)
@@ -122,20 +119,22 @@ type ffCluster struct {
 	NodeCPUs []string
 	Image    string
 	Profiles bool
+	adm      *rig.Admin
 	composeCluster
 }
 
 func (b *ffCluster) services() []service {
+	network, host := rig.NetworkAddrs(b.Nodes), rig.HostAddrs(b.Nodes)
 	var cluster []string
-	for i := 1; i <= b.Nodes; i++ {
-		cluster = append(cluster, fmt.Sprintf("%d=n%d:3161", i, i))
+	for i, addr := range network {
+		cluster = append(cluster, fmt.Sprintf("%d=%s", i+1, addr))
 	}
 	var out []service
 	for i := 1; i <= b.Nodes; i++ {
 		s := service{
 			name: fmt.Sprintf("n%d", i), image: b.Image, cpuset: b.NodeCPUs[(i-1)%len(b.NodeCPUs)],
 			command: append([]string{"-id", fmt.Sprint(i), "-cluster", strings.Join(cluster, ","), "-data", "/data"}, b.Flags...),
-			ports:   []string{fmt.Sprintf("127.0.0.1:315%d:3161", i)},
+			ports:   []string{host[i-1] + ":3161"},
 		}
 		if b.Profiles {
 			s.command = append(s.command, "-pprof", ":6060")
@@ -153,13 +152,19 @@ func (b *ffCluster) Up(ctx context.Context) error {
 	if err := b.start(ctx, benchProject, b.services()); err != nil {
 		return err
 	}
-	adm, err := rig.DialAdmin(rig.HostAddrs(b.Nodes))
-	if err != nil {
+	var err error
+	if b.adm, err = rig.DialAdmin(rig.HostAddrs(b.Nodes)); err != nil {
 		return err
 	}
-	defer adm.Close()
-	_, err = adm.Steady(ctx)
+	_, err = b.adm.Steady(ctx)
 	return err
+}
+
+func (b *ffCluster) Down() error {
+	if b.adm != nil {
+		b.adm.Close()
+	}
+	return b.composeCluster.Down()
 }
 
 func (b *ffCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
@@ -276,13 +281,8 @@ func settle(ctx context.Context, probe func(context.Context) (uint64, bool)) err
 }
 
 func (b *ffCluster) Quiet(ctx context.Context) error {
-	adm, err := rig.DialAdmin(rig.HostAddrs(b.Nodes))
-	if err != nil {
-		return err
-	}
-	defer adm.Close()
 	return settle(ctx, func(ctx context.Context) (uint64, bool) {
-		sts := adm.Progress(ctx, time.Second)
+		sts := b.adm.Progress(ctx, time.Second)
 		l, _ := rig.LeaderOf(sts)
 		if l == 0 {
 			return 0, false

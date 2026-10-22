@@ -3,7 +3,8 @@ package rig
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
+
+	"github.com/mirzanajafov/fivefamilies/internal/vfs"
 )
 
 func SaveJSON(dir, name string, v any) error {
@@ -14,5 +15,5 @@ func SaveJSON(dir, name string, v any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, name), append(b, '\n'), 0o644)
+	return vfs.WriteAtomic(vfs.OS{Dir: dir}, name, append(b, '\n'))
 }

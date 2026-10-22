@@ -73,22 +73,13 @@ func fetchProfile(ctx context.Context, url, file string) error {
 	return errors.Join(err, f.Close())
 }
 
-func (b *ffCluster) leader(ctx context.Context) (int, error) {
-	adm, err := rig.DialAdmin(rig.HostAddrs(b.Nodes))
-	if err != nil {
-		return 0, err
-	}
-	defer adm.Close()
-	return adm.Steady(ctx)
-}
-
 func (b *ffCluster) phase(ctx context.Context, o ProfileOptions, name string, rate float64, seconds int) ProfilePhase {
 	p := ProfilePhase{Name: name, Rate: rate}
 	if err := b.Quiet(ctx); err != nil {
 		p.Err = err.Error()
 		return p
 	}
-	l, err := b.leader(ctx)
+	l, err := b.adm.Steady(ctx)
 	if err != nil {
 		p.Err = err.Error()
 		return p

@@ -291,9 +291,9 @@ func runE1b(ctx context.Context, o ExperimentOptions, add func(E1bRow) error) er
 	if o.Quick {
 		variants, injections = variants[:1], 1
 	}
-	rng := rand.New(rand.NewPCG(1, 2))
+	r := &e1bRun{o: o, injections: injections, rng: rand.New(rand.NewPCG(1, 2))}
 	for _, v := range variants {
-		row, err := measureE1b(ctx, o, v, injections, rng)
+		row, err := r.measure(ctx, v)
 		if err != nil {
 			return err
 		}
@@ -304,41 +304,42 @@ func runE1b(ctx context.Context, o ExperimentOptions, add func(E1bRow) error) er
 	return nil
 }
 
-func measureE1b(ctx context.Context, o ExperimentOptions, v e1bVariant, injections int, rng *rand.Rand) (E1bRow, error) {
+type e1bRun struct {
+	o          ExperimentOptions
+	injections int
+	rng        *rand.Rand
+}
+
+func (r *e1bRun) measure(ctx context.Context, v e1bVariant) (E1bRow, error) {
 	row := E1bRow{Election: v.t, SyncStorage: v.sync}
 	flags := []string{"-election", v.t.String(), "-heartbeat", (v.t / 3).String(), "-chaos"}
 	if v.sync {
 		flags = append(flags, "-sync-storage")
 	}
-	b := &ffCluster{Nodes: 5, Flags: flags, NodeCPUs: o.NodeCPUs}
-	o.Log("e1b: election %v, sync storage %v", v.t, v.sync)
-	defer o.tearDown("e1b", b.Down)
+	b := &ffCluster{Nodes: 5, Flags: flags, NodeCPUs: r.o.NodeCPUs}
+	r.o.Log("e1b: election %v, sync storage %v", v.t, v.sync)
+	defer r.o.tearDown("e1b", b.Down)
 	if err := b.Up(ctx); err != nil {
 		return row, err
 	}
-	adm, err := rig.DialAdmin(rig.HostAddrs(b.Nodes))
-	if err != nil {
-		return row, err
-	}
-	defer adm.Close()
 	lctx, stopLoad := context.WithCancel(ctx)
 	loadDone := make(chan error, 1)
 	go func() {
-		_, err := b.Generate(lctx, o.GenCPUs, "-rate", "300", "-duration", "1h", "-warmup", "0s", "-reads", "0", "-preload=false")
+		_, err := b.Generate(lctx, r.o.GenCPUs, "-rate", "300", "-duration", "1h", "-warmup", "0s", "-reads", "0", "-preload=false")
 		loadDone <- err
 		stopLoad()
 	}()
 	faults := v.faults()
-	if o.Quick {
+	if r.o.Quick {
 		faults = faults[:1]
 	}
 	rig.Wait(lctx, 2*time.Second)
 	for _, f := range faults {
-		out := injectE1b(lctx, o, adm, v, f, injections, rng)
+		out := r.inject(lctx, b.adm, v, f)
 		if lctx.Err() != nil {
 			break
 		}
-		o.Log("  %s %s %v: %d of %d followed by an election", out.Kind, f.target, f.d, out.WithElected, out.Injections)
+		r.o.Log("  %s %s %v: %d of %d followed by an election", out.Kind, f.target, f.d, out.WithElected, out.Injections)
 		row.Faults = append(row.Faults, out)
 	}
 	generatorDied := lctx.Err() != nil
@@ -353,23 +354,23 @@ func measureE1b(ctx context.Context, o ExperimentOptions, v e1bVariant, injectio
 	return row, nil
 }
 
-func injectE1b(ctx context.Context, o ExperimentOptions, adm *rig.Admin, v e1bVariant, f e1bFault, injections int, rng *rand.Rand) FaultOutcome {
+func (r *e1bRun) inject(ctx context.Context, adm *rig.Admin, v e1bVariant, f e1bFault) FaultOutcome {
 	out := FaultOutcome{Kind: faultName(f.action), Duration: f.d, Target: f.target}
-	for range injections {
+	for range r.injections {
 		leader, err := adm.Agreed(ctx)
 		if err != nil {
 			break
 		}
 		n := leader
 		if f.target == "follower" {
-			n = 1 + (leader+rng.IntN(4))%5
+			n = 1 + (leader+r.rng.IntN(4))%5
 		}
 		before := maxElections(adm.Statuses(ctx, time.Second))
 		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		_, err = adm.Client(n).Chaos(cctx, &pb.ChaosRequest{Action: f.action, DurationMs: uint64(f.d / time.Millisecond)})
 		cancel()
 		if err != nil {
-			o.Log("chaos on %d: %v", n, err)
+			r.o.Log("chaos on %d: %v", n, err)
 			continue
 		}
 		rig.Wait(ctx, f.d+4*v.t+time.Second)

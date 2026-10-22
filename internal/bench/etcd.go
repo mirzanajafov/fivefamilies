@@ -92,7 +92,7 @@ type etcdStatus struct {
 }
 
 func (e *etcdCluster) statuses(ctx context.Context) ([]etcdStatus, error) {
-	out, err := e.d.Cmd(ctx, nil, "exec", e.d.Container("e1"), "etcdctl", "--endpoints", strings.Join(e.endpoints(), ","), "endpoint", "status", "-w", "json")
+	out, err := rig.Docker(ctx, nil, "exec", e.project.Container("e1"), "etcdctl", "--endpoints", strings.Join(e.endpoints(), ","), "endpoint", "status", "-w", "json")
 	if err != nil {
 		return nil, err
 	}

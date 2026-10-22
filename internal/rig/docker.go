@@ -13,7 +13,7 @@ type Project struct {
 	File string
 }
 
-func (p Project) Cmd(ctx context.Context, env []string, args ...string) (string, error) {
+func Docker(ctx context.Context, env []string, args ...string) (string, error) {
 	c := exec.CommandContext(ctx, "docker", args...)
 	if env != nil {
 		c.Env = append(c.Environ(), env...)
@@ -27,8 +27,15 @@ func (p Project) Cmd(ctx context.Context, env []string, args ...string) (string,
 }
 
 func (p Project) Compose(ctx context.Context, env []string, args ...string) error {
-	_, err := p.Cmd(ctx, env, append([]string{"compose", "-p", p.Name, "-f", p.File}, args...)...)
+	_, err := Docker(ctx, env, append([]string{"compose", "-p", p.Name, "-f", p.File}, args...)...)
 	return err
+}
+
+func (p Project) Recreate(ctx context.Context, env []string) error {
+	if err := p.Compose(ctx, env, "down", "-v", "--remove-orphans"); err != nil {
+		return err
+	}
+	return p.Compose(ctx, env, "up", "-d")
 }
 
 func (p Project) Container(svc string) string {

@@ -74,7 +74,7 @@ func LeaderOf(sts []*pb.StatusResponse) (int, uint64) {
 	return best, term
 }
 
-func AgreedOn(sts []*pb.StatusResponse) int {
+func agreedOn(sts []*pb.StatusResponse) int {
 	l, _ := LeaderOf(sts)
 	if l == 0 {
 		return 0
@@ -99,7 +99,7 @@ func (a *Admin) Leader(ctx context.Context) (int, *pb.StatusResponse) {
 func (a *Admin) Agreed(ctx context.Context) (int, error) {
 	var leader int
 	err := Poll(ctx, 100*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
-		leader = AgreedOn(a.Statuses(ctx, time.Second))
+		leader = agreedOn(a.Statuses(ctx, time.Second))
 		return leader > 0, nil
 	})
 	if err != nil {
@@ -112,7 +112,7 @@ func (a *Admin) Steady(ctx context.Context) (int, error) {
 	var leader int
 	err := Poll(ctx, 200*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
 		sts := a.Statuses(ctx, time.Second)
-		l := AgreedOn(sts)
+		l := agreedOn(sts)
 		if l == 0 {
 			return false, nil
 		}
