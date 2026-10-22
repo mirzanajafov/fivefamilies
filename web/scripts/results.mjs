@@ -37,12 +37,11 @@ function failover() {
     .map((name) => {
       const f = read('e1', run, name)
       const ok = f.trials.filter((t) => !t.error)
-      const gaps = ok.map((t) => t.unavailable_ns)
       return {
         election: f.options.election,
-        median: median(gaps),
-        min: Math.min(...gaps),
-        max: Math.max(...gaps),
+        median: f.median_ns,
+        min: f.min_ns,
+        max: f.max_ns,
         electionMedian: median(ok.filter((t) => t.election_ns > 0).map((t) => t.election_ns)),
         trials: f.trials.length,
       }
@@ -121,7 +120,7 @@ function curve(c) {
     .filter((s) => s.report.summary.scheduled > 0)
     .map(point)
     .sort((a, b) => a.rate - b.rate)
-  const knee = Math.max(0, ...steps.filter((p) => p.kept).map((p) => p.achieved))
+  const knee = c.knee_per_s
   const below = steps.filter((p) => p.rate <= 0.8 * knee).reverse()
   return {
     name: c.name,

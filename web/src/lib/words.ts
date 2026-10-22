@@ -1,4 +1,5 @@
-import type { Event, Fault, NodeView } from './types'
+import { ms } from './format'
+import type { Event, Fault, FaultAction, NodeView } from './types'
 
 const numerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX']
 
@@ -25,11 +26,9 @@ export function role(n: NodeView): string {
   return 'sworn'
 }
 
-export const faultActions = ['kill', 'pause', 'isolate', 'stall-disk'] as const
+export const faultActions = ['kill', 'pause', 'isolate', 'stall-disk'] as const satisfies readonly FaultAction[]
 
-type Action = (typeof faultActions)[number] | 'step-down'
-
-export const actionNames: Record<Action, string> = {
+export const actionNames: Record<FaultAction, string> = {
   kill: 'kill the process',
   pause: 'freeze the process',
   isolate: 'cut it off',
@@ -37,15 +36,15 @@ export const actionNames: Record<Action, string> = {
   'step-down': 'ask the Don to step down',
 }
 
-export const faultLabels: Record<string, string> = {
+export const faultLabels: Record<FaultAction, string> = {
   kill: 'killed',
   pause: 'frozen',
   isolate: 'cut off',
   'stall-disk': 'slow disk',
   'step-down': 'stepped down',
-} satisfies Record<Action, string>
+}
 
-export const realness: Record<Action, string> = {
+export const realness: Record<FaultAction, string> = {
   kill: 'a real SIGKILL, and the process restarts when the fault ends',
   pause: 'a real SIGSTOP, then SIGCONT',
   isolate: 'in-process: the node drops every message to and from the others',
@@ -74,9 +73,8 @@ export function describe(e: Event): string {
 }
 
 export function outcome(f: Fault): string {
-  const what = `${family(f.node)} was ${faultLabels[f.action] ?? f.action}`
+  const what = `${family(f.node)} was ${faultLabels[f.action]}`
   if (!f.on_leader) return `${what}. It was not the Don, so nobody had to wait.`
   if (!f.failover?.new_leader) return `${what}. The Don kept the seat.`
-  const ms = (ns: number) => `${(ns / 1e6).toFixed(0)} ms`
   return `${what}. ${family(f.failover.new_leader)} took over after ${ms(f.failover.election_ns)}, and clients waited ${ms(f.failover.client_gap_ns)} between two acknowledged writes.`
 }

@@ -47,7 +47,7 @@ export function Commission({ nodes, leader, term }: { nodes: NodeView[]; leader:
       </text>
       {seats.map(({ n, x, y }) => {
         const isDon = n.id === leader && n.up
-        const label = n.fault ? (faultLabels[n.fault] ?? n.fault) : role(n)
+        const label = n.fault ? faultLabels[n.fault] : role(n)
         return (
           <g key={n.id}>
             <circle

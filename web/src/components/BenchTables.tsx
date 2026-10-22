@@ -1,9 +1,8 @@
+import { ms, wholeRate } from '@/lib/format'
 import type { Curve, E1bRow, Point } from '@/lib/results'
 
-const ms = (ns: number) => (ns >= 10e6 ? `${Math.round(ns / 1e6).toLocaleString('en-US')} ms` : `${(ns / 1e6).toFixed(1)} ms`)
 const per = (v: number) => (v === 0 ? '0' : v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2))
 const msgs = (v: number) => (v ? per(v) : 'not counted')
-const rate = (v: number) => Math.round(v).toLocaleString('en-US')
 
 export function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
   const first = head.length > 5 ? 'py-1.5 pr-4 min-w-[10rem]' : 'py-1.5 pr-4'
@@ -37,12 +36,12 @@ export function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][
 
 function knee(c: Curve): string {
   if (!c.knee) return 'none'
-  if (c.rounds < 2) return rate(c.knee)
-  return c.kneeMin === c.kneeMax ? `${rate(c.knee)} (every round)` : `${rate(c.knee)} (${rate(c.kneeMin)}–${rate(c.kneeMax)})`
+  if (c.rounds < 2) return wholeRate(c.knee)
+  return c.kneeMin === c.kneeMax ? `${wholeRate(c.knee)} (every round)` : `${wholeRate(c.knee)} (${wholeRate(c.kneeMin)}–${wholeRate(c.kneeMax)})`
 }
 
 function latency(c: Curve, cells: (p: Point) => string[]): string[] {
-  return c.latency ? [rate(c.latency.rate), ...cells(c.latency)] : Array<string>(5).fill('')
+  return c.latency ? [wholeRate(c.latency.rate), ...cells(c.latency)] : Array<string>(5).fill('')
 }
 
 export function WriteCurves({ curves, unit = 'write' }: { curves: Curve[]; unit?: string }) {

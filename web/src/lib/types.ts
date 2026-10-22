@@ -1,18 +1,22 @@
+export const roles = ['', 'follower', 'precandidate', 'candidate', 'leader'] as const
+export const actions = ['kill', 'pause', 'isolate', 'stall-disk', 'step-down'] as const
+export const results = ['Ok', 'Illegal', 'Unknown', 'unchecked'] as const
+export const kinds = ['succession', 'down', 'up', 'membership', 'fault', 'healed', 'violation'] as const
+
+export type Role = (typeof roles)[number]
+export type FaultAction = (typeof actions)[number]
+
 export type NodeView = {
   id: number
   up: boolean
-  state: string
+  state: Role
   term: number
-  leader: number
   commit: number
-  applied: number
   last: number
-  first: number
-  snapshot: number
   voter: boolean
   learner: boolean
   msgs_per_s: number
-  fault?: string
+  fault?: FaultAction
 }
 
 type EventBase = {
@@ -21,15 +25,12 @@ type EventBase = {
   text: string
 }
 
-export type Event = (EventBase & { kind: 'succession'; term: number }) | (EventBase & { kind: 'down' | 'up' | 'membership' | 'fault' | 'healed' | 'violation' })
+export type Event = (EventBase & { kind: 'succession'; term: number }) | (EventBase & { kind: Exclude<(typeof kinds)[number], 'succession'> })
 
 export type Window = {
   index: number
-  from: string
-  to: string
   ops: number
-  result: string
-  took_ns: number
+  result: (typeof results)[number]
   note?: string
 }
 
@@ -41,20 +42,14 @@ type Failover = {
 
 export type Fault = {
   id: number
-  action: string
+  action: FaultAction
   node: number
-  duration_ns: number
-  started: string
   ends: string
-  by: string
   on_leader: boolean
-  old_leader: number
-  old_term: number
   failover?: Failover
 }
 
 export type Snapshot = {
-  at: string
   nodes: NodeView[]
   leader: number
   term: number
@@ -63,5 +58,5 @@ export type Snapshot = {
   fault?: Fault
   last?: Fault
   load: { active: boolean; ops_per_s: number; viewers: number }
-  limits: { max_seconds: number; cooldown_seconds: number; next_allowed?: string }
+  limits: { max_seconds: number; next_allowed?: string }
 }

@@ -66,7 +66,7 @@ type Results = {
   batching?: Curves
 }
 
-const results = data as Results
+const results: Results = data
 
 export const failover = () => results.failover
 export const registry = () => results.registry

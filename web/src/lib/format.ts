@@ -9,3 +9,15 @@ export function ago(at: string, now: number): string {
 export function rate(v: number): string {
   return v >= 100 ? v.toFixed(0) : v.toFixed(1)
 }
+
+export function wholeRate(v: number): string {
+  return Math.round(v).toLocaleString('en-US')
+}
+
+export function millis(ns: number): string {
+  return Math.round(ns / 1e6).toLocaleString('en-US')
+}
+
+export function ms(ns: number): string {
+  return ns >= 10e6 ? `${millis(ns)} ms` : `${(ns / 1e6).toFixed(1)} ms`
+}
