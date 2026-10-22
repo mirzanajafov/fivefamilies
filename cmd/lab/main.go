@@ -17,6 +17,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/bench"
 	"github.com/mirzanajafov/fivefamilies/internal/lab"
 	"github.com/mirzanajafov/fivefamilies/internal/planted"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type usageError struct {
@@ -285,9 +286,7 @@ func buildEtcd(ctx context.Context) error {
 }
 
 func buildImage(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "docker", "build", "-q", "--target", "lab", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", ".")
-	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := rig.BuildLabImage(ctx, "."); err != nil {
 		return fmt.Errorf("build: %w", err)
 	}
 	return nil

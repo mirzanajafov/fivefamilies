@@ -183,7 +183,7 @@ func (r *registryRun) trial(ctx context.Context, t, leader int) (RegistryTrial, 
 	}
 	tr := RegistryTrial{Variant: variant, Instance: fmt.Sprintf("i%d", t)}
 	name := fmt.Sprintf("%s-reg-%d", r.d.Name, t)
-	_, runErr := rig.Docker(ctx, nil, "run", "-d", "--name", name, "--network", r.d.Name+"_lab", "--entrypoint", "ffctl", "fivefamilies-lab-node",
+	_, runErr := rig.Docker(ctx, nil, "run", "-d", "--name", name, "--network", r.d.Name+"_lab", "--entrypoint", "ffctl", rig.LabImage,
 		"-endpoints", r.endpoints, "register", "bench", tr.Instance, "10.9.9.9:80", r.opts.TTL.String())
 	if runErr == nil {
 		if err := r.killAndTime(ctx, &tr, name, leader); err != nil {

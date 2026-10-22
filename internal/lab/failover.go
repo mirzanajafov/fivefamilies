@@ -71,7 +71,7 @@ func gaps(samples []loadgen.FailoverSample, from, to int64) time.Duration {
 
 func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]loadgen.FailoverSample, error) {
 	network := d.Name + "_lab"
-	args := []string{"run", "--rm", "--network", network, "--entrypoint", "failgen", "fivefamilies-lab-node",
+	args := []string{"run", "--rm", "--network", network, "--entrypoint", "failgen", rig.LabImage,
 		"-nodes", strings.Join(rig.NetworkAddrs(d.Nodes), ","),
 		"-rate", fmt.Sprint(opts.Rate), "-duration", (opts.Before + opts.After).String(), "-timeout", opts.Timeout.String(), fmt.Sprintf("-cold=%v", opts.Cold)}
 	out, err := rig.Docker(ctx, nil, args...)

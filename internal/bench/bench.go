@@ -147,7 +147,7 @@ func (b *ffCluster) services() []service {
 
 func (b *ffCluster) Up(ctx context.Context) error {
 	if b.Image == "" {
-		b.Image = "fivefamilies-lab-node"
+		b.Image = rig.LabImage
 	}
 	if err := b.start(ctx, benchProject, b.services()); err != nil {
 		return err

@@ -11,7 +11,13 @@ import (
 const (
 	NodePort     = 3161
 	hostPortBase = 3150
+	LabImage     = "fivefamilies-lab-node"
 )
+
+func BuildLabImage(ctx context.Context, root string) error {
+	_, err := Docker(ctx, nil, "build", "-q", "--target", "lab", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", LabImage, root)
+	return err
+}
 
 type Project struct {
 	Name string
