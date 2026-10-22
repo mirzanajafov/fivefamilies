@@ -32,8 +32,8 @@ type config struct {
 }
 
 func main() {
-	c, err := parseFlags()
-	if err != nil {
+	c := parseFlags()
+	if err := c.opts.Validate(c.catch); err != nil {
 		fmt.Fprintln(os.Stderr, "-catch or -bug can never fire:", err)
 		os.Exit(2)
 	}
@@ -43,7 +43,7 @@ func main() {
 	os.Exit(c.batch())
 }
 
-func parseFlags() (config, error) {
+func parseFlags() config {
 	seed := flag.Uint64("seed", 0, "run one seed and print its result")
 	trace := flag.Bool("trace", false, "with -seed, print every event")
 	viz := flag.String("viz", "", "with -seed, write the history's linearizability visualization to this HTML file")
@@ -103,8 +103,7 @@ func parseFlags() (config, error) {
 	}
 	opts.Bugs = bugs
 	opts.MuteSafety = *mute
-	c := config{opts: opts, catch: catch, seed: *seed, trace: *trace, viz: *viz, from: *from, count: *count, parallel: *parallel, first: *first}
-	return c, opts.Validate(catch)
+	return config{opts: opts, catch: catch, seed: *seed, trace: *trace, viz: *viz, from: *from, count: *count, parallel: *parallel, first: *first}
 }
 
 func (c config) replay() int {
@@ -133,6 +132,10 @@ type tally struct {
 	unknown, short       []uint64
 	categories, detected map[sim.Category]int
 	lowest               uint64
+}
+
+func newTally() *tally {
+	return &tally{categories: map[sim.Category]int{}, detected: map[sim.Category]int{}}
 }
 
 func (t *tally) add(res sim.Result, catch sim.Category) outcome {
@@ -166,7 +169,7 @@ func (c config) batch() int {
 	next.Store(c.from)
 	last := c.from + uint64(c.count)
 	var mu sync.Mutex
-	t := tally{categories: map[sim.Category]int{}, detected: map[sim.Category]int{}}
+	t := newTally()
 	var stop atomic.Bool
 	var wg sync.WaitGroup
 	for range c.parallel {
@@ -189,7 +192,7 @@ func (c config) batch() int {
 	return c.report(t, time.Since(start))
 }
 
-func (c config) report(t tally, elapsed time.Duration) int {
+func (c config) report(t *tally, elapsed time.Duration) int {
 	fmt.Printf("%d seeds from %d in %v (%.1f ms per seed per core), %d failed\n",
 		t.ran, c.from, elapsed.Round(time.Millisecond), float64(elapsed.Milliseconds())*float64(c.parallel)/float64(max(t.ran, 1)), len(t.failed))
 	fmt.Printf("totals: %+v\n", t.total)

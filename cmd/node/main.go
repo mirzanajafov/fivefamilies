@@ -130,7 +130,7 @@ type nodeFlags struct {
 	maxPending                      uint64
 	restore                         string
 	level                           slog.Level
-	profile, http                   string
+	profile, httpAddr               string
 	procs                           int
 }
 
@@ -161,38 +161,38 @@ func parseFlags() nodeFlags {
 	flag.TextVar(&f.level, "log-level", slog.LevelInfo, "debug, info, warn or error")
 	flag.StringVar(&f.profile, "pprof", "", "serve Go profiles on this address (off by default; for the lab, never published in production)")
 	flag.IntVar(&f.procs, "gomaxprocs", 0, "Go processors (default: what the runtime picks, but at least 2)")
-	flag.StringVar(&f.http, "http", "", "serve the HTTP registry API on this address (off by default)")
+	flag.StringVar(&f.httpAddr, "http", "", "serve the HTTP registry API on this address (off by default)")
 	flag.Parse()
 	return f
 }
 
-func (f nodeFlags) config(logger *slog.Logger) (server.Config, string, error) {
+func (f nodeFlags) settings(logger *slog.Logger) (settings, error) {
 	nodes, err := parseCluster(f.cluster)
 	if err != nil {
-		return server.Config{}, "", fmt.Errorf("-cluster: %w", err)
+		return settings{}, fmt.Errorf("-cluster: %w", err)
 	}
 	voters, err := parseIDs(f.voters)
 	if err != nil {
-		return server.Config{}, "", fmt.Errorf("-voters: %w", err)
+		return settings{}, fmt.Errorf("-voters: %w", err)
 	}
 	bugs, err := planted.Parse(f.bugs)
 	switch {
 	case err != nil:
-		return server.Config{}, "", fmt.Errorf("-bug: %w", err)
+		return settings{}, fmt.Errorf("-bug: %w", err)
 	case bugs != 0 && plantable != "yes":
-		return server.Config{}, "", fmt.Errorf("-bug %s: planted bugs are only available in test builds", f.bugs)
+		return settings{}, fmt.Errorf("-bug %s: planted bugs are only available in test builds", f.bugs)
 	case f.fsync == server.FsyncOff && plantable != "yes":
-		return server.Config{}, "", errors.New("-fsync off is only available in test builds")
+		return settings{}, errors.New("-fsync off is only available in test builds")
 	}
 	addr := f.listen
 	if addr == "" {
 		_, port, err := net.SplitHostPort(nodes[raft.NodeID(f.id)])
 		if err != nil {
-			return server.Config{}, "", fmt.Errorf("-cluster has no address for node %d", f.id)
+			return settings{}, fmt.Errorf("-cluster has no address for node %d", f.id)
 		}
 		addr = ":" + port
 	}
-	return server.Config{
+	cfg := server.Config{
 		ID:              raft.NodeID(f.id),
 		Nodes:           nodes,
 		Voters:          voters,
@@ -214,7 +214,8 @@ func (f nodeFlags) config(logger *slog.Logger) (server.Config, string, error) {
 		Batch:           f.batch,
 		MaxPending:      f.maxPending,
 		Chaos:           f.chaos,
-	}, addr, nil
+	}
+	return settings{server: cfg, listen: addr, httpAddr: f.httpAddr, restore: f.restore}, nil
 }
 
 func restoreBackup(file string, cfg server.Config) error {
@@ -238,45 +239,55 @@ func restoreBackup(file string, cfg server.Config) error {
 	return nil
 }
 
-type node struct {
-	srv      *server.Server
-	grpc     *grpc.Server
-	ln       net.Listener
-	closeAPI func()
-	logger   *slog.Logger
+type settings struct {
+	server   server.Config
+	listen   string
+	httpAddr string
+	restore  string
 }
 
-func start(f nodeFlags, cfg server.Config, addr string) (*node, error) {
-	if f.restore != "" {
-		if err := restoreBackup(f.restore, cfg); err != nil {
+type node struct {
+	settings
+	srv      *server.Server
+	rpc      *grpc.Server
+	ln       net.Listener
+	closeAPI func()
+}
+
+func start(s settings) (*node, error) {
+	if s.restore != "" {
+		if err := restoreBackup(s.restore, s.server); err != nil {
 			return nil, err
 		}
 	}
-	srv, err := server.New(cfg)
+	srv, err := server.New(s.server)
 	if err != nil {
 		return nil, err
 	}
-	ln, err := net.Listen("tcp", addr)
+	ln, err := net.Listen("tcp", s.listen)
 	if err != nil {
 		return nil, fmt.Errorf("listening: %w", err)
 	}
-	n := &node{srv: srv, grpc: grpc.NewServer(transport.ServerOptions()...), ln: ln, closeAPI: func() {}, logger: cfg.Logger}
-	if f.http != "" {
-		if n.closeAPI, err = serveAPI(f.http, cfg.ID, cfg.Nodes, srv, cfg.Logger); err != nil {
+	n := &node{settings: s, srv: srv, rpc: grpc.NewServer(transport.ServerOptions()...), ln: ln, closeAPI: func() {}}
+	if s.httpAddr != "" {
+		if n.closeAPI, err = serveAPI(s.httpAddr, s.server.ID, s.server.Nodes, srv, s.server.Logger); err != nil {
 			return nil, fmt.Errorf("serving the HTTP API: %w", err)
 		}
 	}
-	srv.Register(n.grpc)
+	srv.Register(n.rpc)
 	return n, nil
 }
 
 func (n *node) serve() error {
+	cfg, logger := n.server, n.server.Logger
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	go func() {
-		if err := n.grpc.Serve(n.ln); err != nil {
-			n.logger.Error("serving", "err", err)
+		if err := n.rpc.Serve(n.ln); err != nil {
+			logger.Error("serving", "err", err)
 		}
 	}()
+	logger.Info("node started", "id", cfg.ID, "addr", n.listen, "http", n.httpAddr, "nodes", len(cfg.Nodes),
+		"election", time.Duration(cfg.ElectionTick)*cfg.Tick, "lease", time.Duration(cfg.LeaseTicks)*cfg.Tick)
 	running, stopRunning := context.WithCancel(context.Background())
 	go func() {
 		<-ctx.Done()
@@ -287,22 +298,22 @@ func (n *node) serve() error {
 	err := n.srv.Run(running)
 	stop()
 	if err != nil {
-		n.grpc.Stop()
+		n.rpc.Stop()
 		return err
 	}
-	n.grpc.GracefulStop()
+	n.rpc.GracefulStop()
 	return nil
 }
 
 func main() {
 	f := parseFlags()
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: f.level}))
-	cfg, addr, err := f.config(logger)
+	s, err := f.settings(logger)
 	if err != nil {
 		logger.Error("bad flags", "err", err)
 		os.Exit(2)
 	}
-	n, err := start(f, cfg, addr)
+	n, err := start(s)
 	if err != nil {
 		logger.Error("starting", "err", err)
 		os.Exit(1)
@@ -313,7 +324,6 @@ func main() {
 		runtime.SetBlockProfileRate(int(100 * time.Microsecond))
 		go serveProfiles(f.profile, logger)
 	}
-	logger.Info("node started", "id", f.id, "addr", addr, "http", f.http, "nodes", len(cfg.Nodes), "election", f.election, "lease", f.lease)
 	if err := n.serve(); err != nil {
 		logger.Error("fatal", "err", err)
 		os.Exit(70)
