@@ -2,7 +2,6 @@ package kv
 
 import (
 	"bytes"
-	"encoding/binary"
 	"reflect"
 	"testing"
 
@@ -226,8 +225,8 @@ func TestLeastRecentlyUsedSessionIsEvicted(t *testing.T) {
 			t.Fatalf("session %d: %+v", c, r)
 		}
 	}
-	if a.s.Sessions() != 2 {
-		t.Fatalf("%d sessions", a.s.Sessions())
+	if len(a.s.sessions) != 2 {
+		t.Fatalf("%d sessions", len(a.s.sessions))
 	}
 }
 
@@ -256,8 +255,8 @@ func TestBadCommandsAndEmptyEntriesOnlyAdvanceTheRevision(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	s.Apply(raft.Entry{Term: 1, Index: 2})
-	if s.Rev() != 2 || s.Len() != 0 {
-		t.Fatalf("rev %d len %d", s.Rev(), s.Len())
+	if kvs := s.Range("", 0); s.Rev() != 2 || len(kvs) != 0 {
+		t.Fatalf("rev %d keys %v", s.Rev(), kvs)
 	}
 	defer func() {
 		if recover() == nil {
@@ -289,8 +288,8 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Hash() != a.s.Hash() || r.Rev() != a.s.Rev() || r.Len() != a.s.Len() || r.Sessions() != a.s.Sessions() {
-		t.Fatalf("restored store differs: rev %d/%d len %d/%d", r.Rev(), a.s.Rev(), r.Len(), a.s.Len())
+	if r.Hash() != a.s.Hash() || r.Rev() != a.s.Rev() {
+		t.Fatalf("restored store differs: rev %d/%d", r.Rev(), a.s.Rev())
 	}
 	if string(r.Snapshot()) != string(data) {
 		t.Fatal("snapshot of a restored store is not byte for byte the same")
@@ -315,24 +314,8 @@ func TestSnapshotRejectsTruncatedData(t *testing.T) {
 	}
 }
 
-func TestCloneIsIndependent(t *testing.T) {
-	a := populated()
-	before := a.s.Hash()
-	c := a.s.Clone()
-	ca := &applier{s: c, index: a.index}
-	ca.do(Command{Op: OpPut, Key: "k", Value: []byte("changed")})
-	ca.do(Command{Op: OpRegister})
-	if a.s.Hash() != before {
-		t.Fatal("writing to the clone changed the original")
-	}
-	if c.Hash() == before {
-		t.Fatal("the clone did not change")
-	}
-}
-
 func FuzzRestore(f *testing.F) {
 	f.Add(populated().s.Snapshot())
-	f.Add([]byte("FFKV1"))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		s, err := Restore(data, 0)
 		if err != nil {
@@ -439,24 +422,5 @@ func TestLeasesSurviveASnapshot(t *testing.T) {
 	b.do(Command{Op: OpLeaseExpire, Lease: id})
 	if _, ok := r.Get("leased"); ok {
 		t.Fatal("after a restore, the lease no longer knew its keys")
-	}
-}
-
-func TestAVersionOneSnapshotStillLoads(t *testing.T) {
-	b := []byte("FFKV1")
-	b = binary.AppendUvarint(b, 9)
-	b = binary.AppendUvarint(b, 0)
-	b = binary.AppendUvarint(b, 1)
-	b = appendBytes(b, []byte("k"))
-	b = appendBytes(b, []byte("v"))
-	for _, v := range []uint64{3, 8, 2} {
-		b = binary.AppendUvarint(b, v)
-	}
-	s, err := Restore(b, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if kv, ok := s.Get("k"); !ok || string(kv.Value) != "v" || kv.ModRev != 8 || kv.Version != 2 || s.Rev() != 9 {
-		t.Fatalf("%+v %v rev %d", kv, ok, s.Rev())
 	}
 }

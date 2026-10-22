@@ -18,8 +18,6 @@ type Mem struct {
 	removed    []*memFile
 	SectorSize int
 	Garble     float64
-	Syncs      int
-	Torn       int
 }
 
 func NewMem() *Mem {
@@ -45,7 +43,6 @@ func (h *memHandle) Sync() error {
 		return fmt.Errorf("vfs: sync of closed file %s", h.f.name)
 	}
 	h.f.synced = len(h.f.data)
-	h.m.Syncs++
 	return nil
 }
 
@@ -182,9 +179,6 @@ func (m *Mem) tear(rng *rand.Rand, f *memFile) {
 		for i := max(s, f.synced); i < min(s+m.SectorSize, end); i++ {
 			f.data[i] = byte(rng.Uint32())
 		}
-	}
-	if end > f.synced {
-		m.Torn++
 	}
 	f.synced = len(f.data)
 }

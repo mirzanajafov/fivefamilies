@@ -200,7 +200,7 @@ func TestAFreshNodeWithLeasesWaitsBeforeVoting(t *testing.T) {
 		r.Tick()
 	}
 	r.Step(Message{Type: MsgVote, From: 2, To: 1, Term: 2})
-	if r.Term() != 2 || r.Vote() != 2 {
-		t.Fatalf("still refusing an election timeout after starting: term %d vote %d", r.Term(), r.Vote())
+	if r.Term() != 2 || r.HardState().Vote != 2 {
+		t.Fatalf("still refusing an election timeout after starting: term %d vote %d", r.Term(), r.HardState().Vote)
 	}
 }

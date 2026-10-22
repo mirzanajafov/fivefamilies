@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"google.golang.org/grpc"
+
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 )
 
@@ -34,7 +36,7 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 		backoff := c.opts.Backoff
 		for ctx.Err() == nil {
 			target := c.watchRouter.Target()
-			got, compacted := c.watchOnce(ctx, c.addrs[target], key, prefix, &next, out)
+			got, compacted := c.watchOnce(ctx, c.conns[target], key, prefix, &next, out)
 			if compacted || ctx.Err() != nil {
 				return
 			}
@@ -53,11 +55,7 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 	return out
 }
 
-func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, next *uint64, out chan<- WatchResponse) (got, compacted bool) {
-	cc, err := c.conn(addr)
-	if err != nil {
-		return false, false
-	}
+func (c *Client) watchOnce(ctx context.Context, cc grpc.ClientConnInterface, key string, prefix bool, next *uint64, out chan<- WatchResponse) (got, compacted bool) {
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	idle := time.AfterFunc(c.opts.WatchSilence, cancel)

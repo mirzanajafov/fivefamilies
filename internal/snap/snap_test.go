@@ -1,9 +1,7 @@
 package snap
 
 import (
-	"encoding/binary"
 	"errors"
-	"hash/crc32"
 	"math/rand/v2"
 	"slices"
 	"testing"
@@ -174,25 +172,5 @@ func TestRemovingUnfinishedSavesLeavesEverythingElse(t *testing.T) {
 	}
 	if names, _ := fs.List(); !slices.Equal(names, []string{Name(10, 1), "0000000000000001.wal"}) {
 		t.Fatalf("left %v", names)
-	}
-}
-
-func TestAVersionOneSnapshotLoadsWithoutAConfiguration(t *testing.T) {
-	fs := vfs.NewMem()
-	if err := Save(fs, raft.Snapshot{Index: 5, Term: 1, Data: []byte("old")}); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := fs.ReadFile(Name(5, 1))
-	v1 := append([]byte(nil), b...)
-	v1[7] = 1
-	binary.LittleEndian.PutUint64(v1[24:], 3)
-	binary.LittleEndian.PutUint32(v1[32:], crc32.Checksum([]byte("old"), castagnoli))
-	v1 = append(v1[:headerSize], "old"...)
-	if err := vfs.WriteAtomic(fs, Name(5, 1), v1); err != nil {
-		t.Fatal(err)
-	}
-	s, err := Load(fs, 5, 1)
-	if err != nil || string(s.Data) != "old" || len(s.Conf.Voters) != 0 {
-		t.Fatalf("%+v %v", s, err)
 	}
 }

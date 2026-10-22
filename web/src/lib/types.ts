@@ -33,7 +33,7 @@ export type Window = {
   note?: string
 }
 
-export type Failover = {
+type Failover = {
   client_gap_ns: number
   election_ns: number
   new_leader: number

@@ -142,7 +142,7 @@ func TestLeaderAppliesOnlyAfterItsOwnWrite(t *testing.T) {
 	if n.Raft().State() != raft.StateLeader {
 		t.Fatalf("state %s", n.Raft().State())
 	}
-	if _, err := n.Propose([]byte("x")); err != nil {
+	if _, err := n.Raft().Propose([]byte("x")); err != nil {
 		t.Fatal(err)
 	}
 	process(t, n)
@@ -234,12 +234,12 @@ func TestSubmitAnswersWhenTheEntryApplies(t *testing.T) {
 		}
 		res, calls = r, calls+1
 	})
-	if calls != 0 || n.Waiting() != 1 {
+	if calls != 0 || len(n.waiters) != 1 {
 		t.Fatal("answered before the entry committed")
 	}
 	settle(t, n, env)
-	if calls != 1 || res.Rev != 2 || n.Waiting() != 0 {
-		t.Fatalf("calls %d result %+v waiting %d", calls, res, n.Waiting())
+	if calls != 1 || res.Rev != 2 || len(n.waiters) != 0 {
+		t.Fatalf("calls %d result %+v waiting %d", calls, res, len(n.waiters))
 	}
 }
 

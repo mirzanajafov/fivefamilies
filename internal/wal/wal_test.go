@@ -52,7 +52,7 @@ func appendTo(t *testing.T, fs *vfs.Mem, name string, data []byte) {
 
 func mustWrite(t *testing.T, l *Log, hs raft.HardState, ents []raft.Entry, sync bool) {
 	t.Helper()
-	if err := l.Write(hs, ents); err != nil {
+	if err := l.WriteBatch(Batch{HardState: hs, Entries: ents}); err != nil {
 		t.Fatal(err)
 	}
 	if sync {
@@ -77,7 +77,7 @@ func TestRoundTrip(t *testing.T) {
 	if st.HardState != (raft.HardState{Term: 1, Vote: 2, Commit: 3}) || !sameEntries(st.Entries, entries(1, 1, 3)) {
 		t.Fatalf("restored %+v", st)
 	}
-	if rec.Records != 5 || rec.TornBytes != 0 {
+	if rec.TornBytes != 0 {
 		t.Fatalf("recovery %+v", rec)
 	}
 }
@@ -111,10 +111,10 @@ func TestRotationAcrossSegments(t *testing.T) {
 	if len(names) < 5 {
 		t.Fatalf("only %d segments", len(names))
 	}
-	_, st, rec := open(t, fs, 256)
+	_, st, _ := open(t, fs, 256)
 	want := append(entries(1, 1, 39), entries(2, 40, 41)...)
-	if !sameEntries(st.Entries, want) || rec.Segments != len(names) {
-		t.Fatalf("restored %d entries from %d segments", len(st.Entries), rec.Segments)
+	if !sameEntries(st.Entries, want) {
+		t.Fatalf("restored %d entries, want %d", len(st.Entries), len(want))
 	}
 	if st.HardState.Commit != 0 || st.HardState.Term != 2 {
 		t.Fatalf("hard state %+v", st.HardState)
@@ -251,7 +251,7 @@ func TestALastSegmentWithABadHeaderIsDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 	l, st, rec := open(t, fs, 64)
-	if !rec.DroppedEmpty || !sameEntries(st.Entries, entries(1, 1, 2)) {
+	if rec.TornBytes != 10 || !sameEntries(st.Entries, entries(1, 1, 2)) {
 		t.Fatalf("recovery %+v restored %d entries", rec, len(st.Entries))
 	}
 	mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 3, 4), true)
@@ -330,7 +330,7 @@ func TestCrashesKeepEverythingSynced(t *testing.T) {
 			}
 			from := next - min(uint64(rng.IntN(3)), next-1)
 			w := write{hs: raft.HardState{Term: term, Commit: from - 1}, ents: entries(term, from, from+uint64(rng.IntN(4)))}
-			if err := l.Write(w.hs, w.ents); err != nil {
+			if err := l.WriteBatch(Batch{HardState: w.hs, Entries: w.ents}); err != nil {
 				t.Fatal(err)
 			}
 			pending = append(pending, w)
@@ -370,13 +370,13 @@ func FuzzOpen(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := l.Write(raft.HardState{Term: 1, Commit: 2}, entries(1, 1, 3)); err != nil {
+		if err := l.WriteBatch(Batch{HardState: raft.HardState{Term: 1, Commit: 2}, Entries: entries(1, 1, 3)}); err != nil {
 			t.Fatal(err)
 		}
 		if err := l.Sync(); err != nil {
 			t.Fatal(err)
 		}
-		if err := l.Write(raft.HardState{Term: 2}, entries(2, 3, 4)); err != nil {
+		if err := l.WriteBatch(Batch{HardState: raft.HardState{Term: 2}, Entries: entries(2, 3, 4)}); err != nil {
 			t.Fatal(err)
 		}
 		names, _ := fs.List()

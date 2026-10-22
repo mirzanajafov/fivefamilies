@@ -1,15 +1,13 @@
 package kv
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"slices"
 )
 
-var (
-	snapshotMagic   = []byte("FFKV2")
-	snapshotMagicV1 = []byte("FFKV1")
-)
+var snapshotMagic = []byte("FFKV2")
 
 var ErrBadSnapshot = errors.New("kv: malformed snapshot")
 
@@ -73,7 +71,7 @@ func (s *Store) Snapshot() []byte {
 	return b
 }
 
-func (d *decoder) kv(v1 bool) KeyValue {
+func (d *decoder) kv() KeyValue {
 	var kv KeyValue
 	kv.Key = string(d.bytes())
 	if v := d.bytes(); len(v) > 0 {
@@ -82,9 +80,7 @@ func (d *decoder) kv(v1 bool) KeyValue {
 	kv.CreateRev = d.uvarint()
 	kv.ModRev = d.uvarint()
 	kv.Version = d.uvarint()
-	if !v1 {
-		kv.Lease = d.uvarint()
-	}
+	kv.Lease = d.uvarint()
 	return kv
 }
 
@@ -97,31 +93,24 @@ func (d *decoder) count() int {
 	return int(n)
 }
 
-func (d *decoder) result(v1 bool) Result {
+func (d *decoder) result() Result {
 	var r Result
 	r.Code = Code(d.byte())
 	r.Rev = d.uvarint()
 	r.Client = d.uvarint()
 	flags := d.byte()
 	r.Found, r.Ok = flags&1 != 0, flags&2 != 0
-	r.KV = d.kv(v1)
+	r.KV = d.kv()
 	for range d.count() {
-		r.Range = append(r.Range, d.kv(v1))
+		r.Range = append(r.Range, d.kv())
 	}
-	if !v1 {
-		r.Lease = d.uvarint()
-		r.TTL = d.uvarint()
-	}
+	r.Lease = d.uvarint()
+	r.TTL = d.uvarint()
 	return r
 }
 
 func Restore(data []byte, maxSessions int) (*Store, error) {
-	var v1 bool
-	switch {
-	case len(data) >= len(snapshotMagic) && string(data[:len(snapshotMagic)]) == string(snapshotMagic):
-	case len(data) >= len(snapshotMagicV1) && string(data[:len(snapshotMagicV1)]) == string(snapshotMagicV1):
-		v1 = true
-	default:
+	if !bytes.HasPrefix(data, snapshotMagic) {
 		return nil, ErrBadSnapshot
 	}
 	s := NewStore(maxSessions)
@@ -130,26 +119,24 @@ func Restore(data []byte, maxSessions int) (*Store, error) {
 	for range d.count() {
 		id := d.uvarint()
 		sess := &session{seq: d.uvarint(), last: d.uvarint()}
-		sess.result = d.result(v1)
+		sess.result = d.result()
 		if _, dup := s.sessions[id]; dup {
 			d.err = true
 		}
 		s.sessions[id] = sess
 	}
-	if !v1 {
-		var prev uint64
-		for i := range d.count() {
-			id, ttl := d.uvarint(), d.uvarint()
-			if d.err || id == 0 || ttl == 0 || (i > 0 && id <= prev) {
-				return nil, ErrBadSnapshot
-			}
-			prev = id
-			s.leases[id] = &lease{ttl: ttl, keys: map[string]struct{}{}}
+	var prevLease uint64
+	for i := range d.count() {
+		id, ttl := d.uvarint(), d.uvarint()
+		if d.err || id == 0 || ttl == 0 || (i > 0 && id <= prevLease) {
+			return nil, ErrBadSnapshot
 		}
+		prevLease = id
+		s.leases[id] = &lease{ttl: ttl, keys: map[string]struct{}{}}
 	}
 	var prev string
 	for i := range d.count() {
-		kv := d.kv(v1)
+		kv := d.kv()
 		if d.err || (i > 0 && kv.Key <= prev) {
 			return nil, ErrBadSnapshot
 		}
@@ -167,21 +154,4 @@ func Restore(data []byte, maxSessions int) (*Store, error) {
 		return nil, ErrBadSnapshot
 	}
 	return s, nil
-}
-
-func (s *Store) Clone() *Store {
-	sessions := make(map[uint64]*session, len(s.sessions))
-	for id, sess := range s.sessions {
-		c := *sess
-		sessions[id] = &c
-	}
-	leases := make(map[uint64]*lease, len(s.leases))
-	for id, l := range s.leases {
-		keys := make(map[string]struct{}, len(l.keys))
-		for k := range l.keys {
-			keys[k] = struct{}{}
-		}
-		leases[id] = &lease{ttl: l.ttl, keys: keys}
-	}
-	return &Store{tree: s.tree.Clone(), rev: s.rev, sessions: sessions, maxSessions: s.maxSessions, leases: leases}
 }

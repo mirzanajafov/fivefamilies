@@ -38,10 +38,7 @@ type Options struct {
 }
 
 type Recovery struct {
-	Segments     int
-	Records      int
-	TornBytes    int64
-	DroppedEmpty bool
+	TornBytes int64
 }
 
 type Batch struct {
@@ -213,11 +210,9 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 			if err := fs.SyncDir(); err != nil {
 				return nil, raft.Restore{}, rec, err
 			}
-			rec.DroppedEmpty = true
 			rec.TornBytes += int64(len(data))
 			break
 		}
-		rec.Segments++
 		off := headerSize
 		for off < len(data) {
 			n, typ, payload, ok := readRecord(data[off:], salt)
@@ -276,7 +271,6 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 		if err != nil {
 			return nil, raft.Restore{}, rec, fmt.Errorf("segment %s: %w", segmentName(l.segs[rc.seg].seq), err)
 		}
-		rec.Records++
 	}
 	if len(l.segs) == 0 {
 		if err := l.create(next); err != nil {
@@ -339,10 +333,6 @@ func (l *Log) rotate() error {
 		return err
 	}
 	return l.create(l.current().seq + 1)
-}
-
-func (l *Log) Write(hs raft.HardState, ents []raft.Entry) error {
-	return l.WriteBatch(Batch{HardState: hs, Entries: ents})
 }
 
 func (l *Log) WriteBatch(b Batch) error {

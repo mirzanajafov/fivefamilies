@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -24,13 +23,6 @@ const (
 	chunkBytes = 1 << 20
 )
 
-type Stats struct {
-	Sent      atomic.Uint64
-	Dropped   atomic.Uint64
-	Received  atomic.Uint64
-	Snapshots atomic.Uint64
-}
-
 type Filter interface {
 	Allow(from, to raft.NodeID) bool
 }
@@ -41,7 +33,6 @@ type Transport struct {
 	deliver func(raft.Message)
 	filter  Filter
 	log     *slog.Logger
-	Stats   Stats
 	wg      sync.WaitGroup
 }
 
@@ -95,7 +86,6 @@ func (t *Transport) Close() {
 func (t *Transport) Send(m raft.Message) {
 	p, ok := t.peers[m.To]
 	if !ok || (t.filter != nil && !t.filter.Allow(t.id, m.To)) {
-		t.Stats.Dropped.Add(1)
 		return
 	}
 	q := p.queue
@@ -105,7 +95,6 @@ func (t *Transport) Send(m raft.Message) {
 	select {
 	case q <- m:
 	default:
-		t.Stats.Dropped.Add(1)
 	}
 }
 
@@ -149,10 +138,8 @@ func (t *Transport) pump(ctx context.Context, p *peer, stream grpc.ClientStreami
 			break
 		}
 		if err := stream.Send(batch); err != nil {
-			t.Stats.Dropped.Add(uint64(len(batch.Messages)))
 			return err
 		}
-		t.Stats.Sent.Add(uint64(len(batch.Messages)))
 	}
 }
 
@@ -167,9 +154,7 @@ func (t *Transport) runSnapshots(ctx context.Context, p *peer) {
 		}
 		if err := t.sendSnapshot(ctx, client, m); err != nil {
 			t.log.Info("snapshot not sent", "peer", p.id, "index", m.Snapshot.Index, "err", err)
-			continue
 		}
-		t.Stats.Snapshots.Add(1)
 	}
 }
 
@@ -221,7 +206,6 @@ func (t *Transport) receive(m raft.Message) {
 	if t.filter != nil && !t.filter.Allow(m.From, t.id) {
 		return
 	}
-	t.Stats.Received.Add(1)
 	t.deliver(m)
 }
 

@@ -9,7 +9,3 @@ export function ago(at: string, now: number): string {
 export function rate(v: number): string {
   return v >= 100 ? v.toFixed(0) : v.toFixed(1)
 }
-
-export function seconds(ns: number): string {
-  return `${(ns / 1e9).toFixed(1)} s`
-}
