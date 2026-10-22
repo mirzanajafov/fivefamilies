@@ -1,7 +1,6 @@
 package sim
 
 import (
-	"fmt"
 	"math/rand/v2"
 	"os"
 	"reflect"
@@ -195,9 +194,11 @@ func soloLeader(t *testing.T, id raft.NodeID, st raft.Restore, data ...string) *
 func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
 	modes := map[string]ReadMode{"any": ReadAny, "log": ReadLog, "index": ReadIndex, "lease": ReadLease, "follower": ReadFollower}
 	for s, want := range modes {
-		if got, err := ParseReadMode(s); err != nil || got != want {
-			t.Errorf("read path %q parsed as %s: %v", s, got, err)
-		}
+		t.Run(s, func(t *testing.T) {
+			if got, err := ParseReadMode(s); err != nil || got != want {
+				t.Errorf("parsed as %s: %v", got, err)
+			}
+		})
 	}
 	for _, s := range []string{"", "leases", "Lease"} {
 		if _, err := ParseReadMode(s); err == nil {
@@ -207,9 +208,11 @@ func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
 	checks := map[string]Category{"safety": CatSafety, "liveness": CatLiveness, "linearizability": CatLinearizability, "state": CatState,
 		"client": CatClient, "panic": CatPanic, "lease": CatLease, "watch": CatWatch}
 	for s, want := range checks {
-		if got, err := ParseCategory(s); err != nil || got != want {
-			t.Errorf("check %q parsed as %s: %v", s, got, err)
-		}
+		t.Run(s, func(t *testing.T) {
+			if got, err := ParseCategory(s); err != nil || got != want {
+				t.Errorf("parsed as %s: %v", got, err)
+			}
+		})
 	}
 	if len(Categories()) != len(checks) || len(ReadModes())+1 != len(modes) {
 		t.Errorf("%d checks and %d read paths, this test names %d and %d", len(Categories()), len(ReadModes())+1, len(checks), len(modes))
@@ -232,13 +235,11 @@ func TestACheckOrBugThatCanNeverFireIsRefused(t *testing.T) {
 		}
 	}
 	for _, reads := range []ReadMode{ReadIndex, ReadLease, ReadFollower} {
-		t.Run(fmt.Sprint(reads), func(t *testing.T) {
-			o := DefaultOptions()
-			o.Bugs, o.Reads = planted.FollowerRead, reads
-			if err := o.Validate(""); err != nil {
-				t.Errorf("followerread with %s reads: %v", reads, err)
-			}
-		})
+		o := DefaultOptions()
+		o.Bugs, o.Reads = planted.FollowerRead, reads
+		if err := o.Validate(""); err != nil {
+			t.Errorf("followerread with %s reads: %v", reads, err)
+		}
 	}
 	for name, c := range map[string]struct {
 		off   func(*Options)
@@ -258,7 +259,7 @@ func TestACheckOrBugThatCanNeverFireIsRefused(t *testing.T) {
 			c.off(&o)
 			o.Bugs = c.bug
 			if o.Validate(c.catch) == nil {
-				t.Errorf("%s was accepted", name)
+				t.Error("accepted")
 			}
 		})
 	}

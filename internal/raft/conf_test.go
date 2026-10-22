@@ -176,7 +176,7 @@ func TestANewLeaderCommitsInItsOwnTermBeforeChanging(t *testing.T) {
 			r.Step(Message{Type: MsgVoteResp, From: 2, To: 1, Term: 1})
 			_, err := r.ProposeConfChange(ConfChange{ConfAddLearner, 4})
 			if buggy != (err == nil) {
-				t.Fatalf("planted %v: change before the first commit gave %v", buggy, err)
+				t.Fatalf("a change before the first commit gave %v", err)
 			}
 			if !buggy && !errors.Is(err, ErrConfNotReady) {
 				t.Fatalf("error %v", err)

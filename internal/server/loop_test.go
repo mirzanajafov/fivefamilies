@@ -27,8 +27,9 @@ func TestTheLoopTakesEverythingQueuedIntoOneReady(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			before := c.status(l)
-			release := blockLoop(t, ctx, srv)
 			var wg sync.WaitGroup
+			t.Cleanup(wg.Wait)
+			release := blockLoop(t, ctx, srv)
 			for i := range 100 {
 				wg.Go(func() {
 					if _, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: fmt.Sprint(i), Value: []byte("v")}); err != nil {
@@ -63,9 +64,10 @@ func TestALeaderOverItsPendingCapRefusesAtOnce(t *testing.T) {
 	if _, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: "warm", Value: []byte("v")}); err != nil {
 		t.Fatal(err)
 	}
+	var wg sync.WaitGroup
+	t.Cleanup(wg.Wait)
 	release := blockLoop(t, ctx, srv)
 	var ok, busy atomic.Int32
-	var wg sync.WaitGroup
 	for i := range 20 {
 		wg.Go(func() {
 			_, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: fmt.Sprint(i), Value: []byte("v")})
@@ -100,10 +102,11 @@ func TestAFullCallQueueRefusesAtOnceOnlyWithACap(t *testing.T) {
 			srv := c.running[l].srv
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
+			var wg sync.WaitGroup
+			t.Cleanup(wg.Wait)
 			release := blockLoop(t, ctx, srv)
 			room := cap(srv.calls)
 			var ok, busy atomic.Int32
-			var wg sync.WaitGroup
 			for i := range room + 50 {
 				wg.Go(func() {
 					_, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: fmt.Sprint(i), Value: []byte("v")})

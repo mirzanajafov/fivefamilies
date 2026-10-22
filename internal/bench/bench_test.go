@@ -220,12 +220,10 @@ func TestAReportFromAnOlderGeneratorIsRefused(t *testing.T) {
 
 func TestEveryCurveExperimentNamesItsCurves(t *testing.T) {
 	for _, e := range []string{"e2", "e3", "e4", "e5"} {
-		t.Run(e, func(t *testing.T) {
-			names := CurveNames(e)
-			if len(names) == 0 || len(slices.Compact(slices.Sorted(slices.Values(names)))) != len(names) {
-				t.Errorf("%s names %v, want at least one curve and no name twice", e, names)
-			}
-		})
+		names := CurveNames(e)
+		if len(names) == 0 || len(slices.Compact(slices.Sorted(slices.Values(names)))) != len(names) {
+			t.Errorf("%s names %v, want at least one curve and no name twice", e, names)
+		}
 	}
 	if CurveNames("e1b") != nil {
 		t.Error("e1b has no curves")

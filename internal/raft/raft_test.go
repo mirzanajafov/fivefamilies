@@ -356,7 +356,7 @@ func TestCheckQuorumDeposesAnIsolatedLeader(t *testing.T) {
 			c.tick(1, 25)
 			stillLeader := c.node(1).State() == StateLeader
 			if checkQuorum == stillLeader {
-				t.Fatalf("check quorum %v: isolated leader still leading: %v", checkQuorum, stillLeader)
+				t.Fatalf("isolated leader still leading: %v", stillLeader)
 			}
 		})
 	}

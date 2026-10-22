@@ -196,7 +196,7 @@ func TestTheControllerFollowsTheClusterAndChecksTheDemoWhileSomeoneWatches(t *te
 	h.waitFor("the demo clients stop once the last viewer is gone for the idle time", 10*time.Second, func(s Snapshot) bool { return !s.Load.Active && s.Load.Viewers == 0 })
 }
 
-func TestAVisitorFaultIsRefusedUntilTheCooldownEndsButTheAdminsIsNot(t *testing.T) {
+func TestAVisitorFaultWaitsOutTheCooldownButAnAdminFaultDoesNot(t *testing.T) {
 	h := newHarness(t, 3, func(c *Config) { c.Cooldown = time.Minute })
 	h.waitFor("a leader", 5*time.Second, func(s Snapshot) bool { return s.Leader != 0 })
 	if code, body := h.chaos(`{"action":"stall-disk","node":3,"seconds":1}`, "1.1.1.1", false); code != http.StatusOK {

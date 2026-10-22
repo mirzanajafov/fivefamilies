@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -48,12 +47,10 @@ func TestOnlyKnownReadModesParse(t *testing.T) {
 		})
 	}
 	for _, s := range []string{"", "leases", "Index"} {
-		t.Run(fmt.Sprintf("%q", s), func(t *testing.T) {
-			var got ReadMode
-			if err := got.UnmarshalText([]byte(s)); err == nil {
-				t.Errorf("%q was accepted", s)
-			}
-		})
+		var got ReadMode
+		if err := got.UnmarshalText([]byte(s)); err == nil {
+			t.Errorf("%q was accepted", s)
+		}
 	}
 }
 
