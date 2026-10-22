@@ -134,10 +134,6 @@ type tally struct {
 	lowest               uint64
 }
 
-func newTally() *tally {
-	return &tally{categories: map[sim.Category]int{}, detected: map[sim.Category]int{}}
-}
-
 func (t *tally) add(res sim.Result, catch sim.Category) outcome {
 	t.ran++
 	for cat := range res.Detected {
@@ -169,7 +165,7 @@ func (c config) batch() int {
 	next.Store(c.from)
 	last := c.from + uint64(c.count)
 	var mu sync.Mutex
-	t := newTally()
+	t := &tally{categories: map[sim.Category]int{}, detected: map[sim.Category]int{}}
 	var stop atomic.Bool
 	var wg sync.WaitGroup
 	for range c.parallel {
@@ -214,7 +210,7 @@ func (c config) report(t *tally, elapsed time.Duration) int {
 		}
 		return 0
 	}
-	fmt.Printf("failures by category: %v; lowest failing seed %d, the %dth of the batch\n", t.categories, t.lowest, t.lowest-c.from+1)
+	fmt.Printf("failures by category: %v, lowest failing seed %d (the %dth of the batch)\n", t.categories, t.lowest, t.lowest-c.from+1)
 	if c.first {
 		for _, f := range t.failed {
 			if f.Seed == t.lowest {

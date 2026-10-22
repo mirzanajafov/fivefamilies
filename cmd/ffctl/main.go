@@ -272,9 +272,9 @@ func transfer(ctx context.Context, t target, args []string) error {
 }
 
 func lease(ctx context.Context, t target, args []string) error {
-	switch args[0] {
-	case "grant":
-		ttl, err := time.ParseDuration(args[1])
+	op, arg := args[0], args[1]
+	if op == "grant" {
+		ttl, err := time.ParseDuration(arg)
 		if err != nil {
 			return err
 		}
@@ -283,30 +283,25 @@ func lease(ctx context.Context, t target, args []string) error {
 			return err
 		}
 		fmt.Println("lease", l.ID, "ttl", l.TTL)
+		return nil
+	}
+	id, err := positive("lease id", arg)
+	if err != nil {
+		return err
+	}
+	switch op {
 	case "revoke":
-		id, err := positive("lease id", args[1])
-		if err != nil {
-			return err
-		}
 		if err := t.c.Revoke(ctx, id); err != nil {
 			return err
 		}
 		fmt.Println("revoked")
 	case "keepalive":
-		id, err := positive("lease id", args[1])
-		if err != nil {
-			return err
-		}
 		ttl, err := t.c.KeepAliveOnce(ctx, id)
 		if err != nil {
 			return err
 		}
 		fmt.Println("kept alive for", ttl)
 	case "ttl":
-		id, err := positive("lease id", args[1])
-		if err != nil {
-			return err
-		}
 		remaining, ttl, keys, err := t.c.TimeToLive(ctx, id)
 		if err != nil {
 			return err
@@ -330,7 +325,7 @@ func watch(_ context.Context, t target, args []string) error {
 	defer stop()
 	for r := range t.c.Watch(ctx, args[0], true, from) {
 		if r.CompactRev != 0 {
-			return fmt.Errorf("revisions before %d are no longer kept; read the keys again and watch from there", r.CompactRev)
+			return fmt.Errorf("revisions before %d are no longer kept, so read the keys again and watch from there", r.CompactRev)
 		}
 		for _, ev := range r.Events {
 			if ev.Type == client.EventDelete {

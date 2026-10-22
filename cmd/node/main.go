@@ -138,7 +138,7 @@ func parseFlags() nodeFlags {
 	var f nodeFlags
 	flag.Uint64Var(&f.id, "id", 0, "this node's ID")
 	flag.StringVar(&f.cluster, "cluster", "", "every node as id=host:port, comma separated")
-	flag.StringVar(&f.voters, "voters", "", "the voters a fresh cluster starts with (default: every node in -cluster); a node outside it waits to be added")
+	flag.StringVar(&f.voters, "voters", "", "the voters a fresh cluster starts with (default: every node in -cluster). A node outside it waits to be added")
 	flag.StringVar(&f.listen, "listen", "", "address to listen on (default: this node's port from -cluster, on all interfaces)")
 	flag.StringVar(&f.data, "data", "data", "data directory")
 	flag.DurationVar(&f.tick, "tick", 10*time.Millisecond, "tick interval")
@@ -154,19 +154,19 @@ func parseFlags() nodeFlags {
 	flag.BoolVar(&f.writeFirst, "write-before-send", false, "the leader writes entries before sending them, instead of in parallel")
 	flag.IntVar(&f.maxInflight, "max-inflight", 0, "append messages in flight per follower (1 turns pipelining off)")
 	flag.IntVar(&f.maxMsgBytes, "max-msg-bytes", 0, "bytes of entries per append message (1 sends one entry per message)")
-	flag.IntVar(&f.batch, "batch", 0, "events the loop takes before each Ready (default 256; 1 handles every event on its own)")
+	flag.IntVar(&f.batch, "batch", 0, "events the loop takes before each Ready (default 256, and 1 handles every event on its own)")
 	flag.Uint64Var(&f.maxPending, "max-pending", 4096, "uncommitted entries a leader holds before it refuses new writes (0 never refuses)")
 	flag.StringVar(&f.restore, "restore", "", "start a new cluster from this backup file when the data directory is empty (every node needs the same file)")
 	flag.BoolVar(&f.chaos, "chaos", false, "accept chaos requests (stall-disk, pause, isolate, heal) on the admin API")
 	flag.TextVar(&f.level, "log-level", slog.LevelInfo, "debug, info, warn or error")
-	flag.StringVar(&f.profile, "pprof", "", "serve Go profiles on this address (off by default; for the lab, never published in production)")
+	flag.StringVar(&f.profile, "pprof", "", "serve Go profiles on this address (off by default and only for the lab, never published in production)")
 	flag.IntVar(&f.procs, "gomaxprocs", 0, "Go processors (default: what the runtime picks, but at least 2)")
 	flag.StringVar(&f.httpAddr, "http", "", "serve the HTTP registry API on this address (off by default)")
 	flag.Parse()
 	return f
 }
 
-func (f nodeFlags) settings(logger *slog.Logger) (settings, error) {
+func (f nodeFlags) build(logger *slog.Logger) (settings, error) {
 	nodes, err := parseCluster(f.cluster)
 	if err != nil {
 		return settings{}, fmt.Errorf("-cluster: %w", err)
@@ -215,7 +215,7 @@ func (f nodeFlags) settings(logger *slog.Logger) (settings, error) {
 		MaxPending:      f.maxPending,
 		Chaos:           f.chaos,
 	}
-	return settings{server: cfg, listen: addr, httpAddr: f.httpAddr, restore: f.restore}, nil
+	return settings{cfg: cfg, listen: addr, httpAddr: f.httpAddr, restore: f.restore}, nil
 }
 
 func restoreBackup(file string, cfg server.Config) error {
@@ -234,20 +234,22 @@ func restoreBackup(file string, cfg server.Config) error {
 	if done {
 		cfg.Logger.Info("restored a backup", "rev", sum.Rev, "keys", sum.Keys)
 	} else {
-		cfg.Logger.Info("the data directory already holds a log; the backup is not used", "file", file)
+		cfg.Logger.Info("the data directory already holds a log, so the backup is not used", "file", file)
 	}
 	return nil
 }
 
 type settings struct {
-	server   server.Config
+	cfg      server.Config
 	listen   string
 	httpAddr string
 	restore  string
 }
 
 type node struct {
-	settings
+	cfg      server.Config
+	listen   string
+	httpAddr string
 	srv      *server.Server
 	rpc      *grpc.Server
 	ln       net.Listener
@@ -256,11 +258,11 @@ type node struct {
 
 func start(s settings) (*node, error) {
 	if s.restore != "" {
-		if err := restoreBackup(s.restore, s.server); err != nil {
+		if err := restoreBackup(s.restore, s.cfg); err != nil {
 			return nil, err
 		}
 	}
-	srv, err := server.New(s.server)
+	srv, err := server.New(s.cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -268,9 +270,9 @@ func start(s settings) (*node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listening: %w", err)
 	}
-	n := &node{settings: s, srv: srv, rpc: grpc.NewServer(transport.ServerOptions()...), ln: ln, closeAPI: func() {}}
+	n := &node{cfg: s.cfg, listen: s.listen, httpAddr: s.httpAddr, srv: srv, rpc: grpc.NewServer(transport.ServerOptions()...), ln: ln, closeAPI: func() {}}
 	if s.httpAddr != "" {
-		if n.closeAPI, err = serveAPI(s.httpAddr, s.server.ID, s.server.Nodes, srv, s.server.Logger); err != nil {
+		if n.closeAPI, err = serveAPI(s.httpAddr, s.cfg.ID, s.cfg.Nodes, srv, s.cfg.Logger); err != nil {
 			return nil, fmt.Errorf("serving the HTTP API: %w", err)
 		}
 	}
@@ -279,7 +281,7 @@ func start(s settings) (*node, error) {
 }
 
 func (n *node) serve() error {
-	cfg, logger := n.server, n.server.Logger
+	cfg, logger := n.cfg, n.cfg.Logger
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	go func() {
 		if err := n.rpc.Serve(n.ln); err != nil {
@@ -308,7 +310,7 @@ func (n *node) serve() error {
 func main() {
 	f := parseFlags()
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: f.level}))
-	s, err := f.settings(logger)
+	s, err := f.build(logger)
 	if err != nil {
 		logger.Error("bad flags", "err", err)
 		os.Exit(2)
