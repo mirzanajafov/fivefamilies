@@ -233,10 +233,14 @@ func transfer(ctx context.Context, addrs []string, id string) {
 	onLeader(addrs, func(c pb.AdminClient) error {
 		start := time.Now()
 		resp, err := c.TransferLeadership(ctx, req)
-		if err == nil {
-			fmt.Printf("node %d leads term %d after %v\n", resp.GetLeader(), resp.GetTerm(), time.Since(start).Round(time.Millisecond))
+		if err != nil {
+			return err
 		}
-		return err
+		fmt.Printf("node %d leads term %d after %v\n", resp.GetLeader(), resp.GetTerm(), time.Since(start).Round(time.Millisecond))
+		if resp.GetLeader() != req.GetTo() {
+			return fmt.Errorf("node %d took over instead of %d", resp.GetLeader(), req.GetTo())
+		}
+		return nil
 	})
 }
 

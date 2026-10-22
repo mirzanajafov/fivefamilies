@@ -357,6 +357,19 @@ func TestATransferToADeadNodeGivesUp(t *testing.T) {
 	c.propose(1, "x")
 }
 
+func TestATransferToTheLeaderItselfCancelsTheOneInFlight(t *testing.T) {
+	c := newCluster(t, 3, nil)
+	c.elect(1)
+	c.crash(3)
+	if err := c.node(1).TransferLeadership(3); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.node(1).TransferLeadership(1); err != nil || c.node(1).Transferring() != None {
+		t.Fatalf("transferring to %d after a transfer to itself: %v", c.node(1).Transferring(), err)
+	}
+	c.propose(1, "x")
+}
+
 func TestNoLeaseReadsAfterATransferAttempt(t *testing.T) {
 	c := newCluster(t, 3, func(cfg *Config) { cfg.LeaseTicks = 6 })
 	c.pastBootGuard()

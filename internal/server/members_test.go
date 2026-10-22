@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,11 +80,19 @@ func TestMembersChangeAndLeadershipMovesOverTheWire(t *testing.T) {
 	if !slices.Equal(resp.GetVoters(), uint64s(1, 2, 3, 4)) || len(resp.GetLearners()) != 0 {
 		t.Fatalf("after the promotion: %v", resp)
 	}
-	if _, err := c.admin(old).TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: 4}); err != nil {
-		t.Fatalf("transfer: %v", err)
+	for attempt := 1; ; attempt++ {
+		moved, err := c.admin(c.leader(time.Second)).TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: 4})
+		if err == nil && moved.GetLeader() == 4 {
+			break
+		}
+		if code := status.Code(err); attempt == 5 || (err != nil && code != codes.FailedPrecondition && code != codes.Unavailable) {
+			t.Fatalf("transfer %d to node 4: leader %d, %v", attempt, moved.GetLeader(), err)
+		}
+		t.Logf("transfer %d to node 4 left node %d leading (%v), so it goes again", attempt, moved.GetLeader(), err)
+		time.Sleep(50 * time.Millisecond)
 	}
 	if lead := c.leader(time.Second); lead != 4 {
-		t.Fatalf("leader %d after the transfer", lead)
+		t.Fatalf("node %d leads after the transfer, want 4", lead)
 	}
 	if _, err := c.admin(4).ChangeMembers(ctx, &pb.ChangeMembersRequest{Change: pb.MemberChange_MEMBER_CHANGE_REMOVE, Node: 4}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("the leader removing itself: %v", err)
@@ -108,4 +117,27 @@ func TestMembersChangeAndLeadershipMovesOverTheWire(t *testing.T) {
 	if st := c.status(4); !slices.Equal(st.GetVoters(), want) {
 		t.Fatalf("node 4 forgot the configuration across a restart: %v", st.GetVoters())
 	}
+}
+
+func TestATransferTheTargetNeverTakesUpEndsWithAnErrorNamingIt(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos = true })
+	var err error
+	for range 3 {
+		old := c.leader(5 * time.Second)
+		target := old%3 + 1
+		chaos(t, c, target, pb.ChaosAction_CHAOS_ACTION_ISOLATE, time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, err = c.admin(old).TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: uint64(target)})
+		cancel()
+		chaos(t, c, target, pb.ChaosAction_CHAOS_ACTION_HEAL, 0)
+		s := status.Convert(err)
+		if s.Code() == codes.FailedPrecondition && strings.Contains(s.Message(), fmt.Sprintf("node %d did not take over", target)) {
+			return
+		}
+		if err != nil && s.Code() != codes.Unavailable {
+			break
+		}
+		t.Logf("the leadership moved while node %d was cut off (%v), so the test goes again", target, err)
+	}
+	t.Fatalf("a transfer to an isolated node ended with %v, want FailedPrecondition naming it", err)
 }

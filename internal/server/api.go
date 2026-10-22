@@ -5,16 +5,12 @@ import (
 	"errors"
 	"time"
 
-	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
-var (
-	ErrTransferAborted = errors.New("server: the transfer gave up, the target did not take over within an election timeout")
-	errLeaseNotFound   = errors.New("server: lease not found")
-)
+var errLeaseNotFound = errors.New("server: lease not found")
 
 func (s *Server) Submit(ctx context.Context, cmd kv.Command) (kv.Result, error) {
 	return s.admit(ctx, func(done node.Done) { s.node.Submit(cmd, done) })
@@ -36,34 +32,19 @@ func (s *Server) ChangeMembers(ctx context.Context, cc raft.ConfChange) (uint64,
 	return index, conf, nil
 }
 
-func (s *Server) TransferLeadership(ctx context.Context, to raft.NodeID) error {
-	var refused error
-	if err := s.onLoop(ctx, func() { refused = s.node.TransferLeadership(to); s.publish() }); err != nil {
-		return err
+func (s *Server) TransferLeadership(ctx context.Context, to raft.NodeID) (raft.NodeID, uint64, error) {
+	var leader raft.NodeID
+	var term uint64
+	_, err := s.run(ctx, func(done node.Done) {
+		s.node.TransferLeadership(to, func(l raft.NodeID, t uint64, err error) {
+			leader, term = l, t
+			done(kv.Result{}, err)
+		})
+	})
+	if err != nil {
+		return 0, 0, err
 	}
-	if refused != nil {
-		return refused
-	}
-	t := time.NewTicker(s.cfg.Tick)
-	defer t.Stop()
-	for {
-		st := s.Status()
-		switch {
-		case raft.NodeID(st.GetLeader()) == to && to != s.cfg.ID:
-			return nil
-		case to == s.cfg.ID && st.GetRole() == pb.Role_ROLE_LEADER:
-			return nil
-		case st.GetRole() == pb.Role_ROLE_LEADER && st.GetTransferee() == 0:
-			return ErrTransferAborted
-		}
-		select {
-		case <-t.C:
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-s.stopped:
-			return ErrStopped
-		}
-	}
+	return leader, term, nil
 }
 
 func (s *Server) MinLeaseTTL() time.Duration {

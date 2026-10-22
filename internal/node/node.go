@@ -43,8 +43,9 @@ type Config struct {
 }
 
 var (
-	ErrLost     = errors.New("node: the entry was replaced before it committed")
-	ErrNotReady = errors.New("node: the read could not be confirmed, try again")
+	ErrLost            = errors.New("node: the entry was replaced before it committed")
+	ErrNotReady        = errors.New("node: the read could not be confirmed, try again")
+	ErrTransferAborted = errors.New("node: the transfer gave up")
 )
 
 const (
@@ -61,6 +62,14 @@ func (e *NotLeaderError) Error() string {
 }
 
 type Done func(kv.Result, error)
+
+type Transferred func(leader raft.NodeID, term uint64, err error)
+
+type transferWaiter struct {
+	to   raft.NodeID
+	term uint64
+	done Transferred
+}
 
 type pendingWrite struct {
 	seq     uint64
@@ -93,20 +102,21 @@ type leaseClock struct {
 }
 
 type Node struct {
-	r        *raft.Raft
-	env      Env
-	sm       StateMachine
-	cfg      Config
-	seq      uint64
-	pending  []pendingWrite
-	waiters  map[uint64]waiter
-	lastSnap uint64
-	taking   bool
-	ticks    uint64
-	carry    time.Duration
-	nextCtx  uint64
-	reads    map[uint64]readWaiter
-	ready    []confirmedRead
+	r         *raft.Raft
+	env       Env
+	sm        StateMachine
+	cfg       Config
+	seq       uint64
+	pending   []pendingWrite
+	waiters   map[uint64]waiter
+	lastSnap  uint64
+	taking    bool
+	ticks     uint64
+	carry     time.Duration
+	nextCtx   uint64
+	reads     map[uint64]readWaiter
+	ready     []confirmedRead
+	transfers []transferWaiter
 
 	leases     map[uint64]*leaseClock
 	leaseTerm  uint64
@@ -340,11 +350,38 @@ func (n *Node) ProposeConfChange(cc raft.ConfChange, done Done) {
 	n.waiters[idx] = waiter{term: n.r.Term(), done: done}
 }
 
-func (n *Node) TransferLeadership(to raft.NodeID) error {
+func (n *Node) TransferLeadership(to raft.NodeID, done Transferred) {
 	if n.r.State() != raft.StateLeader {
-		return &NotLeaderError{Leader: n.r.Leader()}
+		done(n.r.Leader(), n.r.Term(), &NotLeaderError{Leader: n.r.Leader()})
+		return
 	}
-	return n.r.TransferLeadership(to)
+	if err := n.r.TransferLeadership(to); err != nil || to == n.r.ID() {
+		done(n.r.Leader(), n.r.Term(), err)
+		return
+	}
+	n.transfers = append(n.transfers, transferWaiter{to: to, term: n.r.Term(), done: done})
+}
+
+func (n *Node) settleTransfers() {
+	if len(n.transfers) == 0 {
+		return
+	}
+	term, lead := n.r.Term(), n.r.Leader()
+	pending := n.transfers
+	n.transfers = nil
+	leading := n.r.State() == raft.StateLeader
+	for _, w := range pending {
+		moved := term > w.term && lead != raft.None
+		gaveUp := term == w.term && leading && n.r.Transferring() != w.to
+		switch {
+		case moved && !leading:
+			w.done(lead, term, nil)
+		case moved, gaveUp:
+			w.done(lead, term, fmt.Errorf("%w: node %d did not take over", ErrTransferAborted, w.to))
+		default:
+			n.transfers = append(n.transfers, w)
+		}
+	}
 }
 
 func (n *Node) Waiting() int {
@@ -452,6 +489,7 @@ func (n *Node) Process() error {
 	if term := n.r.Term(); len(n.reads) > 0 {
 		n.expireReads(func(w readWaiter) bool { return w.term != term })
 	}
+	n.settleTransfers()
 	return nil
 }
 

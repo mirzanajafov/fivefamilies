@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"strings"
 	"testing"
 
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
@@ -70,9 +71,18 @@ func newTestNode(t *testing.T, id raft.NodeID, voters []raft.NodeID) (*Node, *re
 	return newTestNodeConfig(t, id, voters, Config{})
 }
 
+func testRaftConfig(id raft.NodeID, voters []raft.NodeID) raft.Config {
+	return raft.Config{ID: id, Voters: voters, ElectionTick: 10, HeartbeatTick: 1, Rand: rand.NewPCG(1, uint64(id))}
+}
+
 func newTestNodeConfig(t *testing.T, id raft.NodeID, voters []raft.NodeID, cfg Config) (*Node, *recEnv, *recApp) {
 	t.Helper()
-	r, err := raft.New(raft.Config{ID: id, Voters: voters, ElectionTick: 10, HeartbeatTick: 1, Rand: rand.NewPCG(1, uint64(id))}, raft.Restore{})
+	return newTestNodeRaft(t, testRaftConfig(id, voters), cfg)
+}
+
+func newTestNodeRaft(t *testing.T, rcfg raft.Config, cfg Config) (*Node, *recEnv, *recApp) {
+	t.Helper()
+	r, err := raft.New(rcfg, raft.Restore{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,5 +480,138 @@ func TestAForwardedReadExpires(t *testing.T) {
 	}
 	if !errors.Is(gotErr, ErrNotReady) {
 		t.Fatalf("a read the leader never answered: %v", gotErr)
+	}
+}
+
+type transferOutcome struct {
+	calls  int
+	leader raft.NodeID
+	term   uint64
+	err    error
+}
+
+func (o *transferOutcome) done(leader raft.NodeID, term uint64, err error) {
+	o.calls++
+	o.leader, o.term, o.err = leader, term, err
+}
+
+func leaderOfThree(t *testing.T) (*Node, *recEnv) {
+	t.Helper()
+	n, env, _ := newTestNode(t, 1, []raft.NodeID{1, 2, 3})
+	electNode1(t, n, env)
+	return n, env
+}
+
+func electNode1(t *testing.T, n *Node, env *recEnv) {
+	t.Helper()
+	n.Raft().Campaign()
+	settle(t, n, env)
+	n.Receive(raft.Message{Type: raft.MsgVoteResp, From: 2, To: 1, Term: 1})
+	settle(t, n, env)
+	if n.Raft().State() != raft.StateLeader {
+		t.Fatalf("state %s, want leader", n.Raft().State())
+	}
+}
+
+func TestATransferEndsWithTheNodeThatTookOverWhoeverItIs(t *testing.T) {
+	n, env := leaderOfThree(t)
+	var o transferOutcome
+	n.TransferLeadership(2, o.done)
+	settle(t, n, env)
+	if o.calls != 0 {
+		t.Fatalf("the transfer ended before anyone took over: %+v", o)
+	}
+	n.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 3, To: 1, Term: 3})
+	settle(t, n, env)
+	if o.calls != 1 || o.err != nil || o.leader != 3 || o.term != 3 {
+		t.Fatalf("outcome %+v, want node 3 leading term 3", o)
+	}
+}
+
+func TestATransferThatLeavesTheNodeLeadingAgainInALaterTermFails(t *testing.T) {
+	n, env := leaderOfThree(t)
+	var o transferOutcome
+	n.TransferLeadership(2, o.done)
+	settle(t, n, env)
+	n.Receive(raft.Message{Type: raft.MsgVote, From: 2, To: 1, Term: 2, Index: 1, LogTerm: 1})
+	settle(t, n, env)
+	n.Raft().Campaign()
+	settle(t, n, env)
+	n.Receive(raft.Message{Type: raft.MsgVoteResp, From: 3, To: 1, Term: n.Raft().Term()})
+	settle(t, n, env)
+	if n.Raft().State() != raft.StateLeader || o.calls != 1 || !errors.Is(o.err, ErrTransferAborted) || o.leader != 1 {
+		t.Fatalf("state %s, outcome %+v, want node 1 leading again and the transfer aborted", n.Raft().State(), o)
+	}
+}
+
+func TestATransferTheCoreGivesUpOnFailsAndNamesTheTarget(t *testing.T) {
+	n, env := leaderOfThree(t)
+	var o transferOutcome
+	n.TransferLeadership(2, o.done)
+	settle(t, n, env)
+	n.Advance(20 * n.cfg.Tick)
+	settle(t, n, env)
+	if o.calls != 1 || !errors.Is(o.err, ErrTransferAborted) || o.leader != 1 || o.term != 1 {
+		t.Fatalf("outcome %+v, want node 1 still leading term 1 and the transfer aborted", o)
+	}
+	if want := "node 2 did not take over"; !strings.Contains(o.err.Error(), want) {
+		t.Fatalf("error %q does not say %q", o.err, want)
+	}
+}
+
+func TestATransferAnswersAtOnceWhenItCannotStartOrHasNothingToDo(t *testing.T) {
+	n, _ := leaderOfThree(t)
+	var pending, self transferOutcome
+	n.TransferLeadership(2, pending.done)
+	n.TransferLeadership(1, self.done)
+	if self.calls != 1 || self.err != nil || self.leader != 1 {
+		t.Fatalf("a transfer to the leader itself: %+v", self)
+	}
+	process(t, n)
+	if pending.calls != 1 || !errors.Is(pending.err, ErrTransferAborted) {
+		t.Fatalf("the transfer it cancelled: %+v", pending)
+	}
+	var refused transferOutcome
+	n.TransferLeadership(9, refused.done)
+	if refused.calls != 1 || !errors.Is(refused.err, raft.ErrBadConfChange) {
+		t.Fatalf("a transfer to a node that isn't a voter: %+v", refused)
+	}
+	follower, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
+	follower.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 3, To: 2, Term: 4})
+	var asked transferOutcome
+	follower.TransferLeadership(1, asked.done)
+	var nl *NotLeaderError
+	if asked.calls != 1 || !errors.As(asked.err, &nl) || nl.Leader != 3 {
+		t.Fatalf("a transfer asked of a follower: %+v", asked)
+	}
+}
+
+func TestATransferWaitsThroughALostQuorumForTheNextLeader(t *testing.T) {
+	rcfg := testRaftConfig(1, []raft.NodeID{1, 2, 3})
+	rcfg.CheckQuorum = true
+	n, env, _ := newTestNodeRaft(t, rcfg, Config{})
+	electNode1(t, n, env)
+	var o transferOutcome
+	n.TransferLeadership(2, o.done)
+	n.Advance(20 * n.cfg.Tick)
+	settle(t, n, env)
+	if n.Raft().State() == raft.StateLeader || o.calls != 0 {
+		t.Fatalf("state %s, outcome %+v, want the node stepped down and the transfer still waiting", n.Raft().State(), o)
+	}
+	n.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 3, To: 1, Term: 2})
+	settle(t, n, env)
+	if o.calls != 1 || o.err != nil || o.leader != 3 {
+		t.Fatalf("outcome %+v, want node 3 once it leads", o)
+	}
+}
+
+func TestATransferThatAnotherTransferReplacedFails(t *testing.T) {
+	n, env := leaderOfThree(t)
+	var first, second transferOutcome
+	n.TransferLeadership(2, first.done)
+	n.TransferLeadership(3, second.done)
+	settle(t, n, env)
+	if first.calls != 1 || !errors.Is(first.err, ErrTransferAborted) || !strings.Contains(first.err.Error(), "node 2") || second.calls != 0 {
+		t.Fatalf("first %+v, second %+v, want the first failed naming node 2 and the second still waiting", first, second)
 	}
 }
