@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const NodePort = 3161
+
 type Project struct {
 	Name string
 	File string
@@ -57,7 +59,7 @@ func HostAddrs(nodes int) []string {
 func NetworkAddrs(nodes int) []string {
 	var out []string
 	for i := 1; i <= nodes; i++ {
-		out = append(out, fmt.Sprintf("n%d:3161", i))
+		out = append(out, fmt.Sprintf("n%d:%d", i, NodePort))
 	}
 	return out
 }

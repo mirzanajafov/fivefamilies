@@ -65,17 +65,18 @@ type Report struct {
 func (o Options) Validate() error {
 	bugs, err := planted.Parse(o.Bug)
 	if err != nil {
-		return err
+		return fmt.Errorf("-bug: %w", err)
 	}
-	for _, d := range []string{o.Election, o.Heartbeat} {
-		if _, err := time.ParseDuration(d); err != nil {
-			return err
-		}
+	if _, err := time.ParseDuration(o.Election); err != nil {
+		return fmt.Errorf("-election: %w", err)
+	}
+	if _, err := time.ParseDuration(o.Heartbeat); err != nil {
+		return fmt.Errorf("-heartbeat: %w", err)
 	}
 	lease, err := time.ParseDuration(o.Lease)
 	switch {
 	case err != nil:
-		return err
+		return fmt.Errorf("-lease: %w", err)
 	case o.Read == client.ReadLease && lease <= 0:
 		return errors.New("-read lease needs a -lease longer than zero")
 	case bugs.Has(planted.Watches | planted.LocalKeepAlive):

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -285,6 +286,9 @@ func lease(ctx context.Context, t target, args []string) error {
 		fmt.Println("lease", l.ID, "ttl", l.TTL)
 		return nil
 	}
+	if !slices.Contains([]string{"revoke", "keepalive", "ttl"}, op) {
+		return errUsage
+	}
 	id, err := positive("lease id", arg)
 	if err != nil {
 		return err
@@ -301,14 +305,12 @@ func lease(ctx context.Context, t target, args []string) error {
 			return err
 		}
 		fmt.Println("kept alive for", ttl)
-	case "ttl":
+	default:
 		remaining, ttl, keys, err := t.c.TimeToLive(ctx, id)
 		if err != nil {
 			return err
 		}
 		fmt.Printf("%v left of %v, %d keys\n", remaining.Round(time.Millisecond), ttl, keys)
-	default:
-		return errUsage
 	}
 	return nil
 }

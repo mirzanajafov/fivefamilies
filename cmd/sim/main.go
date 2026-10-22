@@ -210,7 +210,7 @@ func (c config) report(t *tally, elapsed time.Duration) int {
 		}
 		return 0
 	}
-	fmt.Printf("failures by category: %v, lowest failing seed %d (the %dth of the batch)\n", t.categories, t.lowest, t.lowest-c.from+1)
+	fmt.Printf("failures by category: %v, lowest failing seed %d (number %d in the batch)\n", t.categories, t.lowest, t.lowest-c.from+1)
 	if c.first {
 		for _, f := range t.failed {
 			if f.Seed == t.lowest {

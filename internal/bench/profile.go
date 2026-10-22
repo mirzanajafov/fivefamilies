@@ -48,8 +48,12 @@ type ProfileReport struct {
 	Phases   []ProfilePhase `json:"phases"`
 }
 
+func pprofAddr(node int) string {
+	return fmt.Sprintf("127.0.0.1:316%d", node)
+}
+
 func profileURL(node int, path string) string {
-	return fmt.Sprintf("http://127.0.0.1:316%d/debug/pprof/%s", node, path)
+	return "http://" + pprofAddr(node) + "/debug/pprof/" + path
 }
 
 func fetchProfile(ctx context.Context, url, file string) error {

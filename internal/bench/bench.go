@@ -134,11 +134,11 @@ func (b *ffCluster) services() []service {
 		s := service{
 			name: fmt.Sprintf("n%d", i), image: b.Image, cpuset: b.NodeCPUs[(i-1)%len(b.NodeCPUs)],
 			command: append([]string{"-id", fmt.Sprint(i), "-cluster", strings.Join(cluster, ","), "-data", "/data"}, b.Flags...),
-			ports:   []string{host[i-1] + ":3161"},
+			ports:   []string{fmt.Sprintf("%s:%d", host[i-1], rig.NodePort)},
 		}
 		if b.Profiles {
 			s.command = append(s.command, "-pprof", ":6060")
-			s.ports = append(s.ports, fmt.Sprintf("127.0.0.1:316%d:6060", i))
+			s.ports = append(s.ports, pprofAddr(i)+":6060")
 		}
 		out = append(out, s)
 	}

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -75,13 +74,12 @@ func (d *Docker) generate(ctx context.Context, opts FailoverOptions) ([]loadgen.
 	network := d.Name + "_lab"
 	args := []string{"run", "--rm", "--network", network, "--entrypoint", "failgen", "fivefamilies-lab-node",
 		"-rate", fmt.Sprint(opts.Rate), "-duration", (opts.Before + opts.After).String(), "-timeout", opts.Timeout.String(), fmt.Sprintf("-cold=%v", opts.Cold)}
-	c := exec.CommandContext(ctx, "docker", args...)
-	out, err := c.Output()
+	out, err := rig.Docker(ctx, nil, args...)
 	if err != nil {
 		return nil, fmt.Errorf("generator: %w", err)
 	}
 	var samples []loadgen.FailoverSample
-	sc := bufio.NewScanner(strings.NewReader(string(out)))
+	sc := bufio.NewScanner(strings.NewReader(out))
 	for sc.Scan() {
 		var s loadgen.FailoverSample
 		if err := json.Unmarshal(sc.Bytes(), &s); err != nil {

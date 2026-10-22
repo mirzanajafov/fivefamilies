@@ -9,7 +9,7 @@ import (
 
 func TestACommandLineWithoutAKnownCommandAndItsArgumentsIsAUsageError(t *testing.T) {
 	tgt := target{addrs: []string{"127.0.0.1:1"}}
-	for _, line := range []string{"", "nothing", "status extra", "get", "put k", "put k v 1 more", "member demote 2", "lease extend 3", "config set svc key", "config drop svc"} {
+	for _, line := range []string{"", "nothing", "status extra", "get", "put k", "put k v 1 more", "member demote 2", "lease extend 3", "lease gran 10s", "config set svc key", "config drop svc"} {
 		if err := run(tgt, time.Second, strings.Fields(line)); !errors.Is(err, errUsage) {
 			t.Errorf("%q: %v, want a usage error", line, err)
 		}
