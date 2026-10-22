@@ -151,21 +151,33 @@ type fakeNode struct {
 	addr      string
 	leader    string
 	notLeader error
+	hang      bool
 	watched   chan<- string
 }
 
-func (f *fakeNode) OpenSession(context.Context, *pb.OpenSessionRequest) (*pb.OpenSessionResponse, error) {
+func (f *fakeNode) refuse(ctx context.Context) error {
+	if err := grpc.SetHeader(ctx, metadata.Pairs(route.LeaderHeader, f.leader)); err != nil {
+		return err
+	}
+	return f.notLeader
+}
+
+func (f *fakeNode) OpenSession(ctx context.Context, _ *pb.OpenSessionRequest) (*pb.OpenSessionResponse, error) {
+	if f.hang {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	if f.leader != "" {
+		return nil, f.refuse(ctx)
+	}
 	return &pb.OpenSessionResponse{Client: 1}, nil
 }
 
 func (f *fakeNode) Put(ctx context.Context, _ *pb.PutRequest) (*pb.PutResponse, error) {
-	if f.leader == "" {
-		return &pb.PutResponse{Rev: 1}, nil
+	if f.leader != "" {
+		return nil, f.refuse(ctx)
 	}
-	if err := grpc.SetHeader(ctx, metadata.Pairs(route.LeaderHeader, f.leader)); err != nil {
-		return nil, err
-	}
-	return nil, f.notLeader
+	return &pb.PutResponse{Rev: 1}, nil
 }
 
 func (f *fakeNode) Watch(_ *pb.WatchRequest, stream grpc.ServerStreamingServer[pb.WatchResponse]) error {
@@ -233,5 +245,32 @@ func TestANodeThatAnsweredNotTheLeaderKeepsTheClientsWatches(t *testing.T) {
 				t.Fatal("no node got the watch")
 			}
 		})
+	}
+}
+
+func TestANodeACallFoundSilentLosesTheClientsWatches(t *testing.T) {
+	watched := make(chan string, 2)
+	silent := &fakeNode{hang: true, watched: watched}
+	serveFake(t, silent)
+	leader := &fakeNode{watched: watched}
+	serveFake(t, leader)
+	c, err := New([]string{silent.addr, leader.addr}, Options{AttemptTimeout: 100 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.Put(ctx, "k", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	c.Watch(ctx, "k", false, 0)
+	select {
+	case addr := <-watched:
+		if addr != leader.addr {
+			t.Fatalf("the watch went to %s, want %s: the other node never answered a call", addr, leader.addr)
+		}
+	case <-ctx.Done():
+		t.Fatal("no node got the watch")
 	}
 }

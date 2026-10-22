@@ -10,17 +10,18 @@ func hint(addr string) metadata.MD {
 	return metadata.Pairs(LeaderHeader, addr)
 }
 
-func TestTheRouterFollowsAHintToANodeItKnows(t *testing.T) {
+func TestAFailureMovesTheRouterToTheHintedNodeOrElseToTheNextOne(t *testing.T) {
+	three := []string{"n1:3161", "n2:3161", "n3:3161"}
 	for _, tc := range []struct {
 		name  string
 		addrs []string
 		md    metadata.MD
 		want  int
 	}{
-		{"no hint", []string{"n1:3161", "n2:3161", "n3:3161"}, nil, 1},
-		{"a hint", []string{"n1:3161", "n2:3161", "n3:3161"}, hint("n3:3161"), 2},
-		{"a hint naming an address the router doesn't know", []string{"n1:3161", "n2:3161", "n3:3161"}, hint("fivefamilies-n3:3161"), 1},
-		{"a hint naming the node that failed", []string{"n1:3161", "n2:3161", "n3:3161"}, hint("n1:3161"), 1},
+		{"no hint", three, nil, 1},
+		{"a hint", three, hint("n3:3161"), 2},
+		{"a hint naming an address the router doesn't know", three, hint("fivefamilies-n3:3161"), 1},
+		{"a hint naming the node that failed", three, hint("n1:3161"), 1},
 		{"a hint naming the node that failed, listed twice", []string{"n1:3161", "n2:3161", "n1:3161"}, hint("n1:3161"), 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -214,7 +214,7 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 		}
 		if status.Code(err) != codes.ResourceExhausted {
 			c.router.MoveOn(target, md)
-			if Reason(err) != pb.ErrorReason_ERROR_REASON_NOT_LEADER {
+			if status.Code(err) == codes.DeadlineExceeded {
 				c.watchRouter.MoveOn(target, nil)
 			}
 		}

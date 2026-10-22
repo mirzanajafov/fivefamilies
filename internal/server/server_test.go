@@ -542,8 +542,6 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 
 func TestAFollowersRefusalNamesTheLeader(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 	var err error
 	var got []string
 	for range 20 {
@@ -553,7 +551,9 @@ func TestAFollowersRefusalNamesTheLeader(t *testing.T) {
 			t.Fatal(dialErr)
 		}
 		var md metadata.MD
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		_, err = pb.NewKVClient(conn).Put(ctx, &pb.PutRequest{Key: "k"}, grpc.Header(&md))
+		cancel()
 		conn.Close()
 		got = md.Get(route.LeaderHeader)
 		leader := raft.NodeID(c.running[follower].srv.Status().GetLeader())
