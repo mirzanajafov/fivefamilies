@@ -33,7 +33,7 @@ func write(t *testing.T, fs FS, name string, data []byte, sync bool) {
 func TestMemCrashKeepsSyncedBytesAndAPrefixOfTheRest(t *testing.T) {
 	synced := bytes.Repeat([]byte{'s'}, 1000)
 	unsynced := bytes.Repeat([]byte{'u'}, 3000)
-	shorter, garbled := 0, 0
+	shorter, holes := 0, 0
 	for seed := range uint64(200) {
 		m := NewMem()
 		write(t, m, "a", synced, true)
@@ -56,12 +56,17 @@ func TestMemCrashKeepsSyncedBytesAndAPrefixOfTheRest(t *testing.T) {
 		if len(rest) != len(unsynced) && len(rest) > 0 && (len(synced)+len(rest))%m.SectorSize != 0 {
 			t.Fatalf("seed %d: cut at %d, not on a sector boundary", seed, len(synced)+len(rest))
 		}
+		for i, b := range rest {
+			if b != unsynced[i] && b != 0 {
+				t.Fatalf("seed %d: byte %d survived the crash as %q, want what was written or a sector that never reached the disk", seed, len(synced)+i, b)
+			}
+		}
 		if !bytes.Equal(rest, unsynced[:len(rest)]) {
-			garbled++
+			holes++
 		}
 	}
-	if shorter < 100 || garbled == 0 {
-		t.Fatalf("over 200 crashes: %d cut short, %d garbled", shorter, garbled)
+	if shorter < 100 || holes == 0 {
+		t.Fatalf("over 200 crashes: %d cut short, %d with a hole", shorter, holes)
 	}
 }
 
