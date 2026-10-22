@@ -80,16 +80,16 @@ func TestMembersChangeAndLeadershipMovesOverTheWire(t *testing.T) {
 	if !slices.Equal(resp.GetVoters(), uint64s(1, 2, 3, 4)) || len(resp.GetLearners()) != 0 {
 		t.Fatalf("after the promotion: %v", resp)
 	}
-	for lead := c.leader(time.Second); lead != 4; lead = c.leader(time.Second) {
-		moved, err := c.admin(lead).TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: 4})
-		switch code := status.Code(err); {
-		case err == nil && moved.GetLeader() != 4:
-			t.Logf("node %d took over instead of 4, so the transfer goes again", moved.GetLeader())
-		case code == codes.FailedPrecondition, code == codes.Unavailable:
-			t.Logf("the transfer from %d to 4 went wrong, so it goes again: %v", lead, err)
-		case err != nil:
-			t.Fatalf("transfer: %v", err)
+	for attempt := 1; ; attempt++ {
+		moved, err := c.admin(c.leader(time.Second)).TransferLeadership(ctx, &pb.TransferLeadershipRequest{To: 4})
+		if err == nil && moved.GetLeader() == 4 {
+			break
 		}
+		if code := status.Code(err); attempt == 5 || (err != nil && code != codes.FailedPrecondition && code != codes.Unavailable) {
+			t.Fatalf("transfer %d to node 4: leader %d, %v", attempt, moved.GetLeader(), err)
+		}
+		t.Logf("transfer %d to node 4 left node %d leading (%v), so it goes again", attempt, moved.GetLeader(), err)
+		time.Sleep(50 * time.Millisecond)
 	}
 	if _, err := c.admin(4).ChangeMembers(ctx, &pb.ChangeMembersRequest{Change: pb.MemberChange_MEMBER_CHANGE_REMOVE, Node: 4}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("the leader removing itself: %v", err)

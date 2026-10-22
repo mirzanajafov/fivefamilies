@@ -489,6 +489,11 @@ func (o *transferOutcome) done(leader raft.NodeID, term uint64, err error) {
 func leaderOfThree(t *testing.T) (*Node, *recEnv) {
 	t.Helper()
 	n, env, _ := newTestNode(t, 1, []raft.NodeID{1, 2, 3})
+	return campaignedLeader(t, n, env)
+}
+
+func campaignedLeader(t *testing.T, n *Node, env *recEnv) (*Node, *recEnv) {
+	t.Helper()
 	n.Raft().Campaign()
 	settle(t, n, env)
 	n.Receive(raft.Message{Type: raft.MsgVoteResp, From: 2, To: 1, Term: 1})
@@ -552,12 +557,38 @@ func TestATransferAnswersAtOnceWhenItCannotStartOrHasNothingToDo(t *testing.T) {
 	if self.calls != 1 || self.err != nil || self.leader != 1 {
 		t.Fatalf("a transfer to the leader itself: %+v", self)
 	}
+	var refused transferOutcome
+	n.TransferLeadership(9, refused.done)
+	if refused.calls != 1 || !errors.Is(refused.err, raft.ErrBadConfChange) {
+		t.Fatalf("a transfer to a node that isn't a voter: %+v", refused)
+	}
 	follower, _, _ := newTestNode(t, 2, []raft.NodeID{1, 2, 3})
 	follower.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 3, To: 2, Term: 4})
-	var refused transferOutcome
-	follower.TransferLeadership(1, refused.done)
+	var asked transferOutcome
+	follower.TransferLeadership(1, asked.done)
 	var nl *NotLeaderError
-	if refused.calls != 1 || !errors.As(refused.err, &nl) || nl.Leader != 3 {
-		t.Fatalf("a transfer asked of a follower: %+v", refused)
+	if asked.calls != 1 || !errors.As(asked.err, &nl) || nl.Leader != 3 {
+		t.Fatalf("a transfer asked of a follower: %+v", asked)
+	}
+}
+
+func TestATransferWaitsThroughALostQuorumForTheNextLeader(t *testing.T) {
+	r, err := raft.New(raft.Config{ID: 1, Voters: []raft.NodeID{1, 2, 3}, ElectionTick: 10, HeartbeatTick: 1, CheckQuorum: true, Rand: rand.NewPCG(1, 1)}, raft.Restore{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := &recEnv{}
+	n, _ := campaignedLeader(t, New(r, env, &recApp{}, Config{}), env)
+	var o transferOutcome
+	n.TransferLeadership(2, o.done)
+	n.Advance(20 * n.cfg.Tick)
+	settle(t, n, env)
+	if n.Raft().State() == raft.StateLeader || o.calls != 0 {
+		t.Fatalf("state %s, outcome %+v, want the node stepped down and the transfer still waiting", n.Raft().State(), o)
+	}
+	n.Receive(raft.Message{Type: raft.MsgHeartbeat, From: 3, To: 1, Term: 2})
+	settle(t, n, env)
+	if o.calls != 1 || o.err != nil || o.leader != 3 {
+		t.Fatalf("outcome %+v, want node 3 once it leads", o)
 	}
 }

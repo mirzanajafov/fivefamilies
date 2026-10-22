@@ -102,21 +102,21 @@ type leaseClock struct {
 }
 
 type Node struct {
-	r        *raft.Raft
-	env      Env
-	sm       StateMachine
-	cfg      Config
-	seq      uint64
-	pending  []pendingWrite
-	waiters  map[uint64]waiter
-	lastSnap uint64
-	taking   bool
-	ticks    uint64
-	carry    time.Duration
-	nextCtx  uint64
-	reads    map[uint64]readWaiter
-	ready    []confirmedRead
-	moves    []transferWaiter
+	r         *raft.Raft
+	env       Env
+	sm        StateMachine
+	cfg       Config
+	seq       uint64
+	pending   []pendingWrite
+	waiters   map[uint64]waiter
+	lastSnap  uint64
+	taking    bool
+	ticks     uint64
+	carry     time.Duration
+	nextCtx   uint64
+	reads     map[uint64]readWaiter
+	ready     []confirmedRead
+	transfers []transferWaiter
 
 	leases     map[uint64]*leaseClock
 	leaseTerm  uint64
@@ -359,23 +359,26 @@ func (n *Node) TransferLeadership(to raft.NodeID, done Transferred) {
 		done(n.r.Leader(), n.r.Term(), err)
 		return
 	}
-	n.moves = append(n.moves, transferWaiter{to: to, term: n.r.Term(), done: done})
+	n.transfers = append(n.transfers, transferWaiter{to: to, term: n.r.Term(), done: done})
 }
 
 func (n *Node) settleTransfers() {
+	if len(n.transfers) == 0 {
+		return
+	}
 	term, lead := n.r.Term(), n.r.Leader()
-	waiting := n.moves[:0]
-	for _, w := range n.moves {
+	pending := n.transfers
+	n.transfers = nil
+	for _, w := range pending {
 		switch {
 		case term > w.term && lead != raft.None && lead != n.r.ID():
 			w.done(lead, term, nil)
 		case term > w.term && lead == n.r.ID(), term == w.term && n.r.State() == raft.StateLeader && n.r.Transferring() == raft.None:
 			w.done(lead, term, fmt.Errorf("%w: node %d did not take over", ErrTransferAborted, w.to))
 		default:
-			waiting = append(waiting, w)
+			n.transfers = append(n.transfers, w)
 		}
 	}
-	n.moves = waiting
 }
 
 func (n *Node) Waiting() int {

@@ -40,7 +40,6 @@ func (s *Server) TransferLeadership(ctx context.Context, to raft.NodeID) (raft.N
 			leader, term = l, t
 			done(kv.Result{}, err)
 		})
-		s.publish()
 	})
 	if err != nil {
 		return 0, 0, err
