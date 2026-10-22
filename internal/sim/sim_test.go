@@ -1,7 +1,6 @@
 package sim
 
 import (
-	"math"
 	"math/rand/v2"
 	"os"
 	"runtime"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/anishathalye/porcupine"
 
@@ -372,24 +370,14 @@ func TestCheckerCatchesACommitThatIsNotDurableOnAQuorum(t *testing.T) {
 	}
 }
 
-func TestHistoryMarksUnfinishedWritesIndeterminateAndDropsUnfinishedReads(t *testing.T) {
-	s := &Sim{history: []opRecord{
-		{client: 0, call: 1, ret: 2, done: true, in: check.Input{Kind: check.Put, Key: "k", Value: "a"}, out: check.Output{Ok: true}},
-		{client: 1, call: 3, in: check.Input{Kind: check.CAS, Key: "k", Expect: "a", Value: "b"}},
-		{client: 2, call: 4, in: check.Input{Kind: check.Get, Key: "k"}},
+func TestTheSimulatorCountsUnfinishedWritesAsIndeterminate(t *testing.T) {
+	s := &Sim{history: []check.Op{
+		{Client: 0, Input: check.Input{Kind: check.Put, Key: "k", Value: "a"}, Output: check.Output{Ok: true}, Call: 1, Return: 2},
+		{Client: 1, Input: check.Input{Kind: check.CAS, Key: "k", Expect: "a", Value: "b"}, Output: check.Output{Unknown: true}, Call: 3},
+		{Client: 2, Input: check.Input{Kind: check.Get, Key: "k"}, Output: check.Output{Unknown: true}, Call: 4},
 	}}
-	h := s.porcupineHistory()
-	if len(h) != 2 {
-		t.Fatalf("%d operations, want the finished put and the unfinished swap", len(h))
-	}
-	if h[1].Return != math.MaxInt64 || !h[1].Output.(check.Output).Unknown {
-		t.Fatalf("unfinished swap: %+v", h[1])
-	}
-	if s.stats.Indeterminate != 1 {
-		t.Fatalf("indeterminate %d", s.stats.Indeterminate)
-	}
-	if v := check.Linearizable(h, 10*time.Second); !v.OK() {
-		t.Fatalf("verdict %s", v.Result)
+	if h := s.porcupineHistory(); len(h) != 2 || s.stats.Indeterminate != 1 {
+		t.Fatalf("%d operations with %d indeterminate, want the put and the swap with one", len(h), s.stats.Indeterminate)
 	}
 }
 

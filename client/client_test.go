@@ -11,9 +11,11 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
+	"github.com/mirzanajafov/fivefamilies/internal/route"
 )
 
 func TestRoleNamesAreTheOnesTheDashboardShows(t *testing.T) {
@@ -124,21 +126,12 @@ func TestTheServersRefusalsComeBackAsTheClientsErrors(t *testing.T) {
 		ErrTooManyLeases: refusal(t, codes.FailedPrecondition, pb.ErrorReason_ERROR_REASON_TOO_MANY_LEASES),
 	} {
 		t.Run(want.Error(), func(t *testing.T) {
-			ln, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			g := grpc.NewServer()
 			fake := refusingLeases{refusal: refused}
-			pb.RegisterKVServer(g, fake)
-			pb.RegisterLeaseServer(g, fake)
-			go func() {
-				if err := g.Serve(ln); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-					t.Error(err)
-				}
-			}()
-			t.Cleanup(g.Stop)
-			c, err := New([]string{ln.Addr().String()}, Options{})
+			addr := serve(t, func(g *grpc.Server) {
+				pb.RegisterKVServer(g, fake)
+				pb.RegisterLeaseServer(g, fake)
+			})
+			c, err := New([]string{addr}, Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -149,5 +142,140 @@ func TestTheServersRefusalsComeBackAsTheClientsErrors(t *testing.T) {
 				t.Errorf("%v came back as %v, want %v", refused, err, want)
 			}
 		})
+	}
+}
+
+type fakeNode struct {
+	pb.UnimplementedKVServer
+	pb.UnimplementedWatchServer
+	addr    string
+	hint    string
+	refusal error
+	hang    bool
+	watched chan<- string
+}
+
+func (f *fakeNode) refuse(ctx context.Context) error {
+	if f.hint != "" {
+		if err := grpc.SetHeader(ctx, metadata.Pairs(route.LeaderHeader, f.hint)); err != nil {
+			return err
+		}
+	}
+	return f.refusal
+}
+
+func (f *fakeNode) OpenSession(ctx context.Context, _ *pb.OpenSessionRequest) (*pb.OpenSessionResponse, error) {
+	if f.hang {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	if f.refusal != nil {
+		return nil, f.refuse(ctx)
+	}
+	return &pb.OpenSessionResponse{Client: 1}, nil
+}
+
+func (f *fakeNode) Put(ctx context.Context, _ *pb.PutRequest) (*pb.PutResponse, error) {
+	if f.refusal != nil {
+		return nil, f.refuse(ctx)
+	}
+	return &pb.PutResponse{Rev: 1}, nil
+}
+
+func (f *fakeNode) Watch(_ *pb.WatchRequest, stream grpc.ServerStreamingServer[pb.WatchResponse]) error {
+	f.watched <- f.addr
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
+
+func serve(t *testing.T, register func(*grpc.Server)) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := grpc.NewServer()
+	register(g)
+	go func() {
+		if err := g.Serve(ln); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			t.Error(err)
+		}
+	}()
+	t.Cleanup(g.Stop)
+	return ln.Addr().String()
+}
+
+func serveFake(t *testing.T, node *fakeNode) {
+	t.Helper()
+	node.addr = serve(t, func(g *grpc.Server) {
+		pb.RegisterKVServer(g, node)
+		pb.RegisterWatchServer(g, node)
+	})
+}
+
+func TestANodeThatAnsweredKeepsTheClientsWatches(t *testing.T) {
+	notLeader := refusal(t, codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER)
+	for _, tc := range []struct {
+		name    string
+		hint    func(leader string) string
+		refusal error
+	}{
+		{"not the leader, with a hint to the leader", func(leader string) string { return leader }, notLeader},
+		{"not the leader, with a hint to an address the client doesn't know", func(string) string { return "fivefamilies-n2:3161" }, notLeader},
+		{"unavailable, with no hint", func(string) string { return "" }, status.Error(codes.Unavailable, "the entry was lost")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			watched := make(chan string, 2)
+			leader := &fakeNode{watched: watched}
+			serveFake(t, leader)
+			follower := &fakeNode{hint: tc.hint(leader.addr), refusal: tc.refusal, watched: watched}
+			serveFake(t, follower)
+			c, err := New([]string{follower.addr, leader.addr}, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { c.Close() })
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := c.Put(ctx, "k", []byte("v")); err != nil {
+				t.Fatal(err)
+			}
+			c.Watch(ctx, "k", false, 0)
+			select {
+			case addr := <-watched:
+				if addr != follower.addr {
+					t.Fatalf("the watch went to the leader %s, want the follower %s, which answered", addr, follower.addr)
+				}
+			case <-ctx.Done():
+				t.Fatal("no node got the watch")
+			}
+		})
+	}
+}
+
+func TestANodeACallFoundSilentLosesTheClientsWatches(t *testing.T) {
+	watched := make(chan string, 2)
+	silent := &fakeNode{hang: true, watched: watched}
+	serveFake(t, silent)
+	leader := &fakeNode{watched: watched}
+	serveFake(t, leader)
+	c, err := New([]string{silent.addr, leader.addr}, Options{AttemptTimeout: 100 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.Put(ctx, "k", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	c.Watch(ctx, "k", false, 0)
+	select {
+	case addr := <-watched:
+		if addr != leader.addr {
+			t.Fatalf("the watch went to %s, want %s: the other node never answered a call", addr, leader.addr)
+		}
+	case <-ctx.Done():
+		t.Fatal("no node got the watch")
 	}
 }

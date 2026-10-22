@@ -188,7 +188,7 @@ type Sim struct {
 	hash     uint64
 	healing  bool
 	clients  []*simClient
-	history  []opRecord
+	history  []check.Op
 	check    check.Verdict
 }
 

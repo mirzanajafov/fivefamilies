@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"strconv"
 	"time"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -16,13 +15,10 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/route"
 )
 
-const (
-	HeaderLeader     = "ff-leader"
-	HeaderLeaderAddr = "ff-leader-addr"
-	errorDomain      = "fivefamilies.najafov.dev"
-)
+const errorDomain = "fivefamilies.najafov.dev"
 
 var (
 	errNotLeader      = reasoned(codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER, "not the leader")
@@ -54,7 +50,7 @@ func fail(ctx context.Context, s *Server, err error) error {
 	switch {
 	case errors.As(err, &nl):
 		if nl.Leader != raft.None {
-			if err := grpc.SetHeader(ctx, metadata.Pairs(HeaderLeader, strconv.FormatUint(uint64(nl.Leader), 10), HeaderLeaderAddr, s.cfg.Nodes[nl.Leader])); err != nil {
+			if err := grpc.SetHeader(ctx, metadata.Pairs(route.LeaderHeader, s.cfg.Nodes[nl.Leader])); err != nil {
 				s.log.Warn("setting the leader hint", "err", err)
 			}
 		}

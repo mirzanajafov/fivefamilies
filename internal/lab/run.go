@@ -281,8 +281,8 @@ func save(dir string, rep Report, w *workload) error {
 	enc := json.NewEncoder(f)
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	for _, op := range w.ops {
-		if err := enc.Encode(op); err != nil {
+	for _, r := range w.ops {
+		if err := enc.Encode(r); err != nil {
 			return errors.Join(err, f.Close())
 		}
 	}

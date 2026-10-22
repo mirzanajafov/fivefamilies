@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,12 +17,14 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/route"
 	"github.com/mirzanajafov/fivefamilies/internal/snap"
 	"github.com/mirzanajafov/fivefamilies/internal/storage"
 	"github.com/mirzanajafov/fivefamilies/internal/vfs"
@@ -535,4 +538,29 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 			t.Errorf("got %v %q %v, want %v %q %v", s.Code(), s.Message(), client.Reason(tc.err), tc.code, tc.msg, tc.reason)
 		}
 	}
+}
+
+func TestAFollowersRefusalNamesTheLeader(t *testing.T) {
+	c := newTestCluster(t, 3, nil)
+	var err error
+	var got []string
+	for range 20 {
+		follower := c.leader(5*time.Second)%3 + 1
+		conn, dialErr := grpc.NewClient(c.nodes[follower], grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if dialErr != nil {
+			t.Fatal(dialErr)
+		}
+		var md metadata.MD
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, err = pb.NewKVClient(conn).Put(ctx, &pb.PutRequest{Key: "k"}, grpc.Header(&md))
+		cancel()
+		conn.Close()
+		got = md.Get(route.LeaderHeader)
+		leader := raft.NodeID(c.running[follower].srv.Status().GetLeader())
+		if client.Reason(err) == pb.ErrorReason_ERROR_REASON_NOT_LEADER && slices.Equal(got, []string{c.nodes[leader]}) {
+			return
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	t.Fatalf("twenty writes to a follower, the last got %v with the hint %v, want a refusal naming the leader", err, got)
 }

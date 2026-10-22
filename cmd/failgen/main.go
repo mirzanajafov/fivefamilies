@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -19,6 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
+	"github.com/mirzanajafov/fivefamilies/internal/route"
 )
 
 type sample struct {
@@ -32,17 +32,17 @@ type sample struct {
 	Err       string `json:"error,omitempty"`
 }
 
-type router struct {
+type generator struct {
 	clients []pb.KVClient
 	admins  []pb.AdminClient
-	leader  atomic.Int64
+	router  *route.Router
 }
 
-func (r *router) watch(ctx context.Context, start time.Time, record func(sample)) {
+func (g *generator) watch(ctx context.Context, start time.Time, record func(sample)) {
 	lastLeader, lastTerm := 0, uint64(0)
-	down := make([]bool, len(r.admins))
+	down := make([]bool, len(g.admins))
 	for ctx.Err() == nil {
-		for i, a := range r.admins {
+		for i, a := range g.admins {
 			cctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 			st, err := a.Status(cctx, &pb.StatusRequest{})
 			cancel()
@@ -67,39 +67,33 @@ func (r *router) watch(ctx context.Context, start time.Time, record func(sample)
 	}
 }
 
-func (r *router) put(ctx context.Context, key string, value []byte) (int, error) {
-	n := int(r.leader.Load())
+func (g *generator) put(ctx context.Context, key string, value []byte) (int, error) {
+	n := g.router.Target()
 	var md metadata.MD
-	_, err := r.clients[n].Put(ctx, &pb.PutRequest{Key: key, Value: value}, grpc.Header(&md))
-	if err == nil {
-		return n, nil
+	_, err := g.clients[n].Put(ctx, &pb.PutRequest{Key: key, Value: value}, grpc.Header(&md))
+	if err != nil {
+		g.router.MoveOn(n, md)
 	}
-	if hint := md.Get("ff-leader"); len(hint) > 0 {
-		if id, perr := strconv.Atoi(hint[0]); perr == nil && id >= 1 && id <= len(r.clients) && id-1 != n {
-			r.leader.CompareAndSwap(int64(n), int64(id-1))
-			return n, err
-		}
-	}
-	r.leader.CompareAndSwap(int64(n), int64((n+1)%len(r.clients)))
 	return n, err
 }
 
 func main() {
-	nodes := flag.String("nodes", "n1:3161,n2:3161,n3:3161,n4:3161,n5:3161", "node addresses, in ID order")
+	nodes := flag.String("nodes", "n1:3161,n2:3161,n3:3161,n4:3161,n5:3161", "the nodes' -cluster addresses in ID order, which leader hints name")
 	rate := flag.Int("rate", 200, "writes per second")
 	duration := flag.Duration("duration", 10*time.Second, "how long to write")
 	timeout := flag.Duration("timeout", 300*time.Millisecond, "per-request timeout")
 	coldKV := flag.Bool("cold", false, "watch leadership over separate connections, so the write connections to followers stay cold until the leader dies")
 	flag.Parse()
 
-	r := &router{}
-	for a := range strings.SplitSeq(*nodes, ",") {
+	addrs := strings.Split(*nodes, ",")
+	g := &generator{router: route.New(addrs)}
+	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		r.clients = append(r.clients, pb.NewKVClient(conn))
+		g.clients = append(g.clients, pb.NewKVClient(conn))
 		adm := conn
 		if *coldKV {
 			adm, err = grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -108,7 +102,7 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		r.admins = append(r.admins, pb.NewAdminClient(adm))
+		g.admins = append(g.admins, pb.NewAdminClient(adm))
 	}
 	interval := time.Second / time.Duration(*rate)
 	start := time.Now()
@@ -122,7 +116,7 @@ func main() {
 	}
 	wctx, stopWatch := context.WithCancel(context.Background())
 	var ww sync.WaitGroup
-	ww.Go(func() { r.watch(wctx, start, record) })
+	ww.Go(func() { g.watch(wctx, start, record) })
 	for i := 0; ; i++ {
 		at := start.Add(time.Duration(i) * interval)
 		if at.Sub(start) >= *duration {
@@ -134,7 +128,7 @@ func main() {
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 			defer cancel()
-			node, err := r.put(ctx, "failover", []byte(strconv.Itoa(i)))
+			node, err := g.put(ctx, "failover", []byte(strconv.Itoa(i)))
 			s := sample{Scheduled: int64(at.Sub(start)), Done: int64(time.Since(start)), Node: node + 1, Ok: err == nil}
 			if err != nil {
 				s.Err = status.Code(err).String()

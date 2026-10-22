@@ -2,8 +2,8 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"sync"
 	"time"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/check"
+	"github.com/mirzanajafov/fivefamilies/internal/check/live"
 )
 
 var demoKeys = []string{"ledger/a", "ledger/b", "ledger/c"}
@@ -25,8 +26,7 @@ type demo struct {
 	cutting   bool
 	busy      sync.WaitGroup
 	gate      *sync.Cond
-	ops       []porcupine.Operation
-	unknown   bool
+	ops       []check.Op
 	inherited bool
 	initial   map[string]check.Output
 	from      time.Time
@@ -143,11 +143,11 @@ func (d *demo) worker(ctx context.Context, id int) {
 			v, seen := last[key]
 			in = check.Input{Kind: check.CAS, Key: key, Value: fmt.Sprintf("c%d-%d", id, seq), Expect: v, ExpectMissing: !seen}
 		}
-		out, call, ret := d.do(ctx, cl, in)
-		if in.Kind == check.Get && out.Found {
-			last[key] = out.Value
+		op := d.do(ctx, cl, id, in)
+		if in.Kind == check.Get && op.Output.Found {
+			last[key] = op.Output.Value
 		}
-		d.record(id, in, out, call, ret)
+		d.record(op)
 		d.busy.Done()
 		select {
 		case <-ctx.Done():
@@ -156,31 +156,12 @@ func (d *demo) worker(ctx context.Context, id int) {
 	}
 }
 
-func (d *demo) do(ctx context.Context, cl *client.Client, in check.Input) (check.Output, int64, int64) {
+func (d *demo) do(ctx context.Context, cl *client.Client, id int, in check.Input) check.Op {
 	call := d.c.now()
 	octx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
-	var out check.Output
-	var err error
-	switch in.Kind {
-	case check.Put:
-		_, err = cl.Put(octx, in.Key, []byte(in.Value))
-		out.Ok = err == nil
-	case check.Get:
-		var kv client.KeyValue
-		kv, out.Found, err = cl.Get(octx, in.Key, client.ReadIndex)
-		out.Value = string(kv.Value)
-	case check.CAS:
-		out.Ok, _, err = cl.CompareAndSwap(octx, in.Key, client.Expect{Value: []byte(in.Expect), Missing: in.ExpectMissing}, []byte(in.Value))
-	}
-	ret := d.c.now()
-	if err != nil {
-		if errors.Is(err, context.Canceled) && in.Kind == check.Get {
-			return check.Output{Unknown: true}, call, ret
-		}
-		out = check.Output{Unknown: true}
-		ret = -1
-	}
+	out, err := live.Execute(octx, cl, in, client.ReadIndex)
+	op := check.Op{Client: id, Input: in, Output: out, Call: call, Return: d.c.now()}
 	if err == nil && in.Kind != check.Get {
 		d.c.mu.Lock()
 		d.c.acks = append(d.c.acks, time.Now())
@@ -189,25 +170,13 @@ func (d *demo) do(ctx context.Context, cl *client.Client, in check.Input) (check
 		}
 		d.c.mu.Unlock()
 	}
-	return out, call, ret
+	return op
 }
 
-func (d *demo) record(id int, in check.Input, out check.Output, call, ret int64) {
+func (d *demo) record(op check.Op) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if out.Unknown && in.Kind != check.Get {
-		d.unknown = true
-	}
-	if out.Unknown && in.Kind == check.Get {
-		return
-	}
-	if ret < 0 {
-		ret = 1 << 62
-	}
-	d.ops = append(d.ops, porcupine.Operation{ClientId: id, Input: in, Call: call, Output: out, Return: ret})
-	d.c.mu.Lock()
-	d.c.ops++
-	d.c.mu.Unlock()
+	d.ops = append(d.ops, op)
 }
 
 func (d *demo) cut(ctx context.Context, verify bool) bool {
@@ -217,7 +186,7 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 	d.busy.Wait()
 	reader := d.clients[len(d.clients)-1]
 	finals := map[string]check.Output{}
-	var finalOps []porcupine.Operation
+	var finalOps []check.Op
 	for _, key := range demoKeys {
 		for ctx.Err() == nil {
 			call := d.c.now()
@@ -229,7 +198,7 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 			}
 			out := check.Output{Found: found, Value: string(kv.Value)}
 			finals[key] = out
-			finalOps = append(finalOps, porcupine.Operation{ClientId: len(d.clients) - 1, Input: check.Input{Kind: check.Get, Key: key}, Call: call, Output: out, Return: d.c.now()})
+			finalOps = append(finalOps, check.Op{Client: len(d.clients) - 1, Input: check.Input{Kind: check.Get, Key: key}, Output: out, Call: call, Return: d.c.now()})
 			break
 		}
 	}
@@ -237,9 +206,10 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 		return false
 	}
 	d.mu.Lock()
-	d.ops = append(d.ops, finalOps...)
-	ops, initial, unknown, from := d.ops, d.initial, d.unknown || d.inherited, d.from
-	d.ops, d.initial, d.inherited, d.unknown, d.from = nil, finals, d.unknown, false, time.Now()
+	hist, unknown := check.History(append(d.ops, finalOps...))
+	clientOps := len(hist) - len(finalOps)
+	initial, unchecked, from := d.initial, unknown > 0 || d.inherited, d.from
+	d.ops, d.initial, d.inherited, d.from = nil, finals, unknown > 0, time.Now()
 	d.index++
 	index := d.index
 	d.cutting = false
@@ -247,12 +217,12 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 	d.mu.Unlock()
 	d.c.mu.Lock()
 	if since := time.Since(d.c.opsAt).Seconds(); !d.c.opsAt.IsZero() && since > 0 {
-		d.c.opsRate = float64(d.c.ops) / since
+		d.c.opsRate = float64(clientOps) / since
 	}
-	d.c.ops, d.c.opsAt = 0, time.Now()
+	d.c.opsAt = time.Now()
 	d.c.mu.Unlock()
 	if verify {
-		go d.c.checkWindow(index, from, ops, initial, unknown)
+		go d.c.checkWindow(index, from, hist, initial, unchecked)
 	}
 	return true
 }
@@ -272,13 +242,13 @@ func seedOps(initial map[string]check.Output, at int64) []porcupine.Operation {
 	return out
 }
 
-func (c *Controller) checkWindow(index int, from time.Time, ops []porcupine.Operation, initial map[string]check.Output, unknown bool) {
+func (c *Controller) checkWindow(index int, from time.Time, ops []porcupine.Operation, initial map[string]check.Output, unchecked bool) {
 	w := Window{Index: index, From: from, To: time.Now(), Ops: len(ops)}
 	switch {
-	case unknown:
+	case unchecked:
 		w.Result, w.Note = "unchecked", "a write's outcome is unknown, so this window and the start of the next can't be pinned down"
 	default:
-		first := int64(1 << 62)
+		first := int64(math.MaxInt64)
 		for _, op := range ops {
 			first = min(first, op.Call)
 		}

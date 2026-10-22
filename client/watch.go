@@ -33,15 +33,15 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 		next := startRev
 		backoff := c.opts.Backoff
 		for ctx.Err() == nil {
-			addr := c.watchTarget()
-			got, compacted := c.watchOnce(ctx, addr, key, prefix, &next, out)
+			target := c.watchRouter.Target()
+			got, compacted := c.watchOnce(ctx, c.addrs[target], key, prefix, &next, out)
 			if compacted || ctx.Err() != nil {
 				return
 			}
 			if got {
 				backoff = c.opts.Backoff
 			}
-			c.watchFailed(addr)
+			c.watchRouter.MoveOn(target, nil)
 			select {
 			case <-ctx.Done():
 				return
@@ -51,24 +51,6 @@ func (c *Client) Watch(ctx context.Context, key string, prefix bool, startRev ui
 		}
 	}()
 	return out
-}
-
-func (c *Client) watchTarget() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.addrs[c.watchAt]
-}
-
-func (c *Client) watchFailed(addr string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.skipWatchLocked(addr)
-}
-
-func (c *Client) skipWatchLocked(addr string) {
-	if c.addrs[c.watchAt] == addr {
-		c.watchAt = (c.watchAt + 1) % len(c.addrs)
-	}
 }
 
 func (c *Client) watchOnce(ctx context.Context, addr, key string, prefix bool, next *uint64, out chan<- WatchResponse) (got, compacted bool) {
