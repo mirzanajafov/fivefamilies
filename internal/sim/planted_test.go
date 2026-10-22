@@ -13,14 +13,14 @@ var canaries = []struct {
 	nets      []Category
 	seeds     []uint64
 }{
-	{planted.Figure8, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{853}},
+	{planted.Figure8, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{1628}},
 	{planted.StaleTerm, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{667}},
 	{planted.PrevTerm, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{19}},
 	{planted.AnyVote, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{3}},
 	{planted.NoFsync, ReadAny, false, []Category{CatSafety, CatPanic}, []uint64{1}},
 	{planted.FollowerRead, ReadFollower, false, []Category{CatLinearizability}, []uint64{1}},
 	{planted.EarlyConf, ReadAny, true, []Category{CatSafety}, []uint64{7622}},
-	{planted.LocalKeepAlive, ReadAny, false, []Category{CatLease}, []uint64{981}},
+	{planted.LocalKeepAlive, ReadAny, false, []Category{CatLease}, []uint64{42}},
 	{planted.WatchGap, ReadAny, false, []Category{CatWatch}, []uint64{2}},
 	{planted.WatchKeep, ReadAny, false, []Category{CatWatch}, []uint64{7}},
 }
