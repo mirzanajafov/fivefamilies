@@ -269,8 +269,8 @@ func TestFollowerReplacesConflictingSuffix(t *testing.T) {
 	if term, _ := r.LogTerm(3); term != 3 {
 		t.Fatalf("entry 3 has term %d, want 3", term)
 	}
-	if r.Stabled() != 2 {
-		t.Fatalf("stabled %d after truncation, want 2", r.Stabled())
+	if r.log.stabled != 2 {
+		t.Fatalf("stabled %d after truncation, want 2", r.log.stabled)
 	}
 	rd := r.Ready()
 	if len(rd.Entries) != 2 || rd.Entries[0].Index != 3 {
@@ -362,8 +362,8 @@ func TestFollowerIgnoresVotesWhileItHearsFromALeader(t *testing.T) {
 	c := newCluster(t, 3, nil)
 	c.elect(1)
 	c.node(2).Step(Message{Type: MsgVote, From: 3, To: 2, Term: 5, Index: 100, LogTerm: 100})
-	if c.node(2).Term() != 1 || c.node(2).Vote() == 3 {
-		t.Fatalf("follower moved to term %d and voted %d within the lease", c.node(2).Term(), c.node(2).Vote())
+	if c.node(2).Term() != 1 || c.node(2).HardState().Vote == 3 {
+		t.Fatalf("follower moved to term %d and voted %d within the lease", c.node(2).Term(), c.node(2).HardState().Vote)
 	}
 	c.tick(2, 10)
 	c.node(2).Step(Message{Type: MsgVote, From: 3, To: 2, Term: 5, Index: 100, LogTerm: 100})
@@ -398,11 +398,11 @@ func TestRestartKeepsTermAndVote(t *testing.T) {
 	c.crash(1)
 	c.restart(1)
 	r := c.node(1)
-	if r.Term() != 5 || r.Vote() != 2 {
-		t.Fatalf("restarted with term %d vote %d", r.Term(), r.Vote())
+	if r.Term() != 5 || r.HardState().Vote != 2 {
+		t.Fatalf("restarted with term %d vote %d", r.Term(), r.HardState().Vote)
 	}
 	r.Step(Message{Type: MsgVote, From: 3, To: 1, Term: 5})
-	if r.Vote() != 2 {
+	if r.HardState().Vote != 2 {
 		t.Fatal("voted twice in one term across a restart")
 	}
 }
@@ -649,12 +649,12 @@ func TestOnlyTheNodeItselfAcknowledgesItsWrites(t *testing.T) {
 	forged := ack
 	forged.From = 1
 	r.Step(forged)
-	if r.Stabled() != 0 {
-		t.Fatalf("stabled %d after another node acknowledged this node's write", r.Stabled())
+	if r.log.stabled != 0 {
+		t.Fatalf("stabled %d after another node acknowledged this node's write", r.log.stabled)
 	}
 	r.Step(ack)
-	if r.Stabled() != 2 {
-		t.Fatalf("stabled %d after the write", r.Stabled())
+	if r.log.stabled != 2 {
+		t.Fatalf("stabled %d after the write", r.log.stabled)
 	}
 }
 
@@ -681,8 +681,8 @@ func TestSnapshotHandOffWaitsForItsWrite(t *testing.T) {
 			r.Step(m)
 		}
 	}
-	if r.Stabled() != 50 {
-		t.Fatalf("stabled %d after the write", r.Stabled())
+	if r.log.stabled != 50 {
+		t.Fatalf("stabled %d after the write", r.log.stabled)
 	}
 }
 

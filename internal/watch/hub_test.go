@@ -71,8 +71,8 @@ func TestAWatchFromNowStartsWithAnEmptyBatchAtTheCurrentRevision(t *testing.T) {
 func TestAWatchFromBeforeTheRingIsCompacted(t *testing.T) {
 	h := New(4, 0, 0)
 	feed(h, 1, 5)
-	if h.Start() != 4 {
-		t.Fatalf("start %d: past twice its size the ring keeps four events, revisions 4 and 5, and nothing older", h.Start())
+	if h.start != 4 {
+		t.Fatalf("start %d: past twice its size the ring keeps four events, revisions 4 and 5, and nothing older", h.start)
 	}
 	var ce *CompactedError
 	if _, err := h.Watch("/a/", true, 3, (&sink{}).send); !errors.As(err, &ce) || ce.Start != 4 {
@@ -87,8 +87,8 @@ func TestAWatchFromBeforeTheRingIsCompacted(t *testing.T) {
 func TestARingNeverKeepsHalfARevision(t *testing.T) {
 	h := New(3, 0, 0)
 	feed(h, 1, 4)
-	if h.Start() != 4 || len(h.ring) != 2 {
-		t.Fatalf("start %d, %d events: cutting to three events splits revision 3, so all of it goes", h.Start(), len(h.ring))
+	if h.start != 4 || len(h.ring) != 2 {
+		t.Fatalf("start %d, %d events: cutting to three events splits revision 3, so all of it goes", h.start, len(h.ring))
 	}
 }
 

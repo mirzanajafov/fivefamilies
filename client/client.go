@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -115,11 +114,9 @@ type Options struct {
 
 type Client struct {
 	opts        Options
-	addrs       []string
 	router      *route.Router
 	watchRouter *route.Router
-	mu          sync.Mutex
-	conns       map[string]*grpc.ClientConn
+	conns       []*grpc.ClientConn
 	writing     chan struct{}
 	session     uint64
 	seq         uint64
@@ -138,7 +135,7 @@ func New(addrs []string, opts Options) (*Client, error) {
 	if opts.WatchSilence <= 0 {
 		opts.WatchSilence = 5 * time.Second
 	}
-	c := &Client{opts: opts, addrs: addrs, router: route.New(addrs), watchRouter: route.New(addrs), conns: map[string]*grpc.ClientConn{}, writing: make(chan struct{}, 1)}
+	c := &Client{opts: opts, router: route.New(addrs), watchRouter: route.New(addrs), writing: make(chan struct{}, 1)}
 	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
@@ -146,14 +143,12 @@ func New(addrs []string, opts Options) (*Client, error) {
 			return nil, err
 		}
 		conn.Connect()
-		c.conns[a] = conn
+		c.conns = append(c.conns, conn)
 	}
 	return c, nil
 }
 
 func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	var first error
 	for _, conn := range c.conns {
 		if err := conn.Close(); err != nil && first == nil {
@@ -161,21 +156,6 @@ func (c *Client) Close() error {
 		}
 	}
 	return first
-}
-
-func (c *Client) conn(addr string) (grpc.ClientConnInterface, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	conn, ok := c.conns[addr]
-	if !ok {
-		var err error
-		conn, err = grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			return nil, err
-		}
-		c.conns[addr] = conn
-	}
-	return conn, nil
 }
 
 func retryable(err error) bool {
@@ -191,14 +171,9 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 	backoff := c.opts.Backoff
 	for {
 		target := c.router.Target()
-		addr := c.addrs[target]
-		cc, err := c.conn(addr)
-		if err != nil {
-			return zero, err
-		}
 		actx, cancel := context.WithTimeout(ctx, c.opts.AttemptTimeout)
 		var md metadata.MD
-		out, err := call(actx, cc, grpc.Header(&md))
+		out, err := call(actx, c.conns[target], grpc.Header(&md))
 		cancel()
 		if err == nil {
 			return out, nil

@@ -314,10 +314,6 @@ func (n *Node) Receive(m raft.Message) {
 	n.r.Step(m)
 }
 
-func (n *Node) Propose(data []byte) (uint64, error) {
-	return n.r.Propose(data)
-}
-
 func (n *Node) Submit(cmd kv.Command, done Done) {
 	if n.r.State() != raft.StateLeader {
 		if done != nil {
@@ -382,10 +378,6 @@ func (n *Node) settleTransfers() {
 			n.transfers = append(n.transfers, w)
 		}
 	}
-}
-
-func (n *Node) Waiting() int {
-	return len(n.waiters)
 }
 
 func (n *Node) WriteDone(seq uint64) error {

@@ -158,12 +158,10 @@ func New(cfg Config, st Restore) (*Raft, error) {
 
 func (r *Raft) ID() NodeID         { return r.id }
 func (r *Raft) Term() uint64       { return r.term }
-func (r *Raft) Vote() NodeID       { return r.vote }
 func (r *Raft) State() StateType   { return r.state }
 func (r *Raft) Leader() NodeID     { return r.lead }
 func (r *Raft) Committed() uint64  { return r.log.committed }
 func (r *Raft) Applied() uint64    { return r.log.applied }
-func (r *Raft) Stabled() uint64    { return r.log.stabled }
 func (r *Raft) FirstIndex() uint64 { return r.log.firstIndex() }
 func (r *Raft) LastIndex() uint64  { return r.log.lastIndex() }
 

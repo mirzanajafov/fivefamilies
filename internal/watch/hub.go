@@ -67,10 +67,6 @@ func (h *Hub) Rev() uint64 {
 	return h.rev
 }
 
-func (h *Hub) Start() uint64 {
-	return h.start
-}
-
 func (h *Hub) Len() int {
 	return len(h.watchers)
 }
