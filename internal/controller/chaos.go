@@ -26,7 +26,7 @@ type failure int
 const (
 	badRequest failure = iota + 1
 	unsupported
-	busy
+	conflict
 	limited
 	notStarted
 )
@@ -37,24 +37,23 @@ func (f failure) status() int {
 		return http.StatusBadRequest
 	case unsupported:
 		return http.StatusNotImplemented
-	case busy:
+	case conflict:
 		return http.StatusConflict
 	case limited:
 		return http.StatusTooManyRequests
-	default:
+	case notStarted:
 		return http.StatusBadGateway
 	}
+	return http.StatusInternalServerError
 }
 
-type chaosError struct {
+type refusal struct {
 	failure failure
 	msg     string
 }
 
-func (e *chaosError) Error() string { return e.msg }
-
-func fail(f failure, format string, args ...any) *chaosError {
-	return &chaosError{failure: f, msg: fmt.Sprintf(format, args...)}
+func refuse(f failure, format string, args ...any) *refusal {
+	return &refusal{failure: f, msg: fmt.Sprintf(format, args...)}
 }
 
 type limiter struct {
@@ -63,7 +62,7 @@ type limiter struct {
 	byAddr map[string][]time.Time
 }
 
-func (l *limiter) allow(addr string, now time.Time) bool {
+func (l *limiter) full(addr string, now time.Time) bool {
 	for a, times := range l.byAddr {
 		if times = slices.DeleteFunc(times, func(t time.Time) bool { return now.Sub(t) > l.window }); len(times) == 0 {
 			delete(l.byAddr, a)
@@ -71,14 +70,14 @@ func (l *limiter) allow(addr string, now time.Time) bool {
 			l.byAddr[a] = times
 		}
 	}
-	if len(l.byAddr[addr]) >= l.per {
-		return false
-	}
+	return len(l.byAddr[addr]) >= l.per
+}
+
+func (l *limiter) add(addr string, at time.Time) {
 	if l.byAddr == nil {
 		l.byAddr = map[string][]time.Time{}
 	}
-	l.byAddr[addr] = append(l.byAddr[addr], now)
-	return true
+	l.byAddr[addr] = append(l.byAddr[addr], at)
 }
 
 func (c *Controller) serveChaos(w http.ResponseWriter, r *http.Request) {
@@ -90,37 +89,41 @@ func (c *Controller) serveChaos(w http.ResponseWriter, r *http.Request) {
 	if req.Action == "slow-disk" {
 		req.Action = "stall-disk"
 	}
-	f, ce := c.chaos(r.Context(), req, c.admin(r), c.clientAddr(r))
-	if ce != nil {
-		writeJSON(w, ce.failure.status(), map[string]string{"error": ce.msg})
+	f, no := c.chaos(r.Context(), req, c.admin(r), c.clientAddr(r))
+	if no != nil {
+		writeJSON(w, no.failure.status(), map[string]string{"error": no.msg})
 		return
 	}
 	writeJSON(w, http.StatusOK, f)
 }
 
-func (c *Controller) chaos(ctx context.Context, req chaosRequest, admin bool, addr string) (*Fault, *chaosError) {
-	d, ce := c.validate(req, admin)
-	if ce != nil {
-		return nil, ce
+func (c *Controller) chaos(ctx context.Context, req chaosRequest, admin bool, addr string) (*Fault, *refusal) {
+	d, no := c.validate(req, admin)
+	if no != nil {
+		return nil, no
 	}
-	f, ce := c.admit(req.Action, req.Node, d, admin, addr, time.Now())
-	if ce != nil {
-		return nil, ce
+	f, no := c.admit(req.Action, req.Node, d, admin, addr)
+	if no != nil {
+		return nil, no
 	}
-	if err := c.inject(ctx, f.Action, f.Node, f.Duration); err != nil {
-		c.cfg.Logger.Warn("chaos", "action", f.Action, "node", f.Node, "err", err)
-		c.mu.Lock()
-		c.fault = nil
-		c.mu.Unlock()
-		return nil, fail(notStarted, "%s on node %d could not be started", f.Action, f.Node)
-	}
+	err := c.inject(ctx, f.Action, f.Node, f.Duration)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err != nil {
+		c.cfg.Logger.Warn("chaos", "action", f.Action, "node", f.Node, "err", err)
+		if c.fault == f {
+			c.fault = nil
+		}
+		return nil, refuse(notStarted, "%s on node %d could not be started", f.Action, f.Node)
+	}
+	if !admin {
+		c.perAddress.add(addr, f.Started)
+	}
 	c.event("fault", f.Node, 0, fmt.Sprintf("%s on node %d for %v (%s)", f.Action, f.Node, f.Duration, f.By))
 	return f.clone(), nil
 }
 
-func (c *Controller) validate(req chaosRequest, admin bool) (time.Duration, *chaosError) {
+func (c *Controller) validate(req chaosRequest, admin bool) (time.Duration, *refusal) {
 	limit := c.cfg.VisitorMax
 	if admin {
 		limit = supervisor.MaxFault
@@ -128,34 +131,35 @@ func (c *Controller) validate(req chaosRequest, admin bool) (time.Duration, *cha
 	d := time.Duration(req.Seconds) * time.Second
 	switch {
 	case !slices.Contains(actions, req.Action):
-		return 0, fail(badRequest, "unknown action %q", req.Action)
+		return 0, refuse(badRequest, "unknown action %q", req.Action)
 	case req.Action == "step-down":
 		return 0, nil
 	case req.Node < 1 || req.Node > len(c.cfg.Nodes):
-		return 0, fail(badRequest, "node must be between 1 and %d", len(c.cfg.Nodes))
+		return 0, refuse(badRequest, "node must be between 1 and %d", len(c.cfg.Nodes))
 	case d <= 0 || d > limit:
-		return 0, fail(badRequest, "a fault lasts between 1 and %d seconds", int(limit/time.Second))
+		return 0, refuse(badRequest, "a fault lasts between 1 and %d seconds", int(limit/time.Second))
 	case (req.Action == "kill" || req.Action == "pause") && len(c.cfg.Supervisors) == 0:
-		return 0, fail(unsupported, "%s needs the supervisors, which this cluster runs without", req.Action)
+		return 0, refuse(unsupported, "%s needs the supervisors, which this cluster runs without", req.Action)
 	}
 	return d, nil
 }
 
-func (c *Controller) admit(action string, node int, d time.Duration, admin bool, addr string, now time.Time) (*Fault, *chaosError) {
+func (c *Controller) admit(action string, node int, d time.Duration, admin bool, addr string) (*Fault, *refusal) {
+	now := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch {
 	case c.fault != nil:
-		return nil, fail(busy, "one fault at a time: %s on node %d is still running", c.fault.Action, c.fault.Node)
+		return nil, refuse(conflict, "one fault at a time: %s on node %d is still running", c.fault.Action, c.fault.Node)
 	case action == "step-down" && c.leader == 0:
-		return nil, fail(busy, "there is no leader to step down")
+		return nil, refuse(conflict, "there is no leader to step down")
 	}
 	if !admin {
 		if wait := c.cooldownLeftLocked(now); wait > 0 {
-			return nil, fail(limited, "the Commission is still settling, so try again in %d s", int(math.Ceil(wait.Seconds())))
+			return nil, refuse(limited, "the Commission is still settling, so try again in %d s", int(math.Ceil(wait.Seconds())))
 		}
-		if !c.visitors.allow(addr, now) {
-			return nil, fail(limited, "%d faults per %v from one address", c.cfg.PerAddress, c.cfg.PerWindow)
+		if c.perAddress.full(addr, now) {
+			return nil, refuse(limited, "%d faults per %v from one address", c.cfg.PerAddress, c.cfg.PerWindow)
 		}
 	}
 	if action == "step-down" {

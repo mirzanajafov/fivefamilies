@@ -303,13 +303,13 @@ func TestAWindowWithAStaleReadIsCaught(t *testing.T) {
 		{ClientId: 0, Input: check.Input{Kind: check.Put, Key: "ledger/a", Value: "new"}, Call: 10, Output: check.Output{Ok: true}, Return: 20},
 		{ClientId: 1, Input: check.Input{Kind: check.Get, Key: "ledger/a"}, Call: 30, Output: check.Output{Found: true, Value: "old"}, Return: 40},
 	}
-	c.checkWindow(context.Background(), 1, time.Now(), ops, initial, false)
+	c.checkWindow(1, time.Now(), ops, initial, false)
 	ops[1].Output = check.Output{Found: true, Value: "new"}
-	c.checkWindow(context.Background(), 2, time.Now(), ops, initial, false)
+	c.checkWindow(2, time.Now(), ops, initial, false)
 	ops[1].Call, ops[1].Return = 1, 5
 	ops[1].Output = check.Output{Found: true, Value: "old"}
-	c.checkWindow(context.Background(), 3, time.Now(), ops, initial, false)
-	c.checkWindow(context.Background(), 4, time.Now(), ops, nil, true)
+	c.checkWindow(3, time.Now(), ops, initial, false)
+	c.checkWindow(4, time.Now(), ops, nil, true)
 	want := []string{string(porcupine.Illegal), string(porcupine.Ok), string(porcupine.Ok), "unchecked"}
 	for i, w := range c.windows {
 		if w.Result != want[i] {
@@ -411,21 +411,23 @@ func TestANodeIsShownDownOnlyAfterItHasBeenSilentForAWhile(t *testing.T) {
 }
 
 func TestTheVisitorLimitForgetsAnAddressOnceItsWindowHasPassed(t *testing.T) {
-	l := limiter{per: 2, window: time.Minute, byAddr: map[string][]time.Time{}}
+	l := limiter{per: 2, window: time.Minute}
 	now := time.Now()
-	if !l.allow("a", now) || !l.allow("a", now.Add(time.Second)) || l.allow("a", now.Add(2*time.Second)) {
-		t.Fatal("two faults per minute from one address, then a refusal")
+	l.add("a", now)
+	l.add("a", now.Add(time.Second))
+	if !l.full("a", now.Add(2*time.Second)) {
+		t.Fatal("two faults per minute from one address, and a third was let through")
 	}
-	if !l.allow("b", now.Add(2*time.Minute)) || len(l.byAddr) != 1 {
+	if l.full("b", now.Add(2*time.Minute)) || len(l.byAddr) != 0 {
 		t.Fatalf("after the window the first address is still kept: %v", l.byAddr)
 	}
-	if !l.allow("a", now.Add(2*time.Minute)) {
+	if l.full("a", now.Add(2*time.Minute)) {
 		t.Fatal("an address was refused after its window passed")
 	}
 }
 
-func TestAFaultThatCannotStartAnswersWithoutTheRPCErrorAndLeavesNoCooldown(t *testing.T) {
-	c, err := New(Config{Nodes: []string{"127.0.0.1:1"}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+func TestAFaultThatCannotStartAnswersWithoutTheRPCErrorAndCostsNothing(t *testing.T) {
+	c, err := New(Config{Nodes: []string{"127.0.0.1:1"}, PerAddress: 1, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,10 +437,25 @@ func TestAFaultThatCannotStartAnswersWithoutTheRPCErrorAndLeavesNoCooldown(t *te
 	if code, body := postChaos(t, api.URL, `{"action":"step-down"}`, "1.1.1.1", false); code != http.StatusConflict || body != `{"error":"there is no leader to step down"}` {
 		t.Fatalf("a step-down before anyone leads: %d %s", code, body)
 	}
-	if code, body := postChaos(t, api.URL, `{"action":"isolate","node":1,"seconds":1}`, "1.1.1.1", false); code != http.StatusBadGateway || body != `{"error":"isolate on node 1 could not be started"}` {
-		t.Fatalf("an isolation whose RPC fails: %d %s", code, body)
+	for range 2 {
+		if code, body := postChaos(t, api.URL, `{"action":"isolate","node":1,"seconds":1}`, "1.1.1.1", false); code != http.StatusBadGateway || body != `{"error":"isolate on node 1 could not be started"}` {
+			t.Fatalf("an isolation whose RPC fails, with one fault per address allowed: %d %s", code, body)
+		}
 	}
 	if s := c.Snapshot(); s.Fault != nil || s.Last != nil {
 		t.Fatalf("a fault that never started is running or starts a cooldown: %+v %+v", s.Fault, s.Last)
+	}
+}
+
+func TestASnapshotKeepsItsFailoverWhenTheFaultCloses(t *testing.T) {
+	c := &Controller{}
+	c.fault = &Fault{Action: "kill", OnLeader: true, Started: time.Now(), Ends: time.Now(), Failover: &Failover{NewLeader: 2}}
+	before := c.Snapshot()
+	c.closeFault(c.fault)
+	if gap := before.Fault.Failover.Gap; gap != 0 {
+		t.Fatalf("closing the fault wrote a client gap of %v into a snapshot taken before", gap)
+	}
+	if c.last.Failover.Gap == 0 {
+		t.Fatal("closing the fault measured no client gap")
 	}
 }

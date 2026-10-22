@@ -207,7 +207,7 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 	d.mu.Unlock()
 	d.c.load.measured(clientOps)
 	if verify {
-		d.checks.Go(func() { d.c.checkWindow(ctx, index, from, hist, initial, unchecked) })
+		d.checks.Go(func() { d.c.checkWindow(index, from, hist, initial, unchecked) })
 	}
 	return true
 }
@@ -227,10 +227,7 @@ func seedOps(initial map[string]check.Output, at int64) []porcupine.Operation {
 	return out
 }
 
-func (c *Controller) checkWindow(ctx context.Context, index int, from time.Time, ops []porcupine.Operation, initial map[string]check.Output, unchecked bool) {
-	if ctx.Err() != nil {
-		return
-	}
+func (c *Controller) checkWindow(index int, from time.Time, ops []porcupine.Operation, initial map[string]check.Output, unchecked bool) {
 	w := Window{Index: index, From: from, To: time.Now(), Ops: len(ops)}
 	switch {
 	case unchecked:
