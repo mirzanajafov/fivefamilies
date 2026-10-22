@@ -60,10 +60,13 @@ func (s *Server) drain() error {
 	for range s.cfg.Batch - 1 {
 		select {
 		case m := <-s.inbound:
+			s.catchUp()
 			s.node.Receive(m)
 		case f := <-s.calls:
+			s.catchUp()
 			f()
 		case seq := <-s.written:
+			s.catchUp()
 			if err := s.node.WriteDone(seq); err != nil {
 				return err
 			}
@@ -78,6 +81,7 @@ func (s *Server) waitForDisk(ctx context.Context) error {
 	for s.node.PendingWrites() > 0 {
 		select {
 		case seq := <-s.written:
+			s.catchUp()
 			if err := s.node.WriteDone(seq); err != nil {
 				return err
 			}

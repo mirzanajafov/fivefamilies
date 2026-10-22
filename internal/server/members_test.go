@@ -18,14 +18,24 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 )
 
-func (c *testCluster) admin(id raft.NodeID) pb.AdminClient {
+func (c *testCluster) conn(id raft.NodeID) *grpc.ClientConn {
 	c.t.Helper()
 	conn, err := grpc.NewClient(c.nodes[id], grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		c.t.Fatal(err)
 	}
 	c.t.Cleanup(func() { conn.Close() })
-	return pb.NewAdminClient(conn)
+	return conn
+}
+
+func (c *testCluster) admin(id raft.NodeID) pb.AdminClient {
+	c.t.Helper()
+	return pb.NewAdminClient(c.conn(id))
+}
+
+func (c *testCluster) kv(id raft.NodeID) pb.KVClient {
+	c.t.Helper()
+	return pb.NewKVClient(c.conn(id))
 }
 
 func (c *testCluster) change(ctx context.Context, change pb.MemberChange, node raft.NodeID) *pb.ChangeMembersResponse {

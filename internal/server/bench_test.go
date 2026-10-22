@@ -445,3 +445,37 @@ func TestOneClientCanWriteFromManyGoroutines(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestALeaseReadQueuedBehindAPauseWaitsForTheTicksThePauseMissed(t *testing.T) {
+	c := newTestCluster(t, 3, func(cfg *Config) { cfg.Chaos, cfg.ElectionTick, cfg.LeaseTicks = true, 100, 80 })
+	old := c.leader(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if _, err := c.kv(old).Put(ctx, &pb.PutRequest{Key: "k", Value: []byte("before")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.kv(old).Get(ctx, &pb.GetRequest{Key: "k", Mode: pb.ReadMode_READ_MODE_INDEX}); err != nil {
+		t.Fatal(err)
+	}
+	chaos(t, c, old, pb.ChaosAction_CHAOS_ACTION_PAUSE, 3*time.Second)
+	chaos(t, c, old, pb.ChaosAction_CHAOS_ACTION_ISOLATE, time.Minute)
+	var next raft.NodeID
+	for next == raft.None {
+		for id := range c.running {
+			if st := c.running[id].srv.Status(); id != old && st.GetRole() == pb.Role_ROLE_LEADER {
+				next = id
+			}
+		}
+		if ctx.Err() != nil {
+			t.Fatal("the other two never elected a leader")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := c.kv(next).Put(ctx, &pb.PutRequest{Key: "k", Value: []byte("after")}); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.kv(old).Get(ctx, &pb.GetRequest{Key: "k", Mode: pb.ReadMode_READ_MODE_LEASE})
+	if err == nil && string(resp.GetKv().GetValue()) == "before" {
+		t.Fatalf("the paused leader answered a lease read with %q after node %d had written over it", resp.GetKv().GetValue(), next)
+	}
+}
