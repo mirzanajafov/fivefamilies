@@ -23,6 +23,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/client"
 	"github.com/mirzanajafov/fivefamilies/internal/kv"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
+	"github.com/mirzanajafov/fivefamilies/internal/route"
 	"github.com/mirzanajafov/fivefamilies/internal/snap"
 	"github.com/mirzanajafov/fivefamilies/internal/storage"
 	"github.com/mirzanajafov/fivefamilies/internal/vfs"
@@ -538,14 +539,14 @@ func TestErrorsClientsActOnCarryAReasonAndKeepTheirCodeAndMessage(t *testing.T) 
 	}
 }
 
-func TestAFollowerPointsTheClientsRouterAtTheLeader(t *testing.T) {
+func TestAFollowersRefusalCarriesAHintTheRouterFollows(t *testing.T) {
 	c := newTestCluster(t, 3, nil)
 	leader := c.leader(5 * time.Second)
-	follower, other := leader%3+1, (leader+1)%3+1
+	follower := leader%3 + 1
 	deadline := time.Now().Add(5 * time.Second)
-	for c.status(follower).GetLeader() != uint64(leader) {
+	for c.status(follower).GetLeader() == 0 {
 		if time.Now().After(deadline) {
-			t.Fatal("the follower never learned the leader")
+			t.Fatal("the follower never learned a leader")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -561,9 +562,7 @@ func TestAFollowerPointsTheClientsRouterAtTheLeader(t *testing.T) {
 	if client.Reason(err) != pb.ErrorReason_ERROR_REASON_NOT_LEADER {
 		t.Fatalf("a write to a follower: %v", err)
 	}
-	r := client.NewRouter([]string{c.nodes[follower], c.nodes[other], c.nodes[leader]})
-	r.MoveOn(0, md)
-	if got := r.Target(); got != 2 {
-		t.Fatalf("the router moved to %d, want 2, the leader named by the follower", got)
+	if !route.NewRouter(c.addrs()).MoveOn(int(follower)-1, md) {
+		t.Fatalf("the follower's refusal carried no hint the router follows: %v", md)
 	}
 }

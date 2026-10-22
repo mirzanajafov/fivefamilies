@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
+	"github.com/mirzanajafov/fivefamilies/internal/route"
 )
 
 const errorDomain = "fivefamilies.najafov.dev"
@@ -115,7 +116,7 @@ type Options struct {
 type Client struct {
 	opts    Options
 	addrs   []string
-	router  *Router
+	router  *route.Router
 	mu      sync.Mutex
 	conns   map[string]*grpc.ClientConn
 	watchAt int
@@ -137,7 +138,7 @@ func New(addrs []string, opts Options) (*Client, error) {
 	if opts.WatchSilence <= 0 {
 		opts.WatchSilence = 5 * time.Second
 	}
-	c := &Client{opts: opts, addrs: addrs, router: NewRouter(addrs), conns: map[string]*grpc.ClientConn{}, writing: make(chan struct{}, 1)}
+	c := &Client{opts: opts, addrs: addrs, router: route.NewRouter(addrs), conns: map[string]*grpc.ClientConn{}, writing: make(chan struct{}, 1)}
 	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
@@ -212,8 +213,9 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 			return zero, ctx.Err()
 		}
 		if status.Code(err) != codes.ResourceExhausted {
-			c.router.MoveOn(target, md)
-			c.watchFailed(addr)
+			if !c.router.MoveOn(target, md) {
+				c.watchFailed(addr)
+			}
 		}
 		select {
 		case <-ctx.Done():

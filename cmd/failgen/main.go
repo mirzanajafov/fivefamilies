@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
-	"github.com/mirzanajafov/fivefamilies/client"
+	"github.com/mirzanajafov/fivefamilies/internal/route"
 )
 
 type sample struct {
@@ -35,7 +35,7 @@ type sample struct {
 type generator struct {
 	clients []pb.KVClient
 	admins  []pb.AdminClient
-	router  *client.Router
+	router  *route.Router
 }
 
 func (g *generator) watch(ctx context.Context, start time.Time, record func(sample)) {
@@ -78,7 +78,7 @@ func (g *generator) put(ctx context.Context, key string, value []byte) (int, err
 }
 
 func main() {
-	nodes := flag.String("nodes", "n1:3161,n2:3161,n3:3161,n4:3161,n5:3161", "node addresses, in ID order")
+	nodes := flag.String("nodes", "n1:3161,n2:3161,n3:3161,n4:3161,n5:3161", "the nodes' -cluster addresses in ID order, which leader hints name")
 	rate := flag.Int("rate", 200, "writes per second")
 	duration := flag.Duration("duration", 10*time.Second, "how long to write")
 	timeout := flag.Duration("timeout", 300*time.Millisecond, "per-request timeout")
@@ -86,7 +86,7 @@ func main() {
 	flag.Parse()
 
 	addrs := strings.Split(*nodes, ",")
-	g := &generator{router: client.NewRouter(addrs)}
+	g := &generator{router: route.NewRouter(addrs)}
 	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {

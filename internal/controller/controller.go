@@ -108,7 +108,6 @@ type Controller struct {
 	lastSeen time.Time
 	byAddr   map[string][]time.Time
 	acks     []time.Time
-	ops      int
 	opsAt    time.Time
 	opsRate  float64
 	loadOn   bool

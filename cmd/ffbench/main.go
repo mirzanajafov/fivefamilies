@@ -18,13 +18,13 @@ import (
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
-	"github.com/mirzanajafov/fivefamilies/client"
+	"github.com/mirzanajafov/fivefamilies/internal/route"
 )
 
 type target struct {
 	kv       []pb.KVClient
 	admin    []pb.AdminClient
-	router   *client.Router
+	router   *route.Router
 	next     atomic.Uint64
 	mode     pb.ReadMode
 	follower bool
@@ -36,9 +36,11 @@ func (e codeErr) Error() string { return e.code }
 func (e codeErr) Class() string { return e.code }
 
 func (t *target) Do(ctx context.Context, op loadgen.Op) error {
-	n := t.router.Target()
 	toLeader := !op.Read || !t.follower
-	if !toLeader {
+	var n int
+	if toLeader {
+		n = t.router.Target()
+	} else {
 		n = int(t.next.Add(1) % uint64(len(t.kv)))
 	}
 	var md metadata.MD
@@ -73,7 +75,7 @@ func (t *target) counters(ctx context.Context) ([]loadgen.Counters, error) {
 }
 
 func main() {
-	nodes := flag.String("nodes", "n1:3161,n2:3161,n3:3161,n4:3161,n5:3161", "node addresses, in ID order")
+	nodes := flag.String("nodes", "n1:3161,n2:3161,n3:3161,n4:3161,n5:3161", "the nodes' -cluster addresses in ID order, which leader hints name")
 	rate := flag.Float64("rate", 1000, "operations per second, offered open-loop")
 	duration := flag.Duration("duration", 20*time.Second, "measured time")
 	warmup := flag.Duration("warmup", 5*time.Second, "time before measuring")
@@ -103,7 +105,7 @@ func main() {
 		os.Exit(2)
 	}
 	addrs := strings.Split(*nodes, ",")
-	t.router = client.NewRouter(addrs)
+	t.router = route.NewRouter(addrs)
 	for _, a := range addrs {
 		conn, err := grpc.NewClient(a, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {

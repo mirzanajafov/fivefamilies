@@ -160,6 +160,7 @@ func (d *demo) do(ctx context.Context, cl *client.Client, id int, in check.Input
 	octx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 	out, err := live.Execute(octx, cl, in, client.ReadIndex)
+	op := check.Op{Client: id, Input: in, Output: out, Call: call, Return: d.c.now()}
 	if err == nil && in.Kind != check.Get {
 		d.c.mu.Lock()
 		d.c.acks = append(d.c.acks, time.Now())
@@ -168,16 +169,13 @@ func (d *demo) do(ctx context.Context, cl *client.Client, id int, in check.Input
 		}
 		d.c.mu.Unlock()
 	}
-	return check.Op{Client: id, Input: in, Output: out, Call: call, Return: d.c.now()}
+	return op
 }
 
 func (d *demo) record(op check.Op) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.ops = append(d.ops, op)
-	d.c.mu.Lock()
-	d.c.ops++
-	d.c.mu.Unlock()
 }
 
 func (d *demo) cut(ctx context.Context, verify bool) bool {
@@ -208,6 +206,7 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 	}
 	d.mu.Lock()
 	hist, unknown := check.History(append(d.ops, finalOps...))
+	clientOps := len(hist) - len(finalOps)
 	initial, unchecked, from := d.initial, unknown > 0 || d.inherited, d.from
 	d.ops, d.initial, d.inherited, d.from = nil, finals, unknown > 0, time.Now()
 	d.index++
@@ -217,9 +216,9 @@ func (d *demo) cut(ctx context.Context, verify bool) bool {
 	d.mu.Unlock()
 	d.c.mu.Lock()
 	if since := time.Since(d.c.opsAt).Seconds(); !d.c.opsAt.IsZero() && since > 0 {
-		d.c.opsRate = float64(d.c.ops) / since
+		d.c.opsRate = float64(clientOps) / since
 	}
-	d.c.ops, d.c.opsAt = 0, time.Now()
+	d.c.opsAt = time.Now()
 	d.c.mu.Unlock()
 	if verify {
 		go d.c.checkWindow(index, from, hist, initial, unchecked)

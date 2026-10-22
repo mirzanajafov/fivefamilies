@@ -11,6 +11,7 @@ import (
 
 	"github.com/anishathalye/porcupine"
 
+	"github.com/mirzanajafov/fivefamilies/internal/check"
 	"github.com/mirzanajafov/fivefamilies/internal/node"
 	"github.com/mirzanajafov/fivefamilies/internal/planted"
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
@@ -366,6 +367,17 @@ func TestCheckerCatchesACommitThatIsNotDurableOnAQuorum(t *testing.T) {
 	c.observe(0, soloLeader(t, 1, raft.Restore{}, "a"))
 	if !c.failed() {
 		t.Fatal("entries committed with nothing on disk went unnoticed")
+	}
+}
+
+func TestTheSimulatorCountsUnfinishedWritesAsIndeterminate(t *testing.T) {
+	s := &Sim{history: []check.Op{
+		{Client: 0, Input: check.Input{Kind: check.Put, Key: "k", Value: "a"}, Output: check.Output{Ok: true}, Call: 1, Return: 2},
+		{Client: 1, Input: check.Input{Kind: check.CAS, Key: "k", Expect: "a", Value: "b"}, Output: check.Output{Unknown: true}, Call: 3},
+		{Client: 2, Input: check.Input{Kind: check.Get, Key: "k"}, Output: check.Output{Unknown: true}, Call: 4},
+	}}
+	if h := s.porcupineHistory(); len(h) != 2 || s.stats.Indeterminate != 1 {
+		t.Fatalf("%d operations with %d indeterminate, want the put and the swap with one", len(h), s.stats.Indeterminate)
 	}
 }
 

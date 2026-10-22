@@ -11,9 +11,11 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
+	"github.com/mirzanajafov/fivefamilies/internal/route"
 )
 
 func TestRoleNamesAreTheOnesTheDashboardShows(t *testing.T) {
@@ -149,5 +151,78 @@ func TestTheServersRefusalsComeBackAsTheClientsErrors(t *testing.T) {
 				t.Errorf("%v came back as %v, want %v", refused, err, want)
 			}
 		})
+	}
+}
+
+type fakeNode struct {
+	pb.UnimplementedKVServer
+	pb.UnimplementedWatchServer
+	addr    string
+	leader  string
+	watched chan<- string
+}
+
+func (f *fakeNode) OpenSession(context.Context, *pb.OpenSessionRequest) (*pb.OpenSessionResponse, error) {
+	return &pb.OpenSessionResponse{Client: 1}, nil
+}
+
+func (f *fakeNode) Put(ctx context.Context, _ *pb.PutRequest) (*pb.PutResponse, error) {
+	if f.leader == "" {
+		return &pb.PutResponse{Rev: 1}, nil
+	}
+	if err := grpc.SetHeader(ctx, metadata.Pairs(route.LeaderHeader, f.leader)); err != nil {
+		return nil, err
+	}
+	return nil, status.Error(codes.Unavailable, "not the leader")
+}
+
+func (f *fakeNode) Watch(_ *pb.WatchRequest, stream grpc.ServerStreamingServer[pb.WatchResponse]) error {
+	f.watched <- f.addr
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
+
+func serveFake(t *testing.T, node *fakeNode) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	node.addr = ln.Addr().String()
+	g := grpc.NewServer()
+	pb.RegisterKVServer(g, node)
+	pb.RegisterWatchServer(g, node)
+	go func() {
+		if err := g.Serve(ln); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			t.Error(err)
+		}
+	}()
+	t.Cleanup(g.Stop)
+}
+
+func TestARedirectToTheLeaderKeepsWatchesOnTheNodeThatRedirected(t *testing.T) {
+	watched := make(chan string, 2)
+	leader := &fakeNode{watched: watched}
+	serveFake(t, leader)
+	follower := &fakeNode{leader: leader.addr, watched: watched}
+	serveFake(t, follower)
+	c, err := New([]string{follower.addr, leader.addr}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.Put(ctx, "k", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	c.Watch(ctx, "k", false, 0)
+	select {
+	case addr := <-watched:
+		if addr != follower.addr {
+			t.Fatalf("the watch went to the leader %s, want the follower %s, which only redirected a write", addr, follower.addr)
+		}
+	case <-ctx.Done():
+		t.Fatal("no node got the watch")
 	}
 }
