@@ -12,6 +12,7 @@ import (
 
 	pb "github.com/mirzanajafov/fivefamilies/api/fivefamiliesv1"
 	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 func TestFaultNamesAreTheKeysInTheCommittedResults(t *testing.T) {
@@ -137,9 +138,9 @@ func TestAnInvalidOrSlowStepCountsAsSaturated(t *testing.T) {
 }
 
 func TestTheGeneratedComposeFilesPinEveryNode(t *testing.T) {
-	b := &ffCluster{Nodes: 3, Flags: []string{"-fsync", "entry"}, NodeCPUs: []string{"4", "5", "6"}, Image: "img"}
+	b := &ffCluster{Nodes: 3, Flags: []string{"-fsync", "entry"}, NodeCPUs: []string{"4", "5", "6"}}
 	y := composeFile(b.services())
-	for _, want := range []string{`cpuset: "6"`, `"127.0.0.1:3153:3161"`, `"-cluster", "1=n1:3161,2=n2:3161,3=n3:3161"`, `"-fsync", "entry"`} {
+	for _, want := range []string{"image: " + rig.LabImage, `cpuset: "6"`, `"127.0.0.1:3153:3161"`, `"-cluster", "1=n1:3161,2=n2:3161,3=n3:3161"`, `"-fsync", "entry"`} {
 		if !strings.Contains(y, want) {
 			t.Fatalf("missing %s in\n%s", want, y)
 		}

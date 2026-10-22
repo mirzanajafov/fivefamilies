@@ -7,6 +7,7 @@ x-node: &node
   read_only: true
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
+  entrypoint: ["ffnode", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
 
 x-net: &net
   image: fivefamilies-lab-net
@@ -32,7 +33,7 @@ services:
     <<: *node
     network_mode: "service:n1net"
     depends_on: [n1net]
-    command: ["-id", "1", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
+    command: ["-id", "1"]
     volumes: ["n1:/data"]
   n2net:
     <<: *net
@@ -45,7 +46,7 @@ services:
     <<: *node
     network_mode: "service:n2net"
     depends_on: [n2net]
-    command: ["-id", "2", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
+    command: ["-id", "2"]
     volumes: ["n2:/data"]
   n3net:
     <<: *net
@@ -58,7 +59,7 @@ services:
     <<: *node
     network_mode: "service:n3net"
     depends_on: [n3net]
-    command: ["-id", "3", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
+    command: ["-id", "3"]
     volumes: ["n3:/data"]
   n4net:
     <<: *net
@@ -71,7 +72,7 @@ services:
     <<: *node
     network_mode: "service:n4net"
     depends_on: [n4net]
-    command: ["-id", "4", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
+    command: ["-id", "4"]
     volumes: ["n4:/data"]
   n5net:
     <<: *net
@@ -84,7 +85,7 @@ services:
     <<: *node
     network_mode: "service:n5net"
     depends_on: [n5net]
-    command: ["-id", "5", "-cluster", "1=n1:3161,2=n2:3161,3=n3:3161,4=n4:3161,5=n5:3161", "-data", "/data", "-election", "${FF_ELECTION:-1s}", "-heartbeat", "${FF_HEARTBEAT:-100ms}", "-lease", "${FF_LEASE:-0s}", "-snapshot-every", "${FF_SNAPSHOT_EVERY:-1000}", "-retain", "${FF_RETAIN:-100}", "-bug", "${FF_BUG:-}"]
+    command: ["-id", "5"]
     volumes: ["n5:/data"]
 
 networks:

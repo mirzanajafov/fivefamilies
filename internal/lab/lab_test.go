@@ -1,16 +1,17 @@
 package lab
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/mirzanajafov/fivefamilies/client"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 func TestLabSurvivesFaults(t *testing.T) {
@@ -21,12 +22,11 @@ func TestLabSurvivesFaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	build := exec.Command("docker", "build", "-q", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", root)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("building the node image: %v\n%s", err, out)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
+	if err := rig.BuildLabImage(ctx, root); err != nil {
+		t.Fatalf("building the node image: %v", err)
+	}
 	rep, err := Run(ctx, Options{
 		Seed: uint64(time.Now().UnixNano()), Duration: 30 * time.Second, Settle: 3 * time.Second,
 		Workers: 6, Keys: 3, Read: client.ReadIndex, Faults: AllFaults, FaultMean: 2 * time.Second,
@@ -44,6 +44,16 @@ func TestLabSurvivesFaults(t *testing.T) {
 	}
 	if !rep.OK() {
 		t.Fatalf("linearizable %s, states equal %v, problems %v", rep.Linearizable, rep.StatesEqual, rep.Problems)
+	}
+}
+
+func TestTheLabComposeFileRunsTheImageTheLabBuilds(t *testing.T) {
+	compose, err := os.ReadFile(filepath.Join("..", "..", "lab", "compose.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(compose, []byte("image: "+rig.LabImage+"\n")) {
+		t.Fatalf("lab/compose.yml doesn't run %s", rig.LabImage)
 	}
 }
 

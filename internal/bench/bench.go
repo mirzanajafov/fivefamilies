@@ -117,7 +117,6 @@ type ffCluster struct {
 	Nodes    int
 	Flags    []string
 	NodeCPUs []string
-	Image    string
 	Profiles bool
 	adm      *rig.Admin
 	composeCluster
@@ -132,7 +131,7 @@ func (b *ffCluster) services() []service {
 	var out []service
 	for i := 1; i <= b.Nodes; i++ {
 		s := service{
-			name: fmt.Sprintf("n%d", i), image: b.Image, cpuset: b.NodeCPUs[(i-1)%len(b.NodeCPUs)],
+			name: fmt.Sprintf("n%d", i), image: rig.LabImage, cpuset: b.NodeCPUs[(i-1)%len(b.NodeCPUs)],
 			command: append([]string{"-id", fmt.Sprint(i), "-cluster", strings.Join(cluster, ","), "-data", "/data"}, b.Flags...),
 			ports:   []string{fmt.Sprintf("%s:%d", host[i-1], rig.NodePort)},
 		}
@@ -146,9 +145,6 @@ func (b *ffCluster) services() []service {
 }
 
 func (b *ffCluster) Up(ctx context.Context) error {
-	if b.Image == "" {
-		b.Image = "fivefamilies-lab-node"
-	}
 	if err := b.start(ctx, benchProject, b.services()); err != nil {
 		return err
 	}
@@ -168,7 +164,7 @@ func (b *ffCluster) Down() error {
 }
 
 func (b *ffCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
-	return b.runGenerator(ctx, genCPUs, []string{"--entrypoint", "ffbench", b.Image, "-nodes", strings.Join(rig.NetworkAddrs(b.Nodes), ",")}, args)
+	return b.runGenerator(ctx, genCPUs, []string{"--entrypoint", "ffbench", rig.LabImage, "-nodes", strings.Join(rig.NetworkAddrs(b.Nodes), ",")}, args)
 }
 
 type Step struct {

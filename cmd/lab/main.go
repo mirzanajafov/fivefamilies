@@ -17,6 +17,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/bench"
 	"github.com/mirzanajafov/fivefamilies/internal/lab"
 	"github.com/mirzanajafov/fivefamilies/internal/planted"
+	"github.com/mirzanajafov/fivefamilies/internal/rig"
 )
 
 type usageError struct {
@@ -62,7 +63,7 @@ func runFailover(ctx context.Context, args []string) error {
 		timeouts = append(timeouts, el)
 	}
 	if *build {
-		if err := buildImage(ctx); err != nil {
+		if err := rig.BuildLabImage(ctx, "."); err != nil {
 			return err
 		}
 	}
@@ -100,7 +101,7 @@ func runRegistry(ctx context.Context, args []string) error {
 		return err
 	}
 	if *build {
-		if err := buildImage(ctx); err != nil {
+		if err := rig.BuildLabImage(ctx, "."); err != nil {
 			return err
 		}
 	}
@@ -138,7 +139,7 @@ func runProfile(ctx context.Context, args []string) error {
 		return err
 	}
 	if *build {
-		if err := buildImage(ctx); err != nil {
+		if err := rig.BuildLabImage(ctx, "."); err != nil {
 			return err
 		}
 	}
@@ -190,7 +191,7 @@ func runBench(ctx context.Context, args []string) error {
 		*label = time.Now().Format("20060102") + suffix
 	}
 	if *build {
-		if err := buildImage(ctx); err != nil {
+		if err := rig.BuildLabImage(ctx, "."); err != nil {
 			return err
 		}
 		if strings.Contains(*experiments, "e5") {
@@ -275,20 +276,9 @@ func buildEtcd(ctx context.Context) error {
 		{"build", "-q", "-f", filepath.Join("bench", "etcd", "Dockerfile"), "-t", bench.EtcdGenImage, "."},
 		{"pull", "-q", bench.EtcdImage},
 	} {
-		cmd := exec.CommandContext(ctx, "docker", args...)
-		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("etcd images: %w", err)
+		if _, err := rig.Docker(ctx, nil, args...); err != nil {
+			return err
 		}
-	}
-	return nil
-}
-
-func buildImage(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "docker", "build", "-q", "--build-arg", "LDFLAGS=-s -w -X main.plantable=yes", "-t", "fivefamilies-lab-node", ".")
-	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("build: %w", err)
 	}
 	return nil
 }
@@ -338,7 +328,7 @@ func runLab(ctx context.Context, args []string) error {
 		opts.Out = filepath.Join("bench", "results", "lab", time.Now().UTC().Format("20060102-150405"))
 	}
 	if *build {
-		if err := buildImage(ctx); err != nil {
+		if err := rig.BuildLabImage(ctx, "."); err != nil {
 			return err
 		}
 	}
