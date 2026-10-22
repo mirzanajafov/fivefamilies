@@ -148,18 +148,20 @@ func TestTheServersRefusalsComeBackAsTheClientsErrors(t *testing.T) {
 type fakeNode struct {
 	pb.UnimplementedKVServer
 	pb.UnimplementedWatchServer
-	addr      string
-	leader    string
-	notLeader error
-	hang      bool
-	watched   chan<- string
+	addr    string
+	hint    string
+	refusal error
+	hang    bool
+	watched chan<- string
 }
 
 func (f *fakeNode) refuse(ctx context.Context) error {
-	if err := grpc.SetHeader(ctx, metadata.Pairs(route.LeaderHeader, f.leader)); err != nil {
-		return err
+	if f.hint != "" {
+		if err := grpc.SetHeader(ctx, metadata.Pairs(route.LeaderHeader, f.hint)); err != nil {
+			return err
+		}
 	}
-	return f.notLeader
+	return f.refusal
 }
 
 func (f *fakeNode) OpenSession(ctx context.Context, _ *pb.OpenSessionRequest) (*pb.OpenSessionResponse, error) {
@@ -167,14 +169,14 @@ func (f *fakeNode) OpenSession(ctx context.Context, _ *pb.OpenSessionRequest) (*
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	if f.leader != "" {
+	if f.refusal != nil {
 		return nil, f.refuse(ctx)
 	}
 	return &pb.OpenSessionResponse{Client: 1}, nil
 }
 
 func (f *fakeNode) Put(ctx context.Context, _ *pb.PutRequest) (*pb.PutResponse, error) {
-	if f.leader != "" {
+	if f.refusal != nil {
 		return nil, f.refuse(ctx)
 	}
 	return &pb.PutResponse{Rev: 1}, nil
@@ -211,19 +213,22 @@ func serveFake(t *testing.T, node *fakeNode) {
 	})
 }
 
-func TestANodeThatAnsweredNotTheLeaderKeepsTheClientsWatches(t *testing.T) {
+func TestANodeThatAnsweredKeepsTheClientsWatches(t *testing.T) {
+	notLeader := refusal(t, codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER)
 	for _, tc := range []struct {
-		name string
-		hint func(leader string) string
+		name    string
+		hint    func(leader string) string
+		refusal error
 	}{
-		{"with a hint to the leader", func(leader string) string { return leader }},
-		{"with a hint to an address the client doesn't know", func(string) string { return "fivefamilies-n2:3161" }},
+		{"not the leader, with a hint to the leader", func(leader string) string { return leader }, notLeader},
+		{"not the leader, with a hint to an address the client doesn't know", func(string) string { return "fivefamilies-n2:3161" }, notLeader},
+		{"unavailable, with no hint", func(string) string { return "" }, status.Error(codes.Unavailable, "the entry was lost")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			watched := make(chan string, 2)
 			leader := &fakeNode{watched: watched}
 			serveFake(t, leader)
-			follower := &fakeNode{leader: tc.hint(leader.addr), notLeader: refusal(t, codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER), watched: watched}
+			follower := &fakeNode{hint: tc.hint(leader.addr), refusal: tc.refusal, watched: watched}
 			serveFake(t, follower)
 			c, err := New([]string{follower.addr, leader.addr}, Options{})
 			if err != nil {
