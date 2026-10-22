@@ -114,6 +114,47 @@ type Stats struct {
 	WatchDrops     int
 }
 
+func (a Stats) Add(b Stats) Stats {
+	a.Events += b.Events
+	a.MsgsSent += b.MsgsSent
+	a.MsgsDropped += b.MsgsDropped
+	a.MsgsDuplicated += b.MsgsDuplicated
+	a.Proposals += b.Proposals
+	a.Leaders += b.Leaders
+	a.MaxTerm = max(a.MaxTerm, b.MaxTerm)
+	a.Committed += b.Committed
+	a.Crashes += b.Crashes
+	a.Pauses += b.Pauses
+	a.Partitions += b.Partitions
+	a.SlowDisks += b.SlowDisks
+	a.Overwrites += b.Overwrites
+	a.ClientOps += b.ClientOps
+	a.ClientRetries += b.ClientRetries
+	a.SwapsWon += b.SwapsWon
+	a.Indeterminate += b.Indeterminate
+	a.Buggified += b.Buggified
+	a.Writes += b.Writes
+	a.Fsyncs += b.Fsyncs
+	a.TornTails += b.TornTails
+	a.Snapshots += b.Snapshots
+	a.LocalReads += b.LocalReads
+	a.SnapshotsSent += b.SnapshotsSent
+	a.Installs += b.Installs
+	a.Compactions += b.Compactions
+	a.ConfChanges += b.ConfChanges
+	a.ConfCommitted += b.ConfCommitted
+	a.Transfers += b.Transfers
+	a.LeaseGrants += b.LeaseGrants
+	a.KeepAlives += b.KeepAlives
+	a.LeasesLost += b.LeasesLost
+	a.LeaseExpiries += b.LeaseExpiries
+	a.WatchEvents += b.WatchEvents
+	a.WatchResyncs += b.WatchResyncs
+	a.WatchCompacted += b.WatchCompacted
+	a.WatchDrops += b.WatchDrops
+	return a
+}
+
 type Result struct {
 	Seed      uint64
 	Swarm     string

@@ -16,8 +16,9 @@ const runs = (kind) =>
         .sort()
     : []
 const files = (kind, run) => readdirSync(path.join(root, kind, run)).filter((f) => f.endsWith('.json'))
-const newestComplete = (kind, usable) =>
-  runs(kind).findLast((run) => {
+const laptopRuns = (kind) => runs(kind).filter((r) => r.endsWith('-laptop'))
+const newestComplete = (kind, usable, among = runs(kind)) =>
+  among.findLast((run) => {
     const names = files(kind, run)
     return names.length > 0 && names.every((name) => usable(read(kind, run, name)))
   })
@@ -103,7 +104,7 @@ function point(step) {
 
 function curves(kind, label) {
   const newest = new Map()
-  for (const run of label ? [label] : runs(kind).filter((r) => r.endsWith('-laptop'))) {
+  for (const run of label ? [label] : laptopRuns(kind)) {
     const f = read(kind, run, `${kind}.json`)
     if (!f) continue
     const rounds = new Map()
@@ -152,12 +153,12 @@ function batching() {
 }
 
 function e1b() {
-  const run = runs('e1b').at(-1)
+  const run = newestComplete('e1b', (f) => !f.error && f.rows?.length > 0, laptopRuns('e1b'))
   const f = run && read('e1b', run, 'e1b.json')
   if (!f) return null
   return {
     run,
-    rows: f.map((r) => ({
+    rows: f.rows.map((r) => ({
       election: r.election_ns,
       sync: r.sync_storage,
       faults: r.faults.map((x) => ({ kind: x.kind, target: x.target, duration: x.duration_ns, injections: x.injections, elected: x.followed_by_an_election })),

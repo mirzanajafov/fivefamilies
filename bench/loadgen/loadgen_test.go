@@ -38,7 +38,7 @@ func (f *fake) Do(ctx context.Context, op Op) error {
 
 func TestAnOpenLoopRunKeepsItsRateAndMeasuresFromTheSchedule(t *testing.T) {
 	f := &fake{delay: 5 * time.Millisecond}
-	s, err := Run(context.Background(), f, Config{Rate: 1000, Duration: 500 * time.Millisecond, Warmup: 100 * time.Millisecond, ReadFraction: 0.25, ValueBytes: 128, Seed: 1})
+	s, err := run(context.Background(), f, Config{Rate: 1000, Duration: 500 * time.Millisecond, Warmup: 100 * time.Millisecond, ReadFraction: 0.25, ValueBytes: 128, Seed: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,12 +59,12 @@ func TestAnOpenLoopRunKeepsItsRateAndMeasuresFromTheSchedule(t *testing.T) {
 
 func TestErrorsAndTimeoutsAreCountedNotTimed(t *testing.T) {
 	f := &fake{delay: 50 * time.Millisecond}
-	s, _ := Run(context.Background(), f, Config{Rate: 200, Duration: 200 * time.Millisecond, Timeout: 10 * time.Millisecond, ValueBytes: 128})
+	s, _ := run(context.Background(), f, Config{Rate: 200, Duration: 200 * time.Millisecond, Timeout: 10 * time.Millisecond, ValueBytes: 128})
 	if s.TimedOut == 0 || s.All.N != 0 || s.Errors["timeout"] != s.TimedOut {
 		t.Fatalf("timed out %d, timed %d, errors %v", s.TimedOut, s.All.N, s.Errors)
 	}
 	f = &fake{fail: true}
-	s, _ = Run(context.Background(), f, Config{Rate: 200, Duration: 200 * time.Millisecond, ValueBytes: 128})
+	s, _ = run(context.Background(), f, Config{Rate: 200, Duration: 200 * time.Millisecond, ValueBytes: 128})
 	if s.Errors["refused"] == 0 || s.Achieved != 0 {
 		t.Fatalf("errors %v, achieved %.0f", s.Errors, s.Achieved)
 	}
@@ -72,7 +72,7 @@ func TestErrorsAndTimeoutsAreCountedNotTimed(t *testing.T) {
 
 func TestARunThatHitsTheInFlightLimitIsMarkedInvalid(t *testing.T) {
 	f := &fake{delay: 100 * time.Millisecond}
-	s, _ := Run(context.Background(), f, Config{Rate: 1000, Duration: 200 * time.Millisecond, MaxInflight: 10, ValueBytes: 128})
+	s, _ := run(context.Background(), f, Config{Rate: 1000, Duration: 200 * time.Millisecond, MaxInflight: 10, ValueBytes: 128})
 	if s.Dropped == 0 || s.Valid {
 		t.Fatalf("dropped %d, valid %v", s.Dropped, s.Valid)
 	}

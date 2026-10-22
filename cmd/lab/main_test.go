@@ -1,0 +1,20 @@
+package main
+
+import "testing"
+
+func TestABenchRunRefusesNamesThatMatchNothing(t *testing.T) {
+	for _, tc := range []struct {
+		experiments, only []string
+		ok                bool
+	}{
+		{[]string{"e1b", "e2", "e5"}, nil, true},
+		{[]string{"e2", "e4"}, []string{"5 nodes", "lease reads, 0.95"}, true},
+		{[]string{"e6"}, nil, false},
+		{[]string{"e2"}, []string{"5 Nodes"}, false},
+		{[]string{"e2"}, []string{"lease reads, 0.95"}, false},
+	} {
+		if err := checkBench(tc.experiments, tc.only); (err == nil) != tc.ok {
+			t.Errorf("experiments %v, only %v: %v", tc.experiments, tc.only, err)
+		}
+	}
+}

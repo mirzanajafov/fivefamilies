@@ -107,54 +107,14 @@ func main() {
 		os.Exit(1)
 	}
 	t := &target{cli: cli, serializable: *readMode == "serializable"}
-	ctx := context.Background()
-	value := make([]byte, *valueBytes)
-	for i := range *keys {
-		pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		err := t.Do(pctx, loadgen.Op{Key: fmt.Sprintf("k%06d", i), Value: value})
-		cancel()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "preload:", err)
-			os.Exit(1)
-		}
-	}
 	cfg := loadgen.Config{Rate: *rate, Duration: *duration, Warmup: *warmup, ReadFraction: *reads, Keys: *keys, ValueBytes: *valueBytes,
-		MaxInflight: *inflight, Timeout: *timeout, Seed: *seed}
-	type sampled struct {
-		c   []loadgen.Counters
-		err error
-	}
-	before := make(chan sampled, 1)
-	go func() {
-		time.Sleep(*warmup)
-		c, err := scrapeAll(ctx, all)
-		before <- sampled{c, err}
-	}()
-	s, err := loadgen.Run(ctx, t, cfg)
+		MaxInflight: *inflight, Timeout: *timeout, Seed: *seed, Preload: true}
+	r, err := loadgen.Measure(context.Background(), t, cfg, func(ctx context.Context) ([]loadgen.Counters, error) { return scrapeAll(ctx, all) })
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	b := <-before
-	after, aerr := scrapeAll(ctx, all)
-	if b.err != nil || aerr != nil {
-		fmt.Fprintln(os.Stderr, "metrics:", b.err, aerr)
-		os.Exit(1)
-	}
-	r := loadgen.Report{Summary: s, Nodes: len(all), ReadMode: *readMode}
-	var fsyncs, entries uint64
-	for i := range after {
-		d := loadgen.Counters{Fsyncs: after[i].Fsyncs - b.c[i].Fsyncs, Entries: after[i].Entries - b.c[i].Entries, Elections: after[i].Elections - b.c[i].Elections}
-		r.PerNode = append(r.PerNode, d)
-		fsyncs, entries = fsyncs+d.Fsyncs, entries+d.Entries
-		r.Elections = max(r.Elections, d.Elections)
-	}
-	if ops := float64(s.All.N); ops > 0 {
-		r.FsyncsPerOp = float64(fsyncs) / ops
-	}
-	if fsyncs > 0 {
-		r.EntriesPerF = float64(entries) / float64(fsyncs)
-	}
+	r.ReadMode = *readMode
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(r); err != nil {

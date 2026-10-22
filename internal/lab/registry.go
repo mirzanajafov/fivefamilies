@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mirzanajafov/fivefamilies/bench/loadgen"
 	"github.com/mirzanajafov/fivefamilies/client"
 )
 
@@ -216,7 +217,7 @@ func runRegistry(ctx context.Context, opts RegistryOptions) (RegistryResult, err
 	}
 	for v, gs := range byVariant {
 		slices.Sort(gs)
-		res.Variants[v] = RegistryVariant{Median: gs[len(gs)/2], Min: gs[0], Max: gs[len(gs)-1], N: len(gs)}
+		res.Variants[v] = RegistryVariant{Median: loadgen.Quantile(gs, 0.5), Min: gs[0], Max: gs[len(gs)-1], N: len(gs)}
 	}
 	return res, runErr
 }

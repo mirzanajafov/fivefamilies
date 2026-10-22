@@ -24,34 +24,16 @@ type ExperimentOptions struct {
 	Log      func(format string, args ...any)
 }
 
-func rounds[T any](o ExperimentOptions, specs []T, name func(T) string) iter.Seq2[int, T] {
-	return func(yield func(int, T) bool) {
-		var picked []T
-		for _, sp := range specs {
-			if o.wants(name(sp)) {
-				picked = append(picked, sp)
-			}
-		}
-		for r := range max(1, o.Repeat) {
-			for i := range picked {
-				if !yield(r+1, picked[(i+r)%len(picked)]) {
+func rounds(repeat int, specs []curveSpec) iter.Seq2[int, curveSpec] {
+	return func(yield func(int, curveSpec) bool) {
+		for r := range max(1, repeat) {
+			for i := range specs {
+				if !yield(r+1, specs[(i+r)%len(specs)]) {
 					return
 				}
 			}
 		}
 	}
-}
-
-func (o ExperimentOptions) wants(name string) bool {
-	if len(o.Only) == 0 {
-		return true
-	}
-	for _, w := range o.Only {
-		if name == w {
-			return true
-		}
-	}
-	return false
 }
 
 func (o ExperimentOptions) sweep() SweepOptions {
@@ -69,10 +51,31 @@ func (o ExperimentOptions) tearDown(name string, down func() error) {
 }
 
 type curveSpec struct {
-	name  string
-	nodes int
-	node  []string
-	gen   []string
+	name       string
+	nodes      int
+	node       []string
+	gen        []string
+	etcd       bool
+	procs      int
+	leaderOnly bool
+}
+
+type system interface {
+	sweepable
+	Down() error
+}
+
+func (sp curveSpec) start(ctx context.Context, o ExperimentOptions) (system, []string, error) {
+	if !sp.etcd {
+		b := &BenchCluster{Nodes: sp.nodes, Flags: sp.node, NodeCPUs: o.NodeCPUs}
+		return b, sp.gen, b.Up(ctx)
+	}
+	e := &EtcdCluster{Nodes: sp.nodes, NodeCPUs: o.NodeCPUs, Procs: sp.procs}
+	if err := e.Up(ctx); err != nil || !sp.leaderOnly {
+		return e, sp.gen, err
+	}
+	l, err := e.Leader(ctx)
+	return e, append([]string{"-only", l}, sp.gen...), err
 }
 
 var baseNode = []string{"-election", "1s", "-heartbeat", "100ms"}
@@ -81,74 +84,122 @@ func withBase(extra ...string) []string {
 	return append(slices.Clone(baseNode), extra...)
 }
 
-func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []curveSpec) ([]Curve, error) {
-	if o.Quick {
-		specs = specs[:1]
+func (o ExperimentOptions) pick(specs []curveSpec) []curveSpec {
+	var picked []curveSpec
+	for _, sp := range specs {
+		chosen := len(o.Only) == 0 || slices.Contains(o.Only, sp.name)
+		systemSeen := slices.ContainsFunc(picked, func(p curveSpec) bool { return p.etcd == sp.etcd })
+		if chosen && (!o.Quick || !systemSeen) {
+			picked = append(picked, sp)
+		}
 	}
+	return picked
+}
+
+var curveExperiments = map[string]func() []curveSpec{"e2": e2Specs, "e3": e3Specs, "e4": e4Specs, "e5": e5Specs}
+
+func CurveNames(experiment string) []string {
+	specs, ok := curveExperiments[experiment]
+	if !ok {
+		return nil
+	}
+	var names []string
+	for _, sp := range specs() {
+		names = append(names, sp.name)
+	}
+	return names
+}
+
+func Curves(ctx context.Context, o ExperimentOptions, experiment string) ([]Curve, error) {
+	specs, ok := curveExperiments[experiment]
+	if !ok {
+		return nil, fmt.Errorf("no curve experiment %q", experiment)
+	}
+	return runCurves(ctx, o, experiment+".json", specs())
+}
+
+func runCurves(ctx context.Context, o ExperimentOptions, file string, specs []curveSpec) ([]Curve, error) {
 	var curves []Curve
-	for round, sp := range rounds(o, specs, func(sp curveSpec) string { return sp.name }) {
-		b := &BenchCluster{Nodes: sp.nodes, Flags: sp.node, NodeCPUs: o.NodeCPUs}
+	for round, sp := range rounds(o.Repeat, o.pick(specs)) {
 		o.Log("%s, round %d: starting %d nodes", sp.name, round, sp.nodes)
-		if err := b.Up(ctx); err != nil {
-			o.tearDown(sp.name, b.Down)
+		sys, gen, err := sp.start(ctx, o)
+		if err != nil {
+			o.tearDown(sp.name, sys.Down)
 			return curves, fmt.Errorf("%s: %w", sp.name, err)
 		}
-		c := b.Sweep(ctx, sp.name, o.sweep(), sp.gen)
+		c, err := sweep(ctx, sys, Curve{Name: sp.name, Nodes: sp.nodes, NodeFlags: sp.node, GenFlags: gen}, o.sweep())
 		c.Round = round
-		o.tearDown(sp.name, b.Down)
+		cut := ctx.Err()
+		o.tearDown(sp.name, sys.Down)
+		if err = cmp.Or(cut, err); err != nil {
+			return curves, fmt.Errorf("%s: %w", sp.name, err)
+		}
 		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
 		curves = append(curves, c)
 		if err := SaveJSON(o.Out, file, curves); err != nil {
 			return curves, err
 		}
-		if ctx.Err() != nil {
-			return curves, ctx.Err()
-		}
 	}
 	return curves, nil
 }
 
-func E2(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
+func e2Specs() []curveSpec {
 	writes := []string{"-reads", "0", "-value-bytes", "128"}
-	return runCurves(ctx, o, "e2.json", []curveSpec{
-		{"5 nodes", 5, withBase(), writes},
-		{"3 nodes", 3, withBase(), writes},
-		{"7 nodes", 7, withBase(), writes},
-		{"5 nodes, one entry per append", 5, withBase("-max-msg-bytes", "1"), writes},
-		{"5 nodes, no pipelining", 5, withBase("-max-inflight", "1"), writes},
-		{"5 nodes, one event per Ready", 5, withBase("-batch", "1"), writes},
-		{"5 nodes, no cap on pending writes", 5, withBase("-max-pending", "0"), writes},
-		{"5 nodes, no snapshots", 5, withBase("-snapshot-every", "1000000000"), writes},
-		{"5 nodes, 2 appends in flight", 5, withBase("-max-inflight", "2"), writes},
-		{"5 nodes, 4 appends in flight", 5, withBase("-max-inflight", "4"), writes},
-		{"5 nodes, 16 appends in flight", 5, withBase("-max-inflight", "16"), writes},
-		{"5 nodes, one Go processor", 5, withBase("-gomaxprocs", "1"), writes},
-		{"5 nodes, 1 KiB values", 5, withBase(), []string{"-reads", "0", "-value-bytes", "1024"}},
-	})
+	return []curveSpec{
+		{name: "5 nodes", nodes: 5, node: withBase(), gen: writes},
+		{name: "3 nodes", nodes: 3, node: withBase(), gen: writes},
+		{name: "7 nodes", nodes: 7, node: withBase(), gen: writes},
+		{name: "5 nodes, one entry per append", nodes: 5, node: withBase("-max-msg-bytes", "1"), gen: writes},
+		{name: "5 nodes, no pipelining", nodes: 5, node: withBase("-max-inflight", "1"), gen: writes},
+		{name: "5 nodes, one event per Ready", nodes: 5, node: withBase("-batch", "1"), gen: writes},
+		{name: "5 nodes, no cap on pending writes", nodes: 5, node: withBase("-max-pending", "0"), gen: writes},
+		{name: "5 nodes, no snapshots", nodes: 5, node: withBase("-snapshot-every", "1000000000"), gen: writes},
+		{name: "5 nodes, 2 appends in flight", nodes: 5, node: withBase("-max-inflight", "2"), gen: writes},
+		{name: "5 nodes, 4 appends in flight", nodes: 5, node: withBase("-max-inflight", "4"), gen: writes},
+		{name: "5 nodes, 16 appends in flight", nodes: 5, node: withBase("-max-inflight", "16"), gen: writes},
+		{name: "5 nodes, one Go processor", nodes: 5, node: withBase("-gomaxprocs", "1"), gen: writes},
+		{name: "5 nodes, 1 KiB values", nodes: 5, node: withBase(), gen: []string{"-reads", "0", "-value-bytes", "1024"}},
+	}
 }
 
-func E3(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
+func e3Specs() []curveSpec {
 	writes := []string{"-reads", "0", "-value-bytes", "128"}
-	return runCurves(ctx, o, "e3.json", []curveSpec{
-		{"group commit", 5, withBase("-fsync", "group"), writes},
-		{"one fsync per write", 5, withBase("-fsync", "ready"), writes},
-		{"one fsync per entry", 5, withBase("-fsync", "entry"), writes},
-		{"no fsync (unsafe)", 5, withBase("-fsync", "off"), writes},
-		{"group commit, leader writes before sending", 5, withBase("-fsync", "group", "-write-before-send"), writes},
-	})
+	return []curveSpec{
+		{name: "group commit", nodes: 5, node: withBase("-fsync", "group"), gen: writes},
+		{name: "one fsync per write", nodes: 5, node: withBase("-fsync", "ready"), gen: writes},
+		{name: "one fsync per entry", nodes: 5, node: withBase("-fsync", "entry"), gen: writes},
+		{name: "no fsync (unsafe)", nodes: 5, node: withBase("-fsync", "off"), gen: writes},
+		{name: "group commit, leader writes before sending", nodes: 5, node: withBase("-fsync", "group", "-write-before-send"), gen: writes},
+	}
 }
 
-func E4(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
+func e4Specs() []curveSpec {
 	lease := withBase("-lease", "800ms")
 	var specs []curveSpec
 	for _, share := range []string{"0.95", "0.5"} {
 		for _, mode := range []string{"lease", "index", "follower", "log"} {
-			specs = append(specs, curveSpec{fmt.Sprintf("%s reads, %s", mode, share), 5, lease, []string{"-reads", share, "-read-mode", mode}})
+			specs = append(specs, curveSpec{name: fmt.Sprintf("%s reads, %s", mode, share), nodes: 5, node: lease, gen: []string{"-reads", share, "-read-mode", mode}})
 		}
-		specs = append(specs, curveSpec{fmt.Sprintf("index reads, %s, one event per Ready", share), 5, append(slices.Clone(lease), "-batch", "1"), []string{"-reads", share, "-read-mode", "index"}})
-		specs = append(specs, curveSpec{fmt.Sprintf("local reads (unsafe), %s", share), 5, append(slices.Clone(lease), "-bug", "followerread"), []string{"-reads", share, "-read-mode", "follower"}})
+		specs = append(specs, curveSpec{name: fmt.Sprintf("index reads, %s, one event per Ready", share), nodes: 5, node: append(slices.Clone(lease), "-batch", "1"), gen: []string{"-reads", share, "-read-mode", "index"}})
+		specs = append(specs, curveSpec{name: fmt.Sprintf("local reads (unsafe), %s", share), nodes: 5, node: append(slices.Clone(lease), "-bug", "followerread"), gen: []string{"-reads", share, "-read-mode", "follower"}})
 	}
-	return runCurves(ctx, o, "e4.json", specs)
+	return specs
+}
+
+func e5Specs() []curveSpec {
+	writes := []string{"-reads", "0", "-value-bytes", "128"}
+	return []curveSpec{
+		{name: "fivefamilies, 3 nodes, writes", nodes: 3, node: withBase(), gen: writes},
+		{name: "etcd, 3 nodes, writes", nodes: 3, gen: writes, etcd: true},
+		{name: "fivefamilies, 5 nodes, writes", nodes: 5, node: withBase(), gen: writes},
+		{name: "etcd, 5 nodes, writes", nodes: 5, gen: writes, etcd: true},
+		{name: "etcd, 5 nodes, writes, client on the leader only", nodes: 5, gen: writes, etcd: true, leaderOnly: true},
+		{name: "etcd, 5 nodes, writes, two Go processors", nodes: 5, gen: writes, etcd: true, procs: 2},
+		{name: "fivefamilies, 5 nodes, ReadIndex reads 0.95", nodes: 5, node: withBase(), gen: []string{"-reads", "0.95", "-read-mode", "index"}},
+		{name: "etcd, 5 nodes, linearizable reads 0.95", nodes: 5, gen: []string{"-reads", "0.95", "-read-mode", "linearizable"}, etcd: true},
+		{name: "fivefamilies, 5 nodes, local reads (unsafe) 0.95", nodes: 5, node: withBase("-bug", "followerread"), gen: []string{"-reads", "0.95", "-read-mode", "follower"}},
+		{name: "etcd, 5 nodes, serializable reads 0.95", nodes: 5, gen: []string{"-reads", "0.95", "-read-mode", "serializable"}, etcd: true},
+	}
 }
 
 type FaultOutcome struct {
@@ -192,7 +243,31 @@ func faultName(a pb.ChaosAction) string {
 	return strings.ToLower(strings.ReplaceAll(strings.TrimPrefix(a.String(), "CHAOS_ACTION_"), "_", "-"))
 }
 
-func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
+type E1bResult struct {
+	Rows []E1bRow `json:"rows"`
+	Err  string   `json:"error,omitempty"`
+}
+
+func E1b(ctx context.Context, o ExperimentOptions) (E1bResult, error) {
+	res := E1bResult{Rows: []E1bRow{}}
+	err := runE1b(ctx, o, func(row E1bRow) error {
+		res.Rows = append(res.Rows, row)
+		return SaveJSON(o.Out, "e1b.json", res)
+	})
+	if err == nil {
+		return res, nil
+	}
+	err = cmp.Or(ctx.Err(), err)
+	if len(res.Rows) > 0 {
+		res.Err = err.Error()
+		if serr := SaveJSON(o.Out, "e1b.json", res); serr != nil {
+			return res, errors.Join(err, serr)
+		}
+	}
+	return res, err
+}
+
+func runE1b(ctx context.Context, o ExperimentOptions, add func(E1bRow) error) error {
 	timeouts := []time.Duration{150 * time.Millisecond, 300 * time.Millisecond, 600 * time.Millisecond, time.Second}
 	injections := 5
 	type variant struct {
@@ -208,7 +283,6 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		variants, injections = variants[:1], 1
 	}
 	rng := rand.New(rand.NewPCG(1, 2))
-	var rows []E1bRow
 	for _, v := range variants {
 		flags := []string{"-election", v.t.String(), "-heartbeat", (v.t / 3).String(), "-chaos"}
 		if v.sync {
@@ -218,12 +292,12 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		o.Log("e1b: election %v, sync storage %v", v.t, v.sync)
 		if err := b.Up(ctx); err != nil {
 			o.tearDown("e1b", b.Down)
-			return rows, err
+			return err
 		}
 		adm, err := dialAdmin(b.addrs())
 		if err != nil {
 			o.tearDown("e1b", b.Down)
-			return rows, err
+			return err
 		}
 		lctx, stopLoad := context.WithCancel(ctx)
 		loadDone := make(chan error, 1)
@@ -291,15 +365,14 @@ func E1b(ctx context.Context, o ExperimentOptions) ([]E1bRow, error) {
 		adm.close()
 		o.tearDown("e1b", b.Down)
 		if err := ctx.Err(); err != nil {
-			return rows, err
+			return err
 		}
 		if generatorDied {
-			return rows, fmt.Errorf("the load generator stopped before the faults were over: %w", cmp.Or(loadErr, errors.New("it exited without an error")))
+			return fmt.Errorf("the load generator stopped before the faults were over: %w", cmp.Or(loadErr, errors.New("it exited without an error")))
 		}
-		rows = append(rows, row)
-		if err := SaveJSON(o.Out, "e1b.json", rows); err != nil {
-			return rows, err
+		if err := add(row); err != nil {
+			return err
 		}
 	}
-	return rows, nil
+	return nil
 }

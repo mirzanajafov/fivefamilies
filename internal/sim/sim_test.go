@@ -3,6 +3,7 @@ package sim
 import (
 	"math/rand/v2"
 	"os"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -51,6 +52,38 @@ func runSeeds(from uint64, n int, opts Options) []Result {
 	return results
 }
 
+func TestAddingStatsSumsEveryCounterAndKeepsTheHighestTerm(t *testing.T) {
+	stats := func(n uint64) Stats {
+		var s Stats
+		v := reflect.ValueOf(&s).Elem()
+		for i := range v.NumField() {
+			if f := v.Field(i); f.CanUint() {
+				f.SetUint(n)
+			} else {
+				f.SetInt(int64(n))
+			}
+		}
+		return s
+	}
+	sum := reflect.ValueOf(stats(1).Add(stats(2)))
+	for i := range sum.NumField() {
+		name, f := sum.Type().Field(i).Name, sum.Field(i)
+		var got uint64
+		if f.CanUint() {
+			got = f.Uint()
+		} else {
+			got = uint64(f.Int())
+		}
+		want := uint64(3)
+		if name == "MaxTerm" {
+			want = 2
+		}
+		if got != want {
+			t.Errorf("%s adds up to %d, want %d", name, got, want)
+		}
+	}
+}
+
 func TestSeeds(t *testing.T) {
 	n := seedCount(t, 100)
 	results := runSeeds(1, n, DefaultOptions())
@@ -59,23 +92,7 @@ func TestSeeds(t *testing.T) {
 		if !r.OK() {
 			t.Errorf("seed %d failed at %v: %s\n  swarm: %s\n%s", r.Seed, r.At, r.Violation, r.Swarm, r.Stack)
 		}
-		total.Crashes += r.Stats.Crashes
-		total.Pauses += r.Stats.Pauses
-		total.Partitions += r.Stats.Partitions
-		total.SlowDisks += r.Stats.SlowDisks
-		total.Overwrites += r.Stats.Overwrites
-		total.MsgsDuplicated += r.Stats.MsgsDuplicated
-		total.Leaders += r.Stats.Leaders
-		total.MaxTerm = max(total.MaxTerm, r.Stats.MaxTerm)
-		total.ClientOps += r.Stats.ClientOps
-		total.ClientRetries += r.Stats.ClientRetries
-		total.SwapsWon += r.Stats.SwapsWon
-		total.TornTails += r.Stats.TornTails
-		total.Writes += r.Stats.Writes
-		total.Fsyncs += r.Stats.Fsyncs
-		total.Installs += r.Stats.Installs
-		total.LocalReads += r.Stats.LocalReads
-		total.Compactions += r.Stats.Compactions
+		total = total.Add(r.Stats)
 		if r.OK() && r.Check != porcupine.Ok {
 			t.Errorf("seed %d: linearizability check %s", r.Seed, r.Check)
 		}

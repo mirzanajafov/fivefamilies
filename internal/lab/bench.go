@@ -16,15 +16,112 @@ import (
 
 const benchProject = "ffbench"
 
+type service struct {
+	name    string
+	image   string
+	cpuset  string
+	env     []string
+	command []string
+	ports   []string
+}
+
+func composeFile(services []service) string {
+	var sb strings.Builder
+	sb.WriteString("services:\n")
+	for _, s := range services {
+		fmt.Fprintf(&sb, "  %s:\n    image: %s\n    restart: \"no\"\n    cpuset: %q\n    mem_limit: 1g\n    pids_limit: 512\n", s.name, s.image, s.cpuset)
+		if len(s.env) > 0 {
+			fmt.Fprintf(&sb, "    environment: [%s]\n", quote(s.env))
+		}
+		fmt.Fprintf(&sb, "    command: [%s]\n", quote(s.command))
+		if len(s.ports) > 0 {
+			fmt.Fprintf(&sb, "    ports: [%s]\n", quote(s.ports))
+		}
+		fmt.Fprintf(&sb, "    volumes: [\"%s:/data\"]\n    networks: [bench]\n", s.name)
+	}
+	sb.WriteString("networks:\n  bench: {}\nvolumes:\n")
+	for _, s := range services {
+		fmt.Fprintf(&sb, "  %s: {}\n", s.name)
+	}
+	return sb.String()
+}
+
+func quote(args []string) string {
+	q := make([]string, len(args))
+	for i, a := range args {
+		q[i] = fmt.Sprintf("%q", a)
+	}
+	return strings.Join(q, ", ")
+}
+
+type composeCluster struct {
+	dir  string
+	d    *Docker
+	gens int
+}
+
+func (c *composeCluster) start(ctx context.Context, project string, services []service) error {
+	dir, err := os.MkdirTemp("", project)
+	if err != nil {
+		return err
+	}
+	c.dir = dir
+	file := filepath.Join(dir, "compose.yml")
+	if err := os.WriteFile(file, []byte(composeFile(services)), 0o644); err != nil {
+		return err
+	}
+	c.d = &Docker{Project: project, File: file, Nodes: len(services)}
+	if err := c.d.Down(ctx); err != nil {
+		return err
+	}
+	return c.d.compose(ctx, nil, "up", "-d")
+}
+
+func (c *composeCluster) Down() error {
+	var errs []error
+	if c.d != nil {
+		errs = append(errs, c.d.Down(context.Background()))
+	}
+	if c.dir != "" {
+		errs = append(errs, os.RemoveAll(c.dir))
+	}
+	return errors.Join(errs...)
+}
+
+func (c *composeCluster) runGenerator(ctx context.Context, genCPUs string, command, args []string) (loadgen.Report, error) {
+	c.gens++
+	name := fmt.Sprintf("%s-gen-%d", c.d.Project, c.gens)
+	run := append([]string{"run", "--rm", "--name", name, "--network", c.d.Project + "_bench", "--cpuset-cpus", genCPUs}, command...)
+	out, err := c.d.cmd(ctx, nil, append(run, args...)...)
+	if err != nil {
+		_, rmErr := c.d.cmd(context.Background(), nil, "rm", "-f", name)
+		return loadgen.Report{}, errors.Join(err, rmErr)
+	}
+	return decodeReport(out)
+}
+
+var errUnreadableReport = errors.New("lab: the generator's report can't be read (an image older than the harness?)")
+
+func decodeReport(out string) (loadgen.Report, error) {
+	var r loadgen.Report
+	dec := json.NewDecoder(strings.NewReader(out))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&r); err != nil {
+		return r, fmt.Errorf("%w: %w: %.200s", errUnreadableReport, err, out)
+	}
+	if dec.More() {
+		return r, fmt.Errorf("%w: more output after the report: %.200s", errUnreadableReport, out)
+	}
+	return r, nil
+}
+
 type BenchCluster struct {
 	Nodes    int
 	Flags    []string
 	NodeCPUs []string
 	Image    string
 	Profiles bool
-	dir      string
-	d        *Docker
-	gens     int
+	composeCluster
 }
 
 func (b *BenchCluster) addrs() []string {
@@ -43,56 +140,32 @@ func (b *BenchCluster) inside() string {
 	return strings.Join(out, ",")
 }
 
-func quote(args []string) string {
-	q := make([]string, len(args))
-	for i, a := range args {
-		q[i] = fmt.Sprintf("%q", a)
-	}
-	return strings.Join(q, ", ")
-}
-
-func (b *BenchCluster) compose() string {
-	var sb strings.Builder
+func (b *BenchCluster) services() []service {
 	var cluster []string
 	for i := 1; i <= b.Nodes; i++ {
 		cluster = append(cluster, fmt.Sprintf("%d=n%d:3161", i, i))
 	}
-	sb.WriteString("services:\n")
+	var out []service
 	for i := 1; i <= b.Nodes; i++ {
-		args := append([]string{"-id", fmt.Sprint(i), "-cluster", strings.Join(cluster, ","), "-data", "/data"}, b.Flags...)
-		ports := fmt.Sprintf("\"127.0.0.1:315%d:3161\"", i)
-		if b.Profiles {
-			args = append(args, "-pprof", ":6060")
-			ports += fmt.Sprintf(", \"127.0.0.1:316%d:6060\"", i)
+		s := service{
+			name: fmt.Sprintf("n%d", i), image: b.Image, cpuset: b.NodeCPUs[(i-1)%len(b.NodeCPUs)],
+			command: append([]string{"-id", fmt.Sprint(i), "-cluster", strings.Join(cluster, ","), "-data", "/data"}, b.Flags...),
+			ports:   []string{fmt.Sprintf("127.0.0.1:315%d:3161", i)},
 		}
-		fmt.Fprintf(&sb, "  n%d:\n    image: %s\n    restart: \"no\"\n    cpuset: %q\n    mem_limit: 1g\n    pids_limit: 512\n", i, b.Image, b.NodeCPUs[(i-1)%len(b.NodeCPUs)])
-		fmt.Fprintf(&sb, "    command: [%s]\n    ports: [%s]\n    volumes: [\"n%d:/data\"]\n    networks: [bench]\n", quote(args), ports, i)
+		if b.Profiles {
+			s.command = append(s.command, "-pprof", ":6060")
+			s.ports = append(s.ports, fmt.Sprintf("127.0.0.1:316%d:6060", i))
+		}
+		out = append(out, s)
 	}
-	sb.WriteString("networks:\n  bench: {}\nvolumes:\n")
-	for i := 1; i <= b.Nodes; i++ {
-		fmt.Fprintf(&sb, "  n%d: {}\n", i)
-	}
-	return sb.String()
+	return out
 }
 
 func (b *BenchCluster) Up(ctx context.Context) error {
 	if b.Image == "" {
 		b.Image = "fivefamilies-lab-node"
 	}
-	dir, err := os.MkdirTemp("", "ffbench")
-	if err != nil {
-		return err
-	}
-	b.dir = dir
-	file := filepath.Join(dir, "compose.yml")
-	if err := os.WriteFile(file, []byte(b.compose()), 0o644); err != nil {
-		return err
-	}
-	b.d = &Docker{Project: benchProject, File: file, Nodes: b.Nodes}
-	if err := b.d.compose(ctx, nil, "down", "-v", "--remove-orphans"); err != nil {
-		return err
-	}
-	if err := b.d.compose(ctx, nil, "up", "-d"); err != nil {
+	if err := b.start(ctx, benchProject, b.services()); err != nil {
 		return err
 	}
 	adm, err := dialAdmin(b.addrs())
@@ -104,31 +177,8 @@ func (b *BenchCluster) Up(ctx context.Context) error {
 	return err
 }
 
-func (b *BenchCluster) Down() error {
-	var errs []error
-	if b.d != nil {
-		errs = append(errs, b.d.compose(context.Background(), nil, "down", "-v", "--remove-orphans"))
-	}
-	if b.dir != "" {
-		errs = append(errs, os.RemoveAll(b.dir))
-	}
-	return errors.Join(errs...)
-}
-
 func (b *BenchCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
-	b.gens++
-	name := fmt.Sprintf("%s-gen-%d", benchProject, b.gens)
-	full := append([]string{"run", "--rm", "--name", name, "--network", benchProject + "_bench", "--cpuset-cpus", genCPUs, "--entrypoint", "ffbench", b.Image, "-nodes", b.inside()}, args...)
-	out, err := b.d.cmd(ctx, nil, full...)
-	var r loadgen.Report
-	if err != nil {
-		_, rmErr := b.d.cmd(context.Background(), nil, "rm", "-f", name)
-		return r, errors.Join(err, rmErr)
-	}
-	if err := json.Unmarshal([]byte(out), &r); err != nil {
-		return r, fmt.Errorf("generator output: %w: %.200s", err, out)
-	}
-	return r, nil
+	return b.runGenerator(ctx, genCPUs, []string{"--entrypoint", "ffbench", b.Image, "-nodes", b.inside()}, args)
 }
 
 type Step struct {
@@ -166,27 +216,28 @@ func saturated(s Step, maxP99 time.Duration) bool {
 	return s.Err != "" || !sum.Valid || sum.Achieved < 0.9*s.Rate || sum.All.P99 > maxP99 || float64(sum.All.Error) > 0.01*float64(sum.Scheduled)
 }
 
-type generator func(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error)
-
-type quieter func(ctx context.Context) error
-
-func (b *BenchCluster) Sweep(ctx context.Context, name string, opts SweepOptions, genFlags []string) Curve {
-	return sweep(ctx, b.Generate, b.Quiet, Curve{Name: name, Nodes: b.Nodes, NodeFlags: b.Flags, GenFlags: genFlags}, opts)
+type sweepable interface {
+	Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error)
+	Quiet(ctx context.Context) error
 }
 
-func sweep(ctx context.Context, gen generator, quiet quieter, c Curve, opts SweepOptions) Curve {
+func sweep(ctx context.Context, sys sweepable, c Curve, opts SweepOptions) (Curve, error) {
 	stopped := false
+	var broken error
 	run := func(rate float64) Step {
 		s := Step{Rate: rate}
-		if err := quiet(ctx); err != nil {
+		if err := sys.Quiet(ctx); err != nil {
 			s.Err, stopped = err.Error(), true
 			return s
 		}
 		args := append([]string{"-rate", fmt.Sprint(rate), "-duration", opts.Duration.String(), "-warmup", opts.Warmup.String()}, c.GenFlags...)
-		r, err := gen(ctx, opts.GenCPUs, args...)
+		r, err := sys.Generate(ctx, opts.GenCPUs, args...)
 		s.Report = r
 		if err != nil {
 			s.Err = err.Error()
+		}
+		if errors.Is(err, errUnreadableReport) {
+			broken, stopped = err, true
 		}
 		return s
 	}
@@ -215,10 +266,13 @@ func sweep(ctx context.Context, gen generator, quiet quieter, c Curve, opts Swee
 	}
 	if lo > 0 && going() {
 		s50 := run(math.Round(0.5 * lo))
-		s80 := run(math.Round(0.8 * lo))
-		c.At50, c.At80 = &s50, &s80
+		c.At50 = &s50
 	}
-	return c
+	if c.At50 != nil && going() {
+		s80 := run(math.Round(0.8 * lo))
+		c.At80 = &s80
+	}
+	return c, broken
 }
 
 func settle(ctx context.Context, probe func(context.Context) (uint64, bool)) error {

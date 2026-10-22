@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,9 +21,7 @@ type EtcdCluster struct {
 	Nodes    int
 	NodeCPUs []string
 	Procs    int
-	dir      string
-	d        *Docker
-	gens     int
+	composeCluster
 }
 
 func (e *EtcdCluster) endpoints() []string {
@@ -36,51 +32,35 @@ func (e *EtcdCluster) endpoints() []string {
 	return out
 }
 
-func (e *EtcdCluster) compose() string {
+func (e *EtcdCluster) services() []service {
 	var initial []string
 	for i := 1; i <= e.Nodes; i++ {
 		initial = append(initial, fmt.Sprintf("e%d=http://e%d:2380", i, i))
 	}
-	var sb strings.Builder
-	sb.WriteString("services:\n")
+	var out []service
 	for i := 1; i <= e.Nodes; i++ {
-		args := []string{"/usr/local/bin/etcd", "--name", fmt.Sprintf("e%d", i), "--data-dir", "/data",
-			"--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", fmt.Sprintf("http://e%d:2379", i),
-			"--listen-peer-urls", "http://0.0.0.0:2380", "--initial-advertise-peer-urls", fmt.Sprintf("http://e%d:2380", i),
-			"--initial-cluster", strings.Join(initial, ","), "--initial-cluster-state", "new",
-			"--heartbeat-interval", "100", "--election-timeout", "1000", "--logger", "zap", "--log-level", "warn"}
-		fmt.Fprintf(&sb, "  e%d:\n    image: %s\n    restart: \"no\"\n    cpuset: %q\n    mem_limit: 1g\n    pids_limit: 512\n", i, EtcdImage, e.NodeCPUs[(i-1)%len(e.NodeCPUs)])
-		if e.Procs > 0 {
-			fmt.Fprintf(&sb, "    environment: [\"GOMAXPROCS=%d\"]\n", e.Procs)
+		s := service{
+			name: fmt.Sprintf("e%d", i), image: EtcdImage, cpuset: e.NodeCPUs[(i-1)%len(e.NodeCPUs)],
+			command: []string{"/usr/local/bin/etcd", "--name", fmt.Sprintf("e%d", i), "--data-dir", "/data",
+				"--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", fmt.Sprintf("http://e%d:2379", i),
+				"--listen-peer-urls", "http://0.0.0.0:2380", "--initial-advertise-peer-urls", fmt.Sprintf("http://e%d:2380", i),
+				"--initial-cluster", strings.Join(initial, ","), "--initial-cluster-state", "new",
+				"--heartbeat-interval", "100", "--election-timeout", "1000", "--logger", "zap", "--log-level", "warn"},
 		}
-		fmt.Fprintf(&sb, "    command: [%s]\n    volumes: [\"e%d:/data\"]\n    networks: [bench]\n", quote(args), i)
+		if e.Procs > 0 {
+			s.env = []string{fmt.Sprintf("GOMAXPROCS=%d", e.Procs)}
+		}
+		out = append(out, s)
 	}
-	sb.WriteString("networks:\n  bench: {}\nvolumes:\n")
-	for i := 1; i <= e.Nodes; i++ {
-		fmt.Fprintf(&sb, "  e%d: {}\n", i)
-	}
-	return sb.String()
+	return out
 }
 
 func (e *EtcdCluster) Up(ctx context.Context) error {
-	dir, err := os.MkdirTemp("", "ffetcd")
-	if err != nil {
-		return err
-	}
-	e.dir = dir
-	file := filepath.Join(dir, "compose.yml")
-	if err := os.WriteFile(file, []byte(e.compose()), 0o644); err != nil {
-		return err
-	}
-	e.d = &Docker{Project: etcdProject, File: file, Nodes: e.Nodes}
-	if err := e.d.compose(ctx, nil, "down", "-v", "--remove-orphans"); err != nil {
-		return err
-	}
-	if err := e.d.compose(ctx, nil, "up", "-d"); err != nil {
+	if err := e.start(ctx, etcdProject, e.services()); err != nil {
 		return err
 	}
 	var last error
-	err = poll(ctx, 500*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
+	err := poll(ctx, 500*time.Millisecond, 60*time.Second, func(ctx context.Context) (bool, error) {
 		pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		_, probeErr := e.Leader(pctx)
 		cancel()
@@ -154,101 +134,6 @@ func (e *EtcdCluster) Leader(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no member reports itself as leader")
 }
 
-func (e *EtcdCluster) Down() error {
-	var errs []error
-	if e.d != nil {
-		errs = append(errs, e.d.compose(context.Background(), nil, "down", "-v", "--remove-orphans"))
-	}
-	if e.dir != "" {
-		errs = append(errs, os.RemoveAll(e.dir))
-	}
-	return errors.Join(errs...)
-}
-
 func (e *EtcdCluster) Generate(ctx context.Context, genCPUs string, args ...string) (loadgen.Report, error) {
-	e.gens++
-	name := fmt.Sprintf("%s-gen-%d", etcdProject, e.gens)
-	full := append([]string{"run", "--rm", "--name", name, "--network", etcdProject + "_bench", "--cpuset-cpus", genCPUs, EtcdGenImage,
-		"-endpoints", strings.Join(e.endpoints(), ",")}, args...)
-	out, err := e.d.cmd(ctx, nil, full...)
-	var r loadgen.Report
-	if err != nil {
-		_, rmErr := e.d.cmd(context.Background(), nil, "rm", "-f", name)
-		return r, errors.Join(err, rmErr)
-	}
-	if err := json.Unmarshal([]byte(out), &r); err != nil {
-		return r, fmt.Errorf("etcd generator output: %w: %.200s", err, out)
-	}
-	return r, nil
-}
-
-func E5(ctx context.Context, o ExperimentOptions) ([]Curve, error) {
-	type spec struct {
-		name   string
-		etcd   bool
-		nodes  int
-		gen    []string
-		node   []string
-		leader bool
-		procs  int
-	}
-	writes := []string{"-reads", "0", "-value-bytes", "128"}
-	specs := []spec{
-		{"fivefamilies, 3 nodes, writes", false, 3, writes, withBase(), false, 0},
-		{"etcd, 3 nodes, writes", true, 3, writes, nil, false, 0},
-		{"fivefamilies, 5 nodes, writes", false, 5, writes, withBase(), false, 0},
-		{"etcd, 5 nodes, writes", true, 5, writes, nil, false, 0},
-		{"etcd, 5 nodes, writes, client on the leader only", true, 5, writes, nil, true, 0},
-		{"etcd, 5 nodes, writes, two Go processors", true, 5, writes, nil, false, 2},
-		{"fivefamilies, 5 nodes, ReadIndex reads 0.95", false, 5, []string{"-reads", "0.95", "-read-mode", "index"}, withBase(), false, 0},
-		{"etcd, 5 nodes, linearizable reads 0.95", true, 5, []string{"-reads", "0.95", "-read-mode", "linearizable"}, nil, false, 0},
-		{"fivefamilies, 5 nodes, local reads (unsafe) 0.95", false, 5, []string{"-reads", "0.95", "-read-mode", "follower"}, withBase("-bug", "followerread"), false, 0},
-		{"etcd, 5 nodes, serializable reads 0.95", true, 5, []string{"-reads", "0.95", "-read-mode", "serializable"}, nil, false, 0},
-	}
-	if o.Quick {
-		specs = specs[1:2]
-	}
-	var curves []Curve
-	for round, sp := range rounds(o, specs, func(sp spec) string { return sp.name }) {
-		o.Log("%s, round %d: starting", sp.name, round)
-		var gen generator
-		var quiet quieter
-		var down func() error
-		c := Curve{Name: sp.name, Nodes: sp.nodes, NodeFlags: sp.node, GenFlags: sp.gen}
-		if sp.etcd {
-			ec := &EtcdCluster{Nodes: sp.nodes, NodeCPUs: o.NodeCPUs, Procs: sp.procs}
-			if err := ec.Up(ctx); err != nil {
-				o.tearDown(sp.name, ec.Down)
-				return curves, fmt.Errorf("%s: %w", sp.name, err)
-			}
-			gen, quiet, down = ec.Generate, ec.Quiet, ec.Down
-			if sp.leader {
-				l, err := ec.Leader(ctx)
-				if err != nil {
-					o.tearDown(sp.name, ec.Down)
-					return curves, err
-				}
-				c.GenFlags = append([]string{"-only", l}, sp.gen...)
-			}
-		} else {
-			b := &BenchCluster{Nodes: sp.nodes, Flags: sp.node, NodeCPUs: o.NodeCPUs}
-			if err := b.Up(ctx); err != nil {
-				o.tearDown(sp.name, b.Down)
-				return curves, fmt.Errorf("%s: %w", sp.name, err)
-			}
-			gen, quiet, down = b.Generate, b.Quiet, b.Down
-		}
-		c = sweep(ctx, gen, quiet, c, o.sweep())
-		c.Round = round
-		o.tearDown(sp.name, down)
-		o.Log("%s, round %d: knee %.0f/s over %d steps", sp.name, round, c.Knee, len(c.Steps))
-		curves = append(curves, c)
-		if err := SaveJSON(o.Out, "e5.json", curves); err != nil {
-			return curves, err
-		}
-		if ctx.Err() != nil {
-			return curves, ctx.Err()
-		}
-	}
-	return curves, nil
+	return e.runGenerator(ctx, genCPUs, []string{EtcdGenImage, "-endpoints", strings.Join(e.endpoints(), ",")}, args)
 }

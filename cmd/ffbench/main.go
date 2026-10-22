@@ -116,67 +116,14 @@ func main() {
 		t.kv = append(t.kv, pb.NewKVClient(conn))
 		t.admin = append(t.admin, pb.NewAdminClient(conn))
 	}
-	ctx := context.Background()
-	if *preload {
-		value := make([]byte, *valueBytes)
-		for i := range *keys {
-			op := loadgen.Op{Key: fmt.Sprintf("k%06d", i), Value: value}
-			for try := 0; ; try++ {
-				octx, cancel := context.WithTimeout(ctx, *timeout)
-				err := t.Do(octx, op)
-				cancel()
-				if err == nil {
-					break
-				}
-				if try == 50 {
-					fmt.Fprintln(os.Stderr, "preload:", err)
-					os.Exit(1)
-				}
-				time.Sleep(20 * time.Millisecond)
-			}
-		}
-	}
 	cfg := loadgen.Config{Rate: *rate, Duration: *duration, Warmup: *warmup, ReadFraction: *reads, Keys: *keys, ValueBytes: *valueBytes,
-		MaxInflight: *inflight, Timeout: *timeout, Poisson: *poisson, Seed: *seed}
-	type sampled struct {
-		c   []loadgen.Counters
-		err error
-	}
-	before := make(chan sampled, 1)
-	go func() {
-		time.Sleep(*warmup)
-		c, err := t.counters(ctx)
-		before <- sampled{c, err}
-	}()
-	s, err := loadgen.Run(ctx, t, cfg)
+		MaxInflight: *inflight, Timeout: *timeout, Poisson: *poisson, Seed: *seed, Preload: *preload}
+	r, err := loadgen.Measure(context.Background(), t, cfg, t.counters)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	b := <-before
-	after, aerr := t.counters(ctx)
-	if b.err != nil || aerr != nil {
-		fmt.Fprintln(os.Stderr, "counters:", b.err, aerr)
-		os.Exit(1)
-	}
-	r := loadgen.Report{Summary: s, Nodes: len(t.kv), ReadMode: *readMode}
-	var fsyncs, sent, entries uint64
-	for i := range after {
-		d := loadgen.Counters{
-			Fsyncs: after[i].Fsyncs - b.c[i].Fsyncs, Batches: after[i].Batches - b.c[i].Batches, Entries: after[i].Entries - b.c[i].Entries,
-			Sent: after[i].Sent - b.c[i].Sent, Writes: after[i].Writes - b.c[i].Writes, Reads: after[i].Reads - b.c[i].Reads,
-			Elections: after[i].Elections - b.c[i].Elections,
-		}
-		r.PerNode = append(r.PerNode, d)
-		fsyncs, sent, entries = fsyncs+d.Fsyncs, sent+d.Sent, entries+d.Entries
-		r.Elections = max(r.Elections, d.Elections)
-	}
-	if ops := float64(s.All.N); ops > 0 {
-		r.FsyncsPerOp, r.MsgsPerOp = float64(fsyncs)/ops, float64(sent)/ops
-	}
-	if fsyncs > 0 {
-		r.EntriesPerF = float64(entries) / float64(fsyncs)
-	}
+	r.ReadMode = *readMode
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(r); err != nil {

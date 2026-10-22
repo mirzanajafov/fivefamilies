@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -221,15 +222,30 @@ func profile(ctx context.Context, args []string) error {
 func bench(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("bench", flag.ContinueOnError)
 	experiments := fs.String("experiment", "e1b,e2,e3,e4,e5", "experiments to run, comma separated")
-	label := fs.String("label", time.Now().Format("20060102")+"-laptop", "results go to bench/results/<experiment>/<label>")
+	label := fs.String("label", "", "results go to bench/results/<experiment>/<label> (default <date>-laptop, or <date>-quick with -quick, which the results page leaves out)")
 	nodeCPUs := fs.String("node-cpus", "4,5,6,7,8,9,10", "one cpuset per node, comma separated")
 	genCPUs := fs.String("gen-cpus", "12-15", "the generator's cpuset")
-	quick := fs.Bool("quick", false, "one short configuration per experiment, to check the harness")
-	only := fs.String("only", "", "run only the curves with these names, separated by semicolons")
+	quick := fs.Bool("quick", false, "one short configuration per experiment and system, to check the harness")
+	only := fs.String("only", "", "run only the curves with these names, separated by semicolons, and only the experiments that have them")
 	repeat := fs.Int("repeat", 1, "run every curve this many times, interleaved and rotated")
 	build := fs.Bool("build", false, "build the lab image first")
 	if err := parse(fs, args); err != nil {
 		return err
+	}
+	exps := strings.Split(*experiments, ",")
+	var onlyNames []string
+	if *only != "" {
+		onlyNames = strings.Split(*only, ";")
+	}
+	if err := checkBench(exps, onlyNames); err != nil {
+		return usageError{error: err}
+	}
+	if *label == "" {
+		suffix := "-laptop"
+		if *quick {
+			suffix = "-quick"
+		}
+		*label = time.Now().Format("20060102") + suffix
 	}
 	if *build {
 		if err := buildImage(ctx); err != nil {
@@ -241,30 +257,38 @@ func bench(ctx context.Context, args []string) error {
 			}
 		}
 	}
-	for e := range strings.SplitSeq(*experiments, ",") {
-		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Repeat: *repeat, Log: logf}
-		if *only != "" {
-			o.Only = strings.Split(*only, ";")
+	for _, e := range exps {
+		if len(onlyNames) > 0 && !slices.ContainsFunc(lab.CurveNames(e), func(name string) bool { return slices.Contains(onlyNames, name) }) {
+			continue
 		}
+		o := lab.ExperimentOptions{Out: filepath.Join("bench", "results", e, *label), NodeCPUs: strings.Split(*nodeCPUs, ","), GenCPUs: *genCPUs, Quick: *quick, Repeat: *repeat, Only: onlyNames, Log: logf}
 		var err error
-		switch e {
-		case "e1b":
+		if e == "e1b" {
 			_, err = lab.E1b(ctx, o)
-		case "e2":
-			_, err = lab.E2(ctx, o)
-		case "e3":
-			_, err = lab.E3(ctx, o)
-		case "e4":
-			_, err = lab.E4(ctx, o)
-		case "e5":
-			_, err = lab.E5(ctx, o)
-		default:
-			err = fmt.Errorf("unknown experiment %q", e)
+		} else {
+			_, err = lab.Curves(ctx, o, e)
 		}
 		if err != nil {
 			return fmt.Errorf("%s: %w", e, err)
 		}
 		logf("%s done: %s", e, o.Out)
+	}
+	return nil
+}
+
+func checkBench(experiments, only []string) error {
+	var names []string
+	for _, e := range experiments {
+		curves := lab.CurveNames(e)
+		if e != "e1b" && curves == nil {
+			return fmt.Errorf("-experiment: unknown experiment %q", e)
+		}
+		names = append(names, curves...)
+	}
+	for _, name := range only {
+		if !slices.Contains(names, name) {
+			return fmt.Errorf("-only: none of %s has a curve named %q", strings.Join(experiments, ", "), name)
+		}
 	}
 	return nil
 }

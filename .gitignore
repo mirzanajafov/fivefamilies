@@ -6,3 +6,4 @@ coverage.out
 /bench/results/**/raw/
 *.exe
 /backups/
+/bench/results/*/*-quick/

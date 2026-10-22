@@ -140,13 +140,13 @@
   ],
   "variants": {
     "instance": {
-      "median_ns": 1788951700,
+      "median_ns": 1750192400,
       "min_ns": 1474710000,
       "max_ns": 2077895000,
       "n": 10
     },
     "instance+leader": {
-      "median_ns": 3203682700,
+      "median_ns": 3183813300,
       "min_ns": 3065710800,
       "max_ns": 3365191100,
       "n": 10
