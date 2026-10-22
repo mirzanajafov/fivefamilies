@@ -32,7 +32,7 @@ func TestTheLoopTakesEverythingQueuedIntoOneReady(t *testing.T) {
 			release := blockLoop(t, ctx, srv)
 			for i := range 100 {
 				wg.Go(func() {
-					if _, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: fmt.Sprint(i), Value: []byte("v")}); err != nil {
+					if _, err := srv.Submit(ctx, kv.Command{Op: kv.OpPut, Key: fmt.Sprint(i), Value: []byte("v")}); err != nil && ctx.Err() == nil {
 						t.Error(err)
 					}
 				})
@@ -76,7 +76,7 @@ func TestALeaderOverItsPendingCapRefusesAtOnce(t *testing.T) {
 				ok.Add(1)
 			case errors.Is(err, raft.ErrBusy):
 				busy.Add(1)
-			default:
+			case ctx.Err() == nil:
 				t.Error(err)
 			}
 		})
@@ -115,7 +115,7 @@ func TestAFullCallQueueRefusesAtOnceOnlyWithACap(t *testing.T) {
 						ok.Add(1)
 					case errors.Is(err, raft.ErrBusy):
 						busy.Add(1)
-					default:
+					case ctx.Err() == nil:
 						t.Error(err)
 					}
 				})

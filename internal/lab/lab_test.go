@@ -51,7 +51,7 @@ func TestOnlyKnownFaultsParse(t *testing.T) {
 	for s, want := range map[string][]FaultKind{"all": AllFaults, " none": nil, "kill, pause": {FaultKill, FaultPause}} {
 		t.Run(fmt.Sprintf("%q", s), func(t *testing.T) {
 			if got, err := ParseFaults(s); err != nil || !slices.Equal(got, want) {
-				t.Errorf("%q parsed as %v: %v", s, got, err)
+				t.Errorf("parsed as %v: %v", got, err)
 			}
 		})
 	}

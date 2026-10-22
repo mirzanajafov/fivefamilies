@@ -39,7 +39,7 @@ func TestOnlyKnownReadModesParse(t *testing.T) {
 		t.Run(s, func(t *testing.T) {
 			var got ReadMode
 			if err := got.UnmarshalText([]byte(s)); err != nil || got != want {
-				t.Errorf("%q parsed as %s: %v", s, got, err)
+				t.Errorf("parsed as %s: %v", got, err)
 			}
 			if text, _ := want.MarshalText(); string(text) != s {
 				t.Errorf("%s writes itself as %q", want, text)

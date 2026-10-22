@@ -108,20 +108,22 @@ func TestVoteRequiresUpToDateLog(t *testing.T) {
 		{1, 3, true},
 	}
 	for _, tc := range cases {
-		r := newNode(t, 1, five(), Restore{HardState: HardState{Term: 2}, Entries: ents(1, 2)}, nil)
-		r.Step(Message{Type: MsgVote, From: 2, To: 1, Term: 3, Index: tc.lastIndex, LogTerm: tc.lastTerm})
-		rd := r.Ready()
-		_, granted := find(rd.AfterPersist, MsgVoteResp, 2)
-		rej, rejected := find(rd.Messages, MsgVoteResp, 2)
-		if granted != tc.grant || rejected == tc.grant {
-			t.Fatalf("candidate log (%d, t%d): granted %v, want %v", tc.lastIndex, tc.lastTerm, granted, tc.grant)
-		}
-		if rejected && !rej.Reject {
-			t.Fatalf("rejection without the reject flag: %v", rej)
-		}
-		if r.Term() != 3 {
-			t.Fatalf("term %d after a vote request for term 3", r.Term())
-		}
+		t.Run(fmt.Sprintf("candidate log %d in term %d", tc.lastIndex, tc.lastTerm), func(t *testing.T) {
+			r := newNode(t, 1, five(), Restore{HardState: HardState{Term: 2}, Entries: ents(1, 2)}, nil)
+			r.Step(Message{Type: MsgVote, From: 2, To: 1, Term: 3, Index: tc.lastIndex, LogTerm: tc.lastTerm})
+			rd := r.Ready()
+			_, granted := find(rd.AfterPersist, MsgVoteResp, 2)
+			rej, rejected := find(rd.Messages, MsgVoteResp, 2)
+			if granted != tc.grant || rejected == tc.grant {
+				t.Fatalf("granted %v, want %v", granted, tc.grant)
+			}
+			if rejected && !rej.Reject {
+				t.Fatalf("rejection without the reject flag: %v", rej)
+			}
+			if r.Term() != 3 {
+				t.Fatalf("term %d after a vote request for term 3", r.Term())
+			}
+		})
 	}
 }
 
@@ -355,8 +357,11 @@ func TestCheckQuorumDeposesAnIsolatedLeader(t *testing.T) {
 			c.isolate(1)
 			c.tick(1, 25)
 			stillLeader := c.node(1).State() == StateLeader
-			if checkQuorum == stillLeader {
-				t.Fatalf("isolated leader still leading: %v", stillLeader)
+			if checkQuorum && stillLeader {
+				t.Fatal("with CheckQuorum the isolated leader still leads")
+			}
+			if !checkQuorum && !stillLeader {
+				t.Fatalf("without CheckQuorum the isolated leader stepped down to %s", c.node(1).State())
 			}
 		})
 	}

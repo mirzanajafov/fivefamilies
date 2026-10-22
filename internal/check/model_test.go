@@ -100,13 +100,15 @@ func TestHandBuiltHistories(t *testing.T) {
 		}},
 	}
 	for _, tc := range cases {
-		v := Linearizable(tc.ops, 10*time.Second)
-		if v.Result == porcupine.Unknown {
-			t.Fatalf("%s: timed out", tc.name)
-		}
-		if v.OK() != tc.ok {
-			t.Errorf("%s: linearizable %v, want %v", tc.name, v.OK(), tc.ok)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			v := Linearizable(tc.ops, 10*time.Second)
+			if v.Result == porcupine.Unknown {
+				t.Fatal("timed out")
+			}
+			if v.OK() != tc.ok {
+				t.Errorf("linearizable %v, want %v", v.OK(), tc.ok)
+			}
+		})
 	}
 }
 

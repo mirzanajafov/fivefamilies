@@ -194,7 +194,7 @@ func soloLeader(t *testing.T, id raft.NodeID, st raft.Restore, data ...string) *
 func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
 	modes := map[string]ReadMode{"any": ReadAny, "log": ReadLog, "index": ReadIndex, "lease": ReadLease, "follower": ReadFollower}
 	for s, want := range modes {
-		t.Run(s, func(t *testing.T) {
+		t.Run("read path "+s, func(t *testing.T) {
 			if got, err := ParseReadMode(s); err != nil || got != want {
 				t.Errorf("parsed as %s: %v", got, err)
 			}
@@ -208,7 +208,7 @@ func TestOnlyKnownReadPathsAndChecksParse(t *testing.T) {
 	checks := map[string]Category{"safety": CatSafety, "liveness": CatLiveness, "linearizability": CatLinearizability, "state": CatState,
 		"client": CatClient, "panic": CatPanic, "lease": CatLease, "watch": CatWatch}
 	for s, want := range checks {
-		t.Run(s, func(t *testing.T) {
+		t.Run("check "+s, func(t *testing.T) {
 			if got, err := ParseCategory(s); err != nil || got != want {
 				t.Errorf("parsed as %s: %v", got, err)
 			}
@@ -337,13 +337,15 @@ func TestDiskCatchesForgottenVotesAndTerms(t *testing.T) {
 		{"second vote in a term", raft.HardState{Term: 5, Vote: 2}, raft.HardState{Term: 5, Vote: 3}},
 	}
 	for _, tc := range cases {
-		c := newChecker(1)
-		d := newDisk(0, nil)
-		d.applyDurable(node.Write{Batch: wal.Batch{HardState: tc.before}}, c, 0)
-		d.applyDurable(node.Write{Batch: wal.Batch{HardState: tc.after}}, c, 0)
-		if !c.failed() {
-			t.Errorf("%s went unnoticed", tc.name)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			c := newChecker(1)
+			d := newDisk(0, nil)
+			d.applyDurable(node.Write{Batch: wal.Batch{HardState: tc.before}}, c, 0)
+			d.applyDurable(node.Write{Batch: wal.Batch{HardState: tc.after}}, c, 0)
+			if !c.failed() {
+				t.Error("went unnoticed")
+			}
+		})
 	}
 }
 

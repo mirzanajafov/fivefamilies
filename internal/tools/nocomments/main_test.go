@@ -50,10 +50,12 @@ func TestCommentsAreFoundInEveryKindOfFileTheRepoHolds(t *testing.T) {
 		"./bench/results/profile/a/cpu.txt": {"# not a comment in profile output\n", nil},
 	}
 	for name, c := range cases {
-		got, err := comments(write(t, name, c.src))
-		if err != nil || !slices.Equal(got, c.want) {
-			t.Errorf("%s: comments on lines %v, want %v: %v", name, got, c.want, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			got, err := comments(write(t, name, c.src))
+			if err != nil || !slices.Equal(got, c.want) {
+				t.Errorf("comments on lines %v, want %v: %v", got, c.want, err)
+			}
+		})
 	}
 }
 
