@@ -296,14 +296,19 @@ func tornAt(data []byte, off int) bool {
 		return true
 	}
 	n := uint64(binary.LittleEndian.Uint32(rest))
-	if n > maxRecord || n > uint64(len(rest)-recordHeader) {
+	if n > maxRecord {
+		return false
+	}
+	if n > uint64(len(rest)-recordHeader) {
 		return true
 	}
 	end := off + recordHeader + int(n)
-	for from := off; from < end; from = from - from%sectorSize + sectorSize {
-		if zeros(data[from:min(from-from%sectorSize+sectorSize, end)]) {
+	for from := off; from < end; {
+		to := min(from-from%sectorSize+sectorSize, len(data))
+		if zeros(data[from:to]) {
 			return true
 		}
+		from = to
 	}
 	return false
 }

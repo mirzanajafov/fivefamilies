@@ -236,6 +236,7 @@ func TestAFlippedByteInAWholeRecordRefusesToOpen(t *testing.T) {
 		{"a record with good ones after it", func(first, _ []byte) int { return len(first) + recordHeader }},
 		{"the last record, a vote", func(_, data []byte) int { return len(data) - 1 }},
 		{"the segment's salt", func(_, _ []byte) int { return 17 }},
+		{"a length larger than any record", func(first, _ []byte) int { return len(first) + 3 }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fs := vfs.NewMem()
@@ -259,6 +260,30 @@ func TestAFlippedByteInAWholeRecordRefusesToOpen(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestABadRecordWhoseLastSectorEndsInAZeroIsNotTakenForAHole(t *testing.T) {
+	for pad := 1; pad < sectorSize; pad++ {
+		fs := vfs.NewMem()
+		l, _, _ := open(t, fs, 0)
+		mustWrite(t, l, raft.HardState{Term: 1, Vote: 1, Commit: 1}, []raft.Entry{{Term: 1, Index: 1, Data: bytes.Repeat([]byte("x"), pad)}}, true)
+		names, _ := fs.List()
+		before, _ := fs.ReadFile(names[0])
+		mustWrite(t, l, raft.HardState{}, []raft.Entry{{Term: 1, Index: 2}, {Term: 1, Index: 3, Data: []byte("after")}}, true)
+		data, _ := fs.ReadFile(names[0])
+		salt, _ := readHeader(data, 1)
+		n, _, _, _ := readRecord(data[len(before):], salt)
+		if end := len(before) + n; end != sectorSize+1 || data[end-1] != 0 {
+			continue
+		}
+		data[len(before)+4] ^= 0xff
+		rewrite(t, fs, names[0], data)
+		if _, _, _, err := Open(fs, Options{Salt: saltSource(2)}); !errors.Is(err, ErrCorrupt) {
+			t.Fatalf("a no-op entry one byte into the next sector with a bad checksum: %v, want ErrCorrupt", err)
+		}
+		return
+	}
+	t.Fatal("no padding puts the no-op entry's last byte at the start of a sector")
 }
 
 func TestCorruptionBeforeTheLastSegmentRefusesToOpen(t *testing.T) {
