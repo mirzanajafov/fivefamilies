@@ -8,6 +8,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type FaultKind string
@@ -162,8 +165,12 @@ func (n *nemesis) inject(ctx context.Context, kind FaultKind) FaultRecord {
 			rec.duration = n.between(500*time.Millisecond, 2*time.Second)
 			rec.Detail = fmt.Sprintf("hand leadership from node %d to %d", l, target)
 			var lead int
-			if lead, err = n.adm.transfer(ctx, l, target); err == nil {
+			switch lead, err = n.adm.transfer(ctx, l, target); {
+			case err == nil:
 				rec.Detail += fmt.Sprintf(" (node %d leads after it)", lead)
+			case status.Code(err) == codes.FailedPrecondition:
+				rec.Detail += fmt.Sprintf(" (%s)", status.Convert(err).Message())
+				err = nil
 			}
 			break
 		}

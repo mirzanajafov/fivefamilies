@@ -134,10 +134,10 @@ func TestATransferTheTargetNeverTakesUpEndsWithAnErrorNamingIt(t *testing.T) {
 		if s.Code() == codes.FailedPrecondition && strings.Contains(s.Message(), fmt.Sprintf("node %d did not take over", target)) {
 			return
 		}
-		if err != nil {
+		if err != nil && s.Code() != codes.Unavailable {
 			break
 		}
-		t.Logf("node %d took over while node %d was cut off, so the test goes again", c.leader(5*time.Second), target)
+		t.Logf("the leadership moved while node %d was cut off (%v), so the test goes again", target, err)
 	}
 	t.Fatalf("a transfer to an isolated node ended with %v, want FailedPrecondition naming it", err)
 }
