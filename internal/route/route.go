@@ -25,13 +25,13 @@ func (r *Router) Target() int {
 	return int(r.target.Load())
 }
 
-func (r *Router) MoveOn(failed int, md metadata.MD) (redirected bool) {
+func (r *Router) MoveOn(failed int, md metadata.MD) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if hint := md.Get(LeaderHeader); len(hint) > 0 {
-		if i := slices.Index(r.addrs, hint[0]); i >= 0 && i != failed {
+		if i := slices.Index(r.addrs, hint[0]); i >= 0 && hint[0] != r.addrs[failed] {
 			r.target.Store(int64(i))
-			return true
+			return
 		}
 	}
 	if r.Target() == failed {
@@ -41,5 +41,4 @@ func (r *Router) MoveOn(failed int, md metadata.MD) (redirected bool) {
 		}
 		r.target.Store(int64(r.next))
 	}
-	return false
 }

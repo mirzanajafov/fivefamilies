@@ -554,13 +554,10 @@ func TestAFollowersRefusalNamesTheLeader(t *testing.T) {
 		}
 		var md metadata.MD
 		_, err = pb.NewKVClient(conn).Put(ctx, &pb.PutRequest{Key: "k"}, grpc.Header(&md))
-		got = md.Get(route.LeaderHeader)
-		st, statusErr := pb.NewAdminClient(conn).Status(ctx, &pb.StatusRequest{})
 		conn.Close()
-		if statusErr != nil {
-			t.Fatal(statusErr)
-		}
-		if client.Reason(err) == pb.ErrorReason_ERROR_REASON_NOT_LEADER && slices.Equal(got, []string{c.nodes[raft.NodeID(st.GetLeader())]}) {
+		got = md.Get(route.LeaderHeader)
+		leader := raft.NodeID(c.running[follower].srv.Status().GetLeader())
+		if client.Reason(err) == pb.ErrorReason_ERROR_REASON_NOT_LEADER && slices.Equal(got, []string{c.nodes[leader]}) {
 			return
 		}
 		time.Sleep(250 * time.Millisecond)

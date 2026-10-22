@@ -213,7 +213,8 @@ func do[T any](ctx context.Context, c *Client, call func(ctx context.Context, cc
 			return zero, ctx.Err()
 		}
 		if status.Code(err) != codes.ResourceExhausted {
-			if redirected := c.router.MoveOn(target, md); !redirected {
+			c.router.MoveOn(target, md)
+			if Reason(err) != pb.ErrorReason_ERROR_REASON_NOT_LEADER {
 				c.watch.MoveOn(target, nil)
 			}
 		}

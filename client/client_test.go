@@ -148,9 +148,10 @@ func TestTheServersRefusalsComeBackAsTheClientsErrors(t *testing.T) {
 type fakeNode struct {
 	pb.UnimplementedKVServer
 	pb.UnimplementedWatchServer
-	addr    string
-	leader  string
-	watched chan<- string
+	addr      string
+	leader    string
+	notLeader error
+	watched   chan<- string
 }
 
 func (f *fakeNode) OpenSession(context.Context, *pb.OpenSessionRequest) (*pb.OpenSessionResponse, error) {
@@ -164,7 +165,7 @@ func (f *fakeNode) Put(ctx context.Context, _ *pb.PutRequest) (*pb.PutResponse, 
 	if err := grpc.SetHeader(ctx, metadata.Pairs(route.LeaderHeader, f.leader)); err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unavailable, "not the leader")
+	return nil, f.notLeader
 }
 
 func (f *fakeNode) Watch(_ *pb.WatchRequest, stream grpc.ServerStreamingServer[pb.WatchResponse]) error {
@@ -202,7 +203,7 @@ func TestARedirectToTheLeaderKeepsWatchesOnTheNodeThatRedirected(t *testing.T) {
 	watched := make(chan string, 2)
 	leader := &fakeNode{watched: watched}
 	serveFake(t, leader)
-	follower := &fakeNode{leader: leader.addr, watched: watched}
+	follower := &fakeNode{leader: leader.addr, notLeader: refusal(t, codes.Unavailable, pb.ErrorReason_ERROR_REASON_NOT_LEADER), watched: watched}
 	serveFake(t, follower)
 	c, err := New([]string{follower.addr, leader.addr}, Options{})
 	if err != nil {

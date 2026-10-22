@@ -12,21 +12,22 @@ func hint(addr string) metadata.MD {
 
 func TestTheRouterFollowsAHintToANodeItKnows(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		md             metadata.MD
-		want           int
-		wantRedirected bool
+		name  string
+		addrs []string
+		md    metadata.MD
+		want  int
 	}{
-		{"no hint", nil, 1, false},
-		{"a hint", hint("n3:3161"), 2, true},
-		{"a hint naming an address the router doesn't know", hint("fivefamilies-n3:3161"), 1, false},
-		{"a hint naming the node that failed", hint("n1:3161"), 1, false},
+		{"no hint", []string{"n1:3161", "n2:3161", "n3:3161"}, nil, 1},
+		{"a hint", []string{"n1:3161", "n2:3161", "n3:3161"}, hint("n3:3161"), 2},
+		{"a hint naming an address the router doesn't know", []string{"n1:3161", "n2:3161", "n3:3161"}, hint("fivefamilies-n3:3161"), 1},
+		{"a hint naming the node that failed", []string{"n1:3161", "n2:3161", "n3:3161"}, hint("n1:3161"), 1},
+		{"a hint naming the node that failed, listed twice", []string{"n1:3161", "n2:3161", "n1:3161"}, hint("n1:3161"), 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161"})
-			redirected := r.MoveOn(0, tc.md)
-			if got := r.Target(); got != tc.want || redirected != tc.wantRedirected {
-				t.Fatalf("target %d, redirected %v, want %d and %v", got, redirected, tc.want, tc.wantRedirected)
+			r := NewRouter(tc.addrs)
+			r.MoveOn(0, tc.md)
+			if got := r.Target(); got != tc.want {
+				t.Fatalf("target %d, want %d", got, tc.want)
 			}
 		})
 	}
@@ -65,9 +66,7 @@ func TestTheRouterNeverMovesBackToTheNodeThatFailed(t *testing.T) {
 func TestAHintWinsOverAnEarlierRotation(t *testing.T) {
 	r := NewRouter([]string{"n1:3161", "n2:3161", "n3:3161", "n4:3161"})
 	r.MoveOn(0, nil)
-	if !r.MoveOn(0, hint("n4:3161")) {
-		t.Fatal("a hint to another node is a redirect, whoever sent it")
-	}
+	r.MoveOn(0, hint("n4:3161"))
 	if got := r.Target(); got != 3 {
 		t.Fatalf("target %d, want 3: a node's word on who leads beats the guess the router made after an earlier failure", got)
 	}
