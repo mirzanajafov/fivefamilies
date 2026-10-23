@@ -28,6 +28,7 @@ var (
 	slashTypes      = []string{".ts", ".tsx", ".mjs", ".proto", ".json", ".mod"}
 	pngSignature    = []byte("\x89PNG\r\n\x1a\n")
 	pngImageChunks  = []string{"IHDR", "PLTE", "IDAT", "IEND"}
+	pngFixedSizes   = map[string]uint32{"IHDR": 13, "IEND": 0}
 )
 
 type finder func(path string, src []byte) ([]int, error)
@@ -143,15 +144,24 @@ func pngComments(path string, src []byte) ([]int, error) {
 		return nil, fmt.Errorf("%s: not a PNG", path)
 	}
 	for i, n := len(pngSignature), 1; ; n++ {
+		if i == len(src) {
+			return nil, fmt.Errorf("%s: the file ends without IEND", path)
+		}
 		if len(src)-i < 12 {
-			return nil, fmt.Errorf("%s: chunk %d is cut off before the image end", path, n)
+			return nil, fmt.Errorf("%s: chunk %d is cut off", path, n)
 		}
 		size, kind := binary.BigEndian.Uint32(src[i:]), string(src[i+4:i+8])
 		if uint64(size) > uint64(len(src)-i-12) {
-			return nil, fmt.Errorf("%s: chunk %d (%s) runs past the end of the file", path, n, kind)
+			return nil, fmt.Errorf("%s: chunk %d (%q) runs past the end of the file", path, n, kind)
 		}
 		if !slices.Contains(pngImageChunks, kind) {
-			return nil, fmt.Errorf("%s: chunk %d is %s, and a PNG may hold only %v, since the others can carry text", path, n, kind, pngImageChunks)
+			return nil, fmt.Errorf("%s: chunk %d is %q, and a PNG may hold only %v, since the others can carry text", path, n, kind, pngImageChunks)
+		}
+		if (n == 1) != (kind == "IHDR") {
+			return nil, fmt.Errorf("%s: chunk %d is %s, but IHDR comes first and only there", path, n, kind)
+		}
+		if want, fixed := pngFixedSizes[kind]; fixed && size != want {
+			return nil, fmt.Errorf("%s: %s holds %d bytes instead of %d", path, kind, size, want)
 		}
 		i += 12 + int(size)
 		if kind == "IEND" {

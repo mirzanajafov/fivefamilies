@@ -1,6 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,12 +24,29 @@ func write(t *testing.T, path, src string) string {
 	return path
 }
 
-func png(kinds ...string) string {
+func pngOf(kinds ...string) string {
 	src := "\x89PNG\r\n\x1a\n"
 	for _, kind := range kinds {
-		src += "\x00\x00\x00\x03" + kind + "why" + "crc!"
+		data := "why"
+		switch kind {
+		case "IHDR":
+			data = strings.Repeat("\x01", 13)
+		case "IEND":
+			data = ""
+		}
+		src += string(binary.BigEndian.AppendUint32(nil, uint32(len(data)))) + kind + data + "crc!"
 	}
 	return src
+}
+
+func encodedPNG(t *testing.T) string {
+	t.Helper()
+	img := image.NewPaletted(image.Rect(0, 0, 4, 4), color.Palette{color.Black, color.White})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
 }
 
 func TestCommentsAreFoundInEveryKindOfFileTheRepoHolds(t *testing.T) {
@@ -83,19 +105,24 @@ func TestAFileWithNoCommentRuleFailsTheCheck(t *testing.T) {
 
 func TestAPNGMayHoldOnlyImageData(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if lines, err := comments(write(t, "image.png", png("IHDR", "PLTE", "IDAT", "IDAT", "IEND"))); lines != nil || err != nil {
-		t.Fatalf("an image with nothing else: %v, %v", lines, err)
+	for name, src := range map[string]string{"encoded.png": encodedPNG(t), "chunks.png": pngOf("IHDR", "PLTE", "IDAT", "IDAT", "IEND")} {
+		if lines, err := comments(write(t, name, src)); lines != nil || err != nil {
+			t.Fatalf("%s holds an image and nothing else: %v, %v", name, lines, err)
+		}
 	}
 	refused := map[string]string{
-		"text.png":         png("IHDR", "tEXt", "IDAT", "IEND"),
-		"zipped.png":       png("IHDR", "IDAT", "zTXt", "IEND"),
-		"unicode.png":      png("IHDR", "iTXt", "IDAT", "IEND"),
-		"exif.png":         png("IHDR", "eXIf", "IDAT", "IEND"),
-		"trailing.png":     png("IHDR", "IDAT", "IEND") + "made with x",
-		"no-end.png":       png("IHDR", "IDAT"),
-		"past-end.png":     png("IHDR") + "\xff\xff\xff\xf4IDATwhycrc!",
-		"cut-off.png":      png("IHDR") + "\x00\x00",
+		"text.png":         pngOf("IHDR", "tEXt", "IDAT", "IEND"),
+		"zipped.png":       pngOf("IHDR", "IDAT", "zTXt", "IEND"),
+		"unicode.png":      pngOf("IHDR", "iTXt", "IDAT", "IEND"),
+		"exif.png":         pngOf("IHDR", "eXIf", "IDAT", "IEND"),
+		"trailing.png":     pngOf("IHDR", "IDAT", "IEND") + "made with x",
+		"no-end.png":       pngOf("IHDR", "IDAT"),
+		"past-end.png":     pngOf("IHDR") + "\xff\xff\xff\xf4IDATwhycrc!",
+		"cut-off.png":      pngOf("IHDR") + "\x00\x00",
 		"not-an-image.png": "-- why\n",
+		"text-in-end.png":  pngOf("IHDR", "IDAT") + "\x00\x00\x00\x03IENDwhycrc!",
+		"long-header.png":  "\x89PNG\r\n\x1a\n\x00\x00\x00\x10IHDR" + strings.Repeat("\x01", 16) + "crc!" + pngOf("IEND")[8:],
+		"no-header.png":    pngOf("IDAT", "IEND"),
 	}
 	for name, src := range refused {
 		t.Run(name, func(t *testing.T) {
