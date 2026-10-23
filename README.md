@@ -22,7 +22,7 @@ The rest, with the decisions I'd defend:
 
 - **Elections** use randomized timeouts, PreVote and CheckQuorum, so a node that was cut off can't depose a healthy leader when it comes back, and a leader stuck on the minority side steps down instead of taking writes that can never commit. A candidate becomes leader only once its own vote is on its own disk, whatever the others say. The simulator taught me that one (below).
 - **Storage is asynchronous.** The leader sends its appends before its own write finishes and counts itself toward the quorum only once its fsync is done (section 10.2.1 of Ongaro's thesis). Heartbeats never wait for the disk, which the section on short timeouts below turns into a number. One goroutine owns the WAL and syncs everything that queued up while the last fsync ran, so under load many writes share one flush, with no artificial delay.
-- **The WAL** is segments of records with a CRC32C over a per-segment random salt, the type and the payload, so a record left over from an earlier use of the same bytes can't pass. After a crash, the first bad record in the last segment is cut, with everything after it, only if it runs past the end of the file or one of its sectors is all zeros, which is what a killed process or a power cut on ext4 or xfs leaves behind. Any other damage (a flipped byte in a record, a damaged segment header) refuses to start, because cutting there could drop entries this node acknowledged, the trap the FAST 2018 paper on protocol-aware recovery describes. My first rule cut any bad record at the end of the log, which keeps a node starting but silently loses a vote when the damage is in data that was already synced. The price of refusing is that a node with real corruption has to be removed and added back empty, and there's no repair tool. What still gets cut, with only a warning in the log, is synced data that has turned to zeros up to a sector boundary, which looks exactly like a lost write.
+- **The WAL** is segments of records with a CRC32C over a per-segment random salt, the type and the payload, so a record left over from an earlier use of the same bytes can't pass. After a crash, the first bad record in the last segment is cut, with everything after it, only if it runs past the end of the file or one of its sectors is all zeros, and a last segment whose header is short or all zeros is dropped. That's what a killed process or a power cut on ext4 or xfs leaves behind. Any other damage (a flipped byte in a record, a segment header that's damaged rather than missing) refuses to start, because cutting there could drop entries this node acknowledged, the trap the FAST 2018 paper on protocol-aware recovery describes. My first rule cut any bad record at the end of the log, which keeps a node starting but silently loses a vote when the damage is in data that was already synced. The price of refusing is that a node with real corruption has to be removed and added back empty, and there's no repair tool. What still gets cut, with only a warning in the log, is synced data that has turned to zeros up to a sector boundary, which looks exactly like a lost write.
 - **Snapshots** of the in-memory store are written under a temporary name, fsynced and renamed, then a marker goes into the WAL, and only once that marker is durable do the old segments go. A follower that's too far behind gets the snapshot over its own stream in 1 MiB chunks, so heartbeats never queue behind it.
 - **Reads** go one of three ways: through the log (a write per read), ReadIndex (one heartbeat round confirms every read waiting for it), or a leader lease (no messages at all, as long as the clocks drift apart by less than the margin between the lease and the election timeout, 800 ms against 1 s in the compose files). A follower can serve reads too, after asking the leader for a read index. ReadIndex is the default, because a lease depends on an assumption that clients can't see.
 - **Membership** changes one server at a time, new nodes join as learners and can be promoted once they're within 1,000 entries of the leader, and a new leader has to commit an entry of its own term before it may change anything (the known fix for single-server changes). I left joint consensus out, since one at a time covers every change the demo makes. Leadership transfer is there too.
@@ -84,7 +84,7 @@ SIGKILL the leader under 200 writes a second, ten kills per row, and take the wi
 | 600 ms | 706 ms | 641-814 ms |
 | 1 s | 1,206 ms | 1,122-1,449 ms |
 
-Without a fault the widest gap in the same runs was 11-25 ms. The election timeout is nearly the whole story, as long as the client already holds a connection to every node. My first sweep was slower, and the reason was the client: with its write connections cold, the client's own part of the gap was 35-150 ms against 24-29 ms with every connection already open, because it had to connect to the followers only after the leader had died. So the client library now connects to every node when it's created. Production runs with a 1 s timeout, because a node capped at a quarter of a CPU on a shared server can stall for longer than 150 ms. In the lab a 1 s timeout cost about 1.2 s per failover, and on the busy demo server the screenshot above caught clients waiting 1.7 s.
+Without a fault the widest gap in the same runs was 11-25 ms. The election timeout is nearly the whole story, as long as the client already holds a connection to every node. My first sweep was slower, and the reason was the client: with its write connections cold, the client's own part of the gap was 35-150 ms against 24-29 ms with every connection already open, because it had to connect to the followers only after the leader had died. So the client library now connects to every node when it's created. Production runs with a 1 s timeout, because a node capped at a quarter of a CPU on a shared server can stall for longer than 150 ms. In the lab a 1 s timeout cost about 1.2 s per failover (with a heartbeat of a third of the timeout, where production uses 100 ms), and on the busy demo server the screenshot above caught clients waiting 1.7 s.
 
 ### The price of a short timeout
 
@@ -133,9 +133,9 @@ At 95% reads on five nodes:
 | ReadIndex | 12,000/s | 0.7 ms | 12.8 |
 | follower ReadIndex | 20,000/s | 1.0 ms | 14.4 |
 | through the log | 6,000/s | 13.4 ms | 9.3 |
-| local, unsafe | 32,000/s | 0.4 ms | 3.1 |
+| a follower's own state, unsafe | 32,000/s | 0.4 ms | 3.1 |
 
-A lease read costs about what an unsafe local read costs and sends no messages of its own (the 0.8 is the writes' share). ReadIndex reaches three quarters of the lease's throughput, but at moderate load almost every read still pays for its own heartbeat round, because the loop is faster than the arrivals and there's rarely a second read waiting to share it. Follower reads take the serving off the leader and go highest, but each one still costs the leader a round. Reads were also far steadier than writes: lease and ReadIndex gave the same knee in all three rounds.
+A lease read costs about what an unsafe read of a follower's own state costs (the planted `followerread` bug, measured as a floor) and sends no messages of its own (the 0.8 is the writes' share). ReadIndex reaches three quarters of the lease's throughput, but at moderate load almost every read still pays for its own heartbeat round, because the loop is faster than the arrivals and there's rarely a second read waiting to share it. Follower reads take the serving off the leader and go highest, but each one still costs the leader a round. Reads were also far steadier than writes: lease and ReadIndex gave the same knee in all three rounds.
 
 ReadIndex stays the default for a reason. A leader lease is only safe while the clocks drift apart by less than its margin. TTL leases rest on the same kind of assumption, and in the simulator a clock running 60% fast makes them expire early in 223 of 1,000 seeds. For lease reads the simulator never produced the stale read in 3,000 seeds with the same skew, because it also needs a particular partition at the right moment, so showing that one is still on my list.
 
@@ -150,7 +150,7 @@ etcd 3.6.15 from its official image, with the same pinning, the same generator a
 | write p50 at 500/s, 3 and 5 nodes | 10.9 and 12.6 ms | 22.8 and 36.2 ms |
 | writes, 5 nodes, etcd's client on the leader only: knee, p50 at 500/s | 6,000/s, 12.6 ms | 12,000/s, 23.6 ms |
 | linearizable reads at 95%: knee | 12,000/s | 32,000/s or more |
-| local reads at 95%: knee | 40,000/s (unsafe) | 32,000/s or more (serializable) |
+| reads from local state at 95%: knee | 40,000/s (a follower's own state, unsafe) | 32,000/s or more (serializable) |
 
 The "or more" is my generator as much as etcd. One step past each of those etcd knees etcd's latency was climbing, but it still served 95-100% of what was offered with p99 under a second, while the generator either hit its own limit of 10,000 requests in flight or started requests late, and my rule throws such a step out. FiveFamilies' curves ended the other way: one step past its five-node write knee it served 5,044 of 7,000 writes a second and 12,548 failed in ten seconds, with p99 at the clients' 2 s timeout. My generator hit its limit there too, but the failures alone rule that step out. Apart from the five-node writes these are single rounds, which is why FiveFamilies shows 6,000 on three nodes here and 8,000 in the throughput section, and 40,000 unsafe local reads here and 32,000 in the reads section.
 
@@ -183,17 +183,18 @@ On the server everything sits behind the shared reverse proxy, and nothing but t
 
 ## Running it
 
-You need Docker, and Go 1.26 and Node 24 with pnpm for working on the code.
+You need Docker to run it, Node 24 with pnpm for the dashboard in dev mode, and Go 1.26 for the simulator, the lab and working on the code.
 
 ```bash
 docker compose up -d --build            # five nodes on 127.0.0.1:3151-3155, the controller on :3159
-go run ./cmd/ffctl put greeting hello
-go run ./cmd/ffctl get greeting
-go run ./cmd/ffctl status               # ffctl alone lists the other commands
+ff="docker compose exec controller ffctl -endpoints n1:3161,n2:3161,n3:3161,n4:3161,n5:3161"
+$ff put greeting hello
+$ff get greeting
+$ff status                              # ffctl alone lists the other commands
 (cd web && pnpm install && pnpm dev)    # in its own terminal: the dashboard on :3150, token local-dev-admin
 ```
 
-`ffctl` talks to the first three nodes unless it's given `-endpoints`. The simulator and the lab:
+`ffctl` runs in the controller's container there, because a follower names the leader by the cluster's own address. Run from the host with the published ports, it can't follow that name and goes round the nodes it was given until it finds the leader, so it needs all five in `-endpoints`. The simulator and the lab:
 
 ```bash
 go run ./cmd/sim -seeds 1000                       # a batch of seeded runs
@@ -209,7 +210,7 @@ go run ./cmd/lab bench -build -experiment e1b,e2,e3,e4,e5   # the rest of the nu
 
 ## API at a glance
 
-gRPC, from `proto/fivefamilies/v1`. A write sent to a follower is refused with the leader's address, and the client library retries there with the same sequence number. I chose that over forwarding, because forwarding hides failover from the measurements and adds a hop.
+gRPC, from `proto/fivefamilies/v1`. A write sent to a follower is refused with the leader's address, and the client library retries there with the same sequence number, or goes round its other nodes when it doesn't know that address. I chose that over forwarding, because forwarding hides failover from the measurements and adds a hop.
 
 | service | calls |
 |---|---|
