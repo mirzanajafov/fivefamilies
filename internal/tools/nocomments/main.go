@@ -143,10 +143,7 @@ func pngComments(path string, src []byte) ([]int, error) {
 	if !bytes.HasPrefix(src, pngSignature) {
 		return nil, fmt.Errorf("%s: not a PNG", path)
 	}
-	for i, n := len(pngSignature), 1; ; n++ {
-		if i == len(src) {
-			return nil, fmt.Errorf("%s: the file ends without IEND", path)
-		}
+	for i, n := len(pngSignature), 1; i < len(src); n++ {
 		if len(src)-i < 12 {
 			return nil, fmt.Errorf("%s: chunk %d is cut off", path, n)
 		}
@@ -155,22 +152,24 @@ func pngComments(path string, src []byte) ([]int, error) {
 			return nil, fmt.Errorf("%s: chunk %d (%q) runs past the end of the file", path, n, kind)
 		}
 		if !slices.Contains(pngImageChunks, kind) {
-			return nil, fmt.Errorf("%s: chunk %d is %q, and a PNG may hold only %v, since the others can carry text", path, n, kind, pngImageChunks)
+			return nil, fmt.Errorf("%s: chunk %d is %q, and a PNG may hold only %q, since the others can carry text", path, n, kind, pngImageChunks)
 		}
 		if (n == 1) != (kind == "IHDR") {
-			return nil, fmt.Errorf("%s: chunk %d is %s, but IHDR comes first and only there", path, n, kind)
+			return nil, fmt.Errorf("%s: chunk %d is %q, but IHDR comes first and only there", path, n, kind)
 		}
 		if want, fixed := pngFixedSizes[kind]; fixed && size != want {
-			return nil, fmt.Errorf("%s: %s holds %d bytes instead of %d", path, kind, size, want)
+			return nil, fmt.Errorf("%s: chunk %d (%q) holds %d bytes instead of %d", path, n, kind, size, want)
 		}
 		i += 12 + int(size)
-		if kind == "IEND" {
-			if i < len(src) {
-				return nil, fmt.Errorf("%s: %d bytes after the image end", path, len(src)-i)
-			}
-			return nil, nil
+		if kind != "IEND" {
+			continue
 		}
+		if i < len(src) {
+			return nil, fmt.Errorf("%s: %d bytes after IEND", path, len(src)-i)
+		}
+		return nil, nil
 	}
+	return nil, fmt.Errorf("%s: the file ends without IEND", path)
 }
 
 func shellComments(path string, src []byte) ([]int, error) {

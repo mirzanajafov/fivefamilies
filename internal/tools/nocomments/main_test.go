@@ -24,17 +24,21 @@ func write(t *testing.T, path, src string) string {
 	return path
 }
 
+func chunk(kind, data string) string {
+	return string(binary.BigEndian.AppendUint32(nil, uint32(len(data)))) + kind + data + "crc!"
+}
+
 func pngOf(kinds ...string) string {
-	src := "\x89PNG\r\n\x1a\n"
+	src := string(pngSignature)
 	for _, kind := range kinds {
-		data := "why"
 		switch kind {
 		case "IHDR":
-			data = strings.Repeat("\x01", 13)
+			src += chunk(kind, strings.Repeat("\x01", 13))
 		case "IEND":
-			data = ""
+			src += chunk(kind, "")
+		default:
+			src += chunk(kind, "why")
 		}
-		src += string(binary.BigEndian.AppendUint32(nil, uint32(len(data)))) + kind + data + "crc!"
 	}
 	return src
 }
@@ -103,32 +107,37 @@ func TestAFileWithNoCommentRuleFailsTheCheck(t *testing.T) {
 	}
 }
 
-func TestAPNGMayHoldOnlyImageData(t *testing.T) {
+func TestPNGFilesMayHoldOnlyImageData(t *testing.T) {
 	t.Chdir(t.TempDir())
-	for name, src := range map[string]string{"encoded.png": encodedPNG(t), "chunks.png": pngOf("IHDR", "PLTE", "IDAT", "IDAT", "IEND")} {
-		if lines, err := comments(write(t, name, src)); lines != nil || err != nil {
-			t.Fatalf("%s holds an image and nothing else: %v, %v", name, lines, err)
-		}
+	cases := map[string]struct {
+		src     string
+		refusal string
+	}{
+		"encoded.png":      {encodedPNG(t), ""},
+		"chunks.png":       {pngOf("IHDR", "PLTE", "IDAT", "IDAT", "IEND"), ""},
+		"text.png":         {pngOf("IHDR", "tEXt", "IDAT", "IEND"), `chunk 2 is "tEXt"`},
+		"zipped.png":       {pngOf("IHDR", "IDAT", "zTXt", "IEND"), `chunk 3 is "zTXt"`},
+		"unicode.png":      {pngOf("IHDR", "iTXt", "IDAT", "IEND"), `chunk 2 is "iTXt"`},
+		"exif.png":         {pngOf("IHDR", "eXIf", "IDAT", "IEND"), `chunk 2 is "eXIf"`},
+		"no-header.png":    {pngOf("IDAT", "IEND"), "IHDR comes first"},
+		"two-headers.png":  {pngOf("IHDR", "IDAT", "IHDR", "IEND"), "IHDR comes first"},
+		"long-header.png":  {string(pngSignature) + chunk("IHDR", strings.Repeat("\x01", 16)) + chunk("IEND", ""), "holds 16 bytes instead of 13"},
+		"text-in-end.png":  {pngOf("IHDR", "IDAT") + chunk("IEND", "why"), "holds 3 bytes instead of 0"},
+		"trailing.png":     {pngOf("IHDR", "IDAT", "IEND") + "made with x", "11 bytes after IEND"},
+		"no-end.png":       {pngOf("IHDR", "IDAT"), "ends without IEND"},
+		"past-end.png":     {pngOf("IHDR") + "\xff\xff\xff\xf4IDATwhycrc!", "runs past the end"},
+		"cut-off.png":      {pngOf("IHDR") + "\x00\x00", "chunk 2 is cut off"},
+		"not-an-image.png": {"-- why\n", "not a PNG"},
 	}
-	refused := map[string]string{
-		"text.png":         pngOf("IHDR", "tEXt", "IDAT", "IEND"),
-		"zipped.png":       pngOf("IHDR", "IDAT", "zTXt", "IEND"),
-		"unicode.png":      pngOf("IHDR", "iTXt", "IDAT", "IEND"),
-		"exif.png":         pngOf("IHDR", "eXIf", "IDAT", "IEND"),
-		"trailing.png":     pngOf("IHDR", "IDAT", "IEND") + "made with x",
-		"no-end.png":       pngOf("IHDR", "IDAT"),
-		"past-end.png":     pngOf("IHDR") + "\xff\xff\xff\xf4IDATwhycrc!",
-		"cut-off.png":      pngOf("IHDR") + "\x00\x00",
-		"not-an-image.png": "-- why\n",
-		"text-in-end.png":  pngOf("IHDR", "IDAT") + "\x00\x00\x00\x03IENDwhycrc!",
-		"long-header.png":  "\x89PNG\r\n\x1a\n\x00\x00\x00\x10IHDR" + strings.Repeat("\x01", 16) + "crc!" + pngOf("IEND")[8:],
-		"no-header.png":    pngOf("IDAT", "IEND"),
-	}
-	for name, src := range refused {
+	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			path := write(t, name, src)
-			if _, err := comments(path); err == nil || !strings.Contains(err.Error(), path) {
-				t.Errorf("got %v, want an error that names %s", err, path)
+			path := write(t, name, c.src)
+			lines, err := comments(path)
+			switch {
+			case c.refusal == "" && (lines != nil || err != nil):
+				t.Errorf("an image and nothing else gave %v, %v", lines, err)
+			case c.refusal != "" && (err == nil || !strings.HasPrefix(err.Error(), path+": ") || !strings.Contains(err.Error(), c.refusal)):
+				t.Errorf("got %v, want an error that names %s and says %q", err, path, c.refusal)
 			}
 		})
 	}
