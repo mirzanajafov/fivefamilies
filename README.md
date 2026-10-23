@@ -6,7 +6,7 @@ I'd never built distributed consensus, and none of my other projects touch it. R
 
 FiveFamilies is Raft written from scratch in Go: leader election with PreVote and CheckQuorum, log replication with batching and pipelining, a write-ahead log with checksums and group commit, snapshots, membership changes with learners, and three ways to read. On top of it there's a key-value store with compare-and-swap, sessions that make retries safe, TTL leases, watches, a service registry and configuration keys. [PortalGun](https://github.com/mirzanajafov/portalgun-router), my API gateway, finds its upstreams through that registry.
 
-It's running at **[fivefamilies.najafov.dev](https://fivefamilies.najafov.dev)**. You can kill the Don, freeze a family, cut one off or slow its disk, and watch the others hold a succession while the demo clients' history is checked for linearizability every ten seconds. The numbers below are on the [results page](https://fivefamilies.najafov.dev/results) too.
+It's running at **[fivefamilies.najafov.dev](https://fivefamilies.najafov.dev)**. You can kill the Don, freeze a family, cut one off or slow its disk, and watch the others hold a succession while the demo clients' history is checked for linearizability every ten seconds. Most of the numbers below are on the [results page](https://fivefamilies.najafov.dev/results) too.
 
 ![The live dashboard right after the Don was killed: Family V took over after 1,559 ms, and the last 20 ten-second windows of client history were all linearizable](docs/dashboard.png)
 
@@ -14,7 +14,7 @@ One thing up front: all five nodes always run on one machine, my laptop for the 
 
 ## How it's built
 
-The decision everything else rests on is that the Raft core is a deterministic state machine, the shape etcd/raft has. It's a plain struct with no goroutines, clock, sockets or files. Messages, ticks and "this write is now durable" go in, and what comes out is a batch of work for the driver: entries and the term and vote to persist, messages to send now, messages to send only once that write is on disk, and entries to apply. Randomness comes in through a seeded generator, and peers live in a sorted slice instead of a map, because one loop over a Go map is enough to break replay. A test parses the package and fails if it imports anything but `errors`, `fmt`, `slices` and the planted-bug switches.
+The decision everything else rests on is that the Raft core is a deterministic state machine, the shape etcd/raft has. It's a plain struct with no goroutines, clock, sockets or files. Messages, ticks and "this write is now durable" go in, and what comes out is a batch of work for the driver: entries and the term and vote to persist, messages to send now, messages to send only once that write is on disk, and entries to apply. Randomness comes in through a seeded generator, and peers live in a sorted slice instead of a map, because one loop over a Go map is enough to break replay. A test parses the package and fails on any import outside a short list (`errors`, `fmt`, `slices`, `strings` and a few more), so no clock, I/O or global randomness can sneak in, and CI runs the same seeds twice and compares a hash of the whole trace, which catches a stray goroutine or map loop the day it appears.
 
 What that buys: the same seed gives exactly the same run, so every failure the simulator finds replays under a debugger as often as I want, and simulated time is free. What it costs: more code and a less obvious shape than the paper's RPC-style pseudocode, and a contract (persist this, then send that) that tests of the core alone can't see. That's why the code around the core (the driver, applying entries, the WAL's logic) is deterministic too and runs inside the simulator unchanged. Only the thin runtime (goroutines, gRPC, real files) stays outside it, and the real cluster is there to test that part.
 
@@ -25,7 +25,7 @@ The rest, with the decisions I'd defend:
 - **The WAL** is segments of records with a CRC32C over a per-segment random salt, the type and the payload, so a record left over from an earlier use of the same bytes can't pass. After a crash, a bad last record is cut only if it runs past the end of the file or one of its sectors is all zeros, which is what a killed process or a power cut on ext4 or xfs leaves behind. Anything else (a bad record with good ones after it, a damaged segment header) refuses to start, because cutting there could drop entries this node acknowledged, the trap the FAST 2018 paper on protocol-aware recovery describes. My first rule cut any bad record at the end of the log, which keeps a node starting but silently loses a vote when the damage is in data that was already synced. The price of refusing is that a node with real corruption has to be removed and added back empty. There's no repair tool.
 - **Snapshots** of the in-memory store are written under a temporary name, fsynced and renamed, then a marker goes into the WAL, and only once that marker is durable do the old segments go. A follower that's too far behind gets the snapshot over its own stream in 1 MiB chunks, so heartbeats never queue behind it.
 - **Reads** go one of three ways: through the log (a write per read), ReadIndex (one heartbeat round confirms every read waiting for it), or a leader lease (no messages at all, as long as the clocks drift apart by less than the margin between the lease and the election timeout, 800 ms against 1 s in the compose files). A follower can serve reads too, after asking the leader for a read index. ReadIndex is the default, because a lease depends on an assumption that clients can't see.
-- **Membership** changes one server at a time, new nodes join as learners and get promoted once they've caught up, and a new leader has to commit an entry of its own term before it may change anything (the known fix for single-server changes). I left joint consensus out, since one at a time covers every change the demo makes. Leadership transfer is there too.
+- **Membership** changes one server at a time, new nodes join as learners and can be promoted once they're within 1,000 entries of the leader, and a new leader has to commit an entry of its own term before it may change anything (the known fix for single-server changes). I left joint consensus out, since one at a time covers every change the demo makes. Leadership transfer is there too.
 - **Client sessions** (section 6.3 of the thesis): every write carries a client ID and a sequence number, and the state machine keeps each client's last answer, so a write that's retried after a timeout applies once. Without them the linearizability checker finds real violations, and they're the client's fault.
 - **Leases, watches and the registry.** A TTL lease is decided by the leader's clock and expired through an entry in the log, since the state machine must never read a clock. A new leader gives every lease a full TTL again, so a lease can expire late but never early. Watches start from a revision, are served from any node's applied state, and say "compacted" when the history they need is gone. The registry and the configuration keys are just the client library on top of those two.
 
@@ -35,7 +35,7 @@ There are two nets, one that watches what the nodes do and one that only sees wh
 
 **The simulator** runs the whole cluster in one goroutine with a simulated network, disk and clock, all driven by a single seed. Each seed turns on a random subset of faults at random intensities (swarm testing, from Groce et al.): message loss, delay, reordering and duplication, partitions of four shapes (one node cut off, a majority and a minority, one-way links, and a node bridging two halves), crashes and restarts, pauses that freeze a node while its messages pile up, slow disks, clocks running at different rates, and crashes timed to land between a vote and its fsync, which FoundationDB calls buggify. Each node's disk is the real WAL code on a simulated file system that knows which bytes are durable, so a crash keeps the synced bytes plus a random prefix of the rest, sometimes with a hole in it. Every run ends with a heal, after which every client operation has to finish and a leader has to commit.
 
-After every step it checks the protocol invariants (Election Safety, Log Matching, Leader Completeness, State Machine Safety, and that a committed entry stays durable on every quorum), and at the end the whole client history goes through Porcupine, the linearizability checker etcd's own robustness tests use. A check that runs out of time counts as unknown, never as a pass. On the evening of 2026-10-17 I ran 100,000 seeds on the code as it was then, half of them modelling the server loop's batching, and none failed. Since then every change that wasn't meant to change behaviour has had to give identical simulator totals for 1,000 seeds in five configurations before it was merged.
+After every step it checks the protocol invariants (Election Safety, Log Matching, Leader Completeness, State Machine Safety, and that a committed entry stays durable on every quorum), and at the end the whole client history goes through Porcupine, the linearizability checker etcd's own robustness tests use. A check that runs out of time counts as unknown, never as a pass. On the evening of 2026-10-17 I ran 100,000 seeds on the code as it was then, half of them modelling the server loop's batching, and none failed. Since then, every refactor of code the simulator runs that wasn't meant to change behaviour has had to give identical simulator totals for 1,000 seeds in five configurations before it was merged.
 
 A clean run proves nothing if the net has holes, so I planted bugs on purpose. Each one is a switch that the production image can't turn on, and CI replays a seed that catches each of them on every pull request:
 
@@ -63,15 +63,15 @@ The nets earned their keep on my own code, too:
 
 Twice, what the simulator reported was a bug in my own checks, not in Raft: Leader Completeness only speaks about leaders of later terms, and a node outside the quorum may legally overwrite an entry that's committed elsewhere. And random search missed one more real bug that a short test shows. A follower that acknowledged the leader, crashed and came back is free to vote at once, because the promise not to vote lives in memory, so two nodes cut off from the leader plus a restarted one can elect a new leader inside the old leader's lease. That needs a partition, a restart and an election inside about 120 ms, and 4,000 seeds with every read on the lease path never produced it. With leases on, a node now refuses to vote for one election timeout after it starts.
 
-Halfway through I stopped adding features and audited the whole codebase. Nine of the findings were bugs, one of them live in production: cleaning up old snapshots could delete the one the WAL still pointed to, and the next restart would have failed. Each fix came with a regression test that fails without it.
+Halfway through I stopped adding features and audited the whole codebase. Nine of the findings were bugs, one of them live in production: cleaning up old snapshots could delete the one the WAL still pointed to, and the next restart would have failed. Each fix came with a regression test that fails without it, except for a few paths that only Docker reaches.
 
-**The real cluster** is five processes in Docker on my laptop and a nemesis that SIGKILLs and restarts nodes, freezes them with the cgroup freezer, cuts links with iptables and adds delay and loss with tc netem. A small sidecar owns each node's network namespace and is never killed, so a partition survives the node behind it restarting, and the node containers run with no capabilities at all. Six clients record a history, and after the heal every node has to reach the same state hash and the history has to be linearizable. Six committed three-minute runs, 187 faults and 287,516 operations between them, four of them with membership changes and leadership transfers in the mix, were all linearizable, with every node at the same state and no write left indeterminate.
+**The real cluster** is five processes in Docker on my laptop and a nemesis that SIGKILLs and restarts nodes, freezes them with the cgroup freezer, cuts links with iptables and adds delay and loss with tc netem. A small sidecar owns each node's network namespace and is never killed, so a partition survives the node behind it restarting, and the node containers run with no capabilities at all. Six clients record a history, and after the heal every node has to reach the same state hash and the history has to be linearizable. Six committed three-minute runs, 187 faults and 287,516 operations between them, five of them with membership changes and leadership transfers in the mix, were all linearizable, with every node at the same state and no write left indeterminate.
 
-The planted bugs mostly don't show up there. In 90 seconds each, the lab caught `anyvote` both times I tried and missed `figure8`, `prevterm` and `staleterm`, which is about what the simulator predicts: it first catches those three at seeds 10, 667 and 1,628, each a 30-second run, and the lab gives one run in a few minutes. The dropped fsync can't be caught in the lab at all: SIGKILL leaves the page cache intact, and I never set up a file system that drops unsynced writes (LazyFS), so that one is proven in simulation only. The simulator is where the protocol gets proven, and the lab is where real sockets, disks and processes get their chance to show something the simulator doesn't model.
+The planted bugs mostly don't show up there. In 90 seconds each, the lab caught `anyvote` both times I tried and missed `prevterm`, `staleterm` and `figure8`, which is about what the simulator predicts: it first catches those three at seeds 10, 667 and 1,628, each a 30-second run, and the lab gives one run in a few minutes. The dropped fsync can't be caught in the lab at all: SIGKILL leaves the page cache intact, and I never set up a file system that drops unsynced writes (LazyFS), so that one is proven in simulation only. The simulator is where the protocol gets proven, and the lab is where real sockets, disks and processes get their chance to show something the simulator doesn't model.
 
 ## What it costs
 
-Everything here was measured on my laptop (i7-1270P, Docker Desktop on WSL2, a Samsung PM9A1 NVMe reached through ext4 in a virtual disk), with each node pinned to its own CPU, the load generator on CPUs of its own, Chrome and Slack closed and nothing else running but a few idle containers of another project. The generator is open-loop and measures latency from each request's scheduled time, so a stall can't hide in the tail. The laptop has performance and efficiency cores and Windows decides which one a pinned CPU lands on, so I only compare numbers from the same evening, and the ones that matter ran three times, interleaved.
+Everything here was measured on my laptop (i7-1270P, Docker Desktop on WSL2, a Samsung PM9A1 NVMe reached through ext4 in a virtual disk), with Chrome and Slack closed and nothing else running but a few idle containers of another project. For the throughput and read curves each node was pinned to its own CPU and the load generator had CPUs of its own, and for failover and the registry each node had a quota of one CPU. The generator is open-loop and measures latency from each request's scheduled time, so a stall can't hide in the tail. The laptop has performance and efficiency cores and Windows decides which one a pinned CPU lands on, so I only compare numbers from the same evening, and the ones that matter ran three times, interleaved.
 
 ### Failover
 
@@ -84,33 +84,33 @@ SIGKILL the leader under 200 writes a second, ten kills per row, and take the wi
 | 600 ms | 706 ms | 641-814 ms |
 | 1 s | 1,206 ms | 1,122-1,449 ms |
 
-Without a fault the widest gap in the same runs was 11-25 ms. The election timeout is nearly the whole story, as long as the client already holds a connection to every node. My first sweep was up to about 110 ms worse per failover, and all of it was the generator opening connections to the followers only after the leader had died, so the client library now connects to every node when it's created. Production runs with a 1 s timeout, because a node capped at a quarter of a CPU on a shared server can stall for longer than 150 ms, and on the laptop that costs about 1.2 s per failover.
+Without a fault the widest gap in the same runs was 11-25 ms. The election timeout is nearly the whole story, as long as the client already holds a connection to every node. My first sweep was up to about 180 ms worse, mostly because the generator opened its connections to the followers only after the leader had died (the client's part of the gap was 35-150 ms instead of 24-29), so the client library now connects to every node when it's created. Production runs with a 1 s timeout, because a node capped at a quarter of a CPU on a shared server can stall for longer than 150 ms, and on the laptop that costs about 1.2 s per failover.
 
 ### The price of a short timeout
 
-A short timeout buys fast failover and should pay for it in elections nobody wanted. So I injected disk stalls and pauses on a cluster taking 300 writes a second, five of each, and counted the ones followed by an election:
+A short timeout buys fast failover and should pay for it in elections nobody wanted. So I injected disk stalls and pauses through the node's own chaos call (a delay in its file layer, and a pause of its event loop rather than the whole process) on a cluster taking 300 writes a second, five of each, and counted the ones followed by an election:
 
 | fault | T = 150 ms | 300 ms | 600 ms | 1 s |
 |---|---|---|---|---|
 | the leader's disk stalls for 100 ms, 300 ms or 1 s | 0 of 15 | 0 of 15 | 0 of 15 | 0 of 15 |
 | a follower's disk stalls for 1 s | 0 of 5 | 0 of 5 | 0 of 5 | 0 of 5 |
-| the leader freezes for T/2 or T | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
-| the leader freezes for 2T | 5 of 5 | 5 of 5 | 5 of 5 | 5 of 5 |
-| a follower freezes for 2T | 0 of 5 | 0 of 5 | 0 of 5 | 0 of 5 |
+| the leader pauses for T/2 or T | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
+| the leader pauses for 2T | 5 of 5 | 5 of 5 | 5 of 5 | 5 of 5 |
+| a follower pauses for 2T | 0 of 5 | 0 of 5 | 0 of 5 | 0 of 5 |
 
 A one-second disk stall on the leader at a 150 ms timeout, almost seven timeouts long, caused nothing, because heartbeats and votes don't wait for the WAL, only writes do. To check that this is what buys it, I ran the same stalls with the event loop waiting for every fsync: at a 300 ms timeout a one-second stall then caused an election every time, the failure etcd's documentation warns about. I predicted that any leader pause longer than T would cause an election, and the boundary turned out to be somewhere between T and 2T, because a follower times out after a random draw from [T, 2T). So on this laptop the disk isn't what limits a short timeout, pauses are.
 
 ### Throughput, and the batching I was throwing away
 
-Writes of 128 bytes, open-loop, doubling the rate until a step falls behind and then bisecting. The knee is the highest rate a step kept up with: at least 90% served, under 1% failed and p99 under a second. Over three interleaved rounds the knees were 8,000 writes a second on three nodes (7,000-8,000), 6,000 on five (4,000-7,000 over six rounds) and 6,000 on seven (every time). Three nodes are ahead, five and seven overlap, and writes moved by 20-25% between rounds on identical settings, so I don't read anything into a single run.
+Writes of 128 bytes, open-loop, doubling the rate until a step falls behind and then bisecting. The knee is the highest rate a step kept up with: at least 90% served, under 1% failed, p99 under a second, and my generator on schedule without hitting its limit of 10,000 requests in flight. Over three interleaved rounds the knees were 8,000 writes a second on three nodes (7,000-8,000), 5,000 on five (4,000-6,000) and 6,000 on seven (every time), and three more rounds of the five-node curve in the etcd comparison gave 6,000 (6,000-7,000). Three nodes are ahead, five and seven overlap, and writes moved by 20-25% between rounds on identical settings, so I don't read anything into a single run.
 
 The first evening of measurements had a finding I didn't expect: a write cost 16 messages on five nodes, 6.7 on three and 24 on seven. The core batches everything that's queued when the driver asks it for work, but my server loop asked after every single event, so under load there was never more than one entry to batch. Taking the whole queue (up to 256 events) before asking halved the messages per write (8.4 against 15.5 at 4,000 a second) and lifted ReadIndex's knee from 8,000 to 14,000, because reads that queue up now share one heartbeat round. The write knee moved by less than the noise.
 
-So I went looking for what sets it. A CPU profile of the leader at 4,000 writes a second had it 54% busy, about half of its samples in socket writes under gRPC, and 6% in the loop that holds the Raft core, the store and everything else I wrote. At 6,000 a second it was less busy, 39%. It wasn't the CPU. An execution trace found it: each node is pinned to one CPU, so Go ran it with one processor (P), and whenever a goroutine sat in fsync or a socket write, the event loop waited for the only P. In a 5-second trace the loop was ready to run but not running for about a second. With two Ps on the same single CPU, two rounds gave knees of 14,000 and 7,000 instead of 5,000-6,000, with no elections. Those were diagnostic runs on a morning when the laptop wasn't quiet, so I take them as a direction rather than a result. Every node now runs with at least two Ps, and the proper runs are next.
+So I went looking for what sets it. A CPU profile of the leader at 4,000 writes a second had it 54% busy, about half of its samples in socket writes under gRPC, and 6% in the event loop, which holds the Raft core and the store. At 6,000 a second it was less busy, 39%. It wasn't the CPU. An execution trace found it: each node is pinned to one CPU, so Go ran it with one processor (P), and the event loop, the senders it wakes for each peer and gRPC's writers all took turns on it. In a 5-second trace the loop was ready to run but not running for about a second, mostly right after it had handed a message to a peer's sender. With two Ps on the same single CPU, two rounds gave knees of 14,000 and 7,000 instead of 5,000-6,000, with no elections. Those were diagnostic runs on a morning when the laptop wasn't quiet, so I take them as a direction rather than a result. Every node now runs with at least two Ps, and the proper runs are next.
 
 Two theories I measured and dropped on the way: the snapshot that's written inside the event loop (on and off gave knees one step apart, 6,000 and 5,000), and a preallocated WAL with fdatasync, which is what etcd does. On this disk five writers get about 500 flushes a second between them however they issue them (434-591), and at the knee the five nodes already ask for about 425.
 
-Past the knee, with one P, the cluster didn't slow down, it collapsed. At 10,000 writes a second it served 218. The leader accepted every proposal, latency passed the clients' 2-second timeout, and from then on it worked for writes nobody was waiting for any more. A cap on uncommitted entries (refuse with `ResourceExhausted` past 4,096) didn't save it, 267 a second with the cap, because most writes were waiting in front of the event loop rather than in Raft, and the loop itself stalled. With two Ps the steps past the knee kept serving 93-97% of what was offered, and what the leader turned away it refused at once with `ResourceExhausted` instead of letting it time out, which is what the cap was for. My generator hit its own in-flight limit in both of those steps, though, so they don't count as measurements either.
+Past the knee, with one P, the cluster didn't slow down, it collapsed. At 10,000 writes a second it served 218. The leader accepted every proposal, latency passed the clients' 2-second timeout, and from then on it worked for writes nobody was waiting for any more. A cap on uncommitted entries (refuse with `ResourceExhausted` past 4,096) didn't save it (267 a second with the cap). A later run showed that the writes did commit, at 2,400-2,800 a second, but only after the clients had given up, because the loop was waiting for its one P. With two Ps the steps past the knee kept serving 93-97% of what was offered, and what the leader turned away it refused at once with `ResourceExhausted` instead of letting it time out, which is what the cap was for. My generator hit its own in-flight limit in both of those steps, though, so they don't count as measurements either.
 
 ### fsync
 
@@ -121,7 +121,7 @@ Past the knee, with one P, the cluster didn't slow down, it collapsed. At 10,000
 | no fsync (unsafe, for reference) | 24,000/s | 0.7 ms | |
 | group commit, the leader writes before it sends | 4,000/s | 15.4 ms | 30 |
 
-One fsync per write caps the cluster at 110 writes a second, which puts a flush on this disk at about 9 ms, far above the 0.5-3 ms I guessed for a bare NVMe (this one sits under ext4 in a virtual disk on NTFS). So fsync is the floor of a write's latency, not its ceiling: 0.7 ms without it, 12-13 ms with it, and group commit packs about 50 entries into one flush near the knee. Writing in parallel with replication instead of before it saves 2.6 ms on every write at low load.
+One fsync per write caps the cluster at 110 writes a second. With five nodes sharing this disk that's a flush every 9 ms or so per node, and one writer alone gets one in 2-5 ms, against the 0.5-3 ms I guessed for a bare NVMe (this one sits under ext4 in a virtual disk on NTFS). So fsync is the floor of a write's latency, not its ceiling: 0.7 ms without it, 12-13 ms with it, and group commit packs about 50 entries into one flush near the knee. Writing in parallel with replication instead of before it saves about 2.7 ms at the median at low load.
 
 ### Reads
 
@@ -137,24 +137,24 @@ At 95% reads on five nodes:
 
 A lease read costs about what an unsafe local read costs and sends no messages of its own (the 0.8 is the writes' share). ReadIndex reaches three quarters of the lease's throughput, but at moderate load almost every read still pays for its own heartbeat round, because the loop is faster than the arrivals and there's rarely a second read waiting to share it. Follower reads take the serving off the leader and go highest, but each one still costs the leader a round. Reads were also far steadier than writes: lease and ReadIndex gave the same knee in all three rounds.
 
-ReadIndex stays the default for a reason. A lease is only safe while the clocks drift apart by less than its margin, and in the simulator a clock running 60% fast makes TTL leases expire early in 223 of 1,000 seeds. For lease reads the simulator never produced the stale read in 3,000 seeds with the same skew, because it also needs a particular partition at the right moment, so showing that one is still on my list.
+ReadIndex stays the default for a reason. A leader lease is only safe while the clocks drift apart by less than its margin. TTL leases rest on the same kind of assumption, and in the simulator a clock running 60% fast makes them expire early in 223 of 1,000 seeds. For lease reads the simulator never produced the stale read in 3,000 seeds with the same skew, because it also needs a particular partition at the right moment, so showing that one is still on my list.
 
 ### Next to etcd
 
-etcd 3.6.15 from its official image, with the same pinning, the same generator and the same timeouts (100 ms heartbeat, 1 s election):
+etcd 3.6.15 from its official image, with the same pinning, the same generator and the same timeouts (100 ms heartbeat, 1 s election). My client sends writes straight to the leader, while etcd's client was spread over all members and its followers forward to the leader, so I also ran etcd with its client on the leader only:
 
 | | FiveFamilies | etcd 3.6.15 |
 |---|---|---|
-| writes, 3 nodes: knee | 6,000/s | 24,000/s |
+| writes, 3 nodes: knee | 6,000/s | 24,000/s or more |
 | writes, 5 nodes: knee, median of three rounds | 6,000/s | 16,000/s or more |
 | write p50 at 500/s, 3 and 5 nodes | 10.9 and 12.6 ms | 22.8 and 36.2 ms |
-| linearizable reads at 95%: knee | 12,000/s | 32,000/s |
-| local reads at 95%: knee | 40,000/s (unsafe) | 32,000/s (serializable) |
-| first step past the 5-node write knee | 5,044 of 7,000 a second served, p99 2.0 s | 19,737 of 20,000 a second served, p99 0.8 s |
+| writes, 5 nodes, etcd's client on the leader only: knee, p50 at 500/s | 6,000/s, 12.6 ms | 12,000/s, 23.6 ms |
+| linearizable reads at 95%: knee | 12,000/s | 32,000/s or more |
+| local reads at 95%: knee | 40,000/s (unsafe) | 32,000/s or more (serializable) |
 
-etcd's five-node number is a lower bound: in one round my generator fell 73 ms behind at 20,000 a second, and that step was thrown out.
+The "or more" is my generator as much as etcd. One step past each of those etcd knees etcd's latency was climbing, but it still served 95-100% of what was offered with p99 under a second, while the generator either hit its own limit of 10,000 requests in flight or started requests late, and my rule throws such a step out. FiveFamilies' curves ended the other way: one step past its five-node write knee it served 5,044 of 7,000 writes a second and failed 12,548 in ten seconds, because the leader was collapsing. Apart from the five-node writes these are single rounds, which is why FiveFamilies shows 6,000 on three nodes here and 8,000 in the throughput section, and 40,000 unsafe local reads here and 32,000 in the reads section.
 
-etcd has 2.7 times my write throughput on five nodes, 4 times on three, and 2.7 times my linearizable reads. I expected to be close on writes, because FiveFamilies does less per write (the state lives in memory, with no B-tree on disk and no MVCC history), and at low load it is faster, 11-13 ms against etcd's 23-36 ms. Under load it isn't close. What I can say for sure is that etcd doesn't collapse past its knee, because it refuses new proposals once applying falls 5,000 entries behind, and that my leader wasn't CPU-bound at its knee but waiting for its one Go processor. Both systems ran on one pinned CPU per node, so Go gave both one P. I haven't run etcd with two yet, so I can't say how much of the gap two Ps close for me and not for it. The only row I win is unsafe local reads against etcd's serializable ones, and that's a read path nobody should use for anything that matters.
+So etcd has at least 2.7 times my write throughput on five nodes (twice, with both clients on the leader), 3 to 4 times on three, and at least 2.7 times my linearizable reads. I expected to be close on writes, because FiveFamilies does less per write (the state lives in memory, with no B-tree on disk and no MVCC history), and at low load it is faster, 11-13 ms against etcd's 23-36 ms (23.6 ms on five nodes with its client on the leader). Under load it isn't close. What I can say for sure is that etcd doesn't collapse past its knee, partly because it refuses new proposals once applying falls 5,000 entries behind (the "too many requests" it answered in those steps), and that my leader wasn't CPU-bound at its knee but waiting for its one Go processor. Both systems ran on one pinned CPU per node, so Go gave both one P. I haven't run etcd with two yet, so I can't say how much of the gap two Ps close for me and not for it. Even my unsafe local reads, which skip Raft entirely, don't beat etcd's serializable reads by any margin my generator can show.
 
 ## The registry, and PortalGun
 
@@ -167,7 +167,7 @@ An instance registers by putting `/registry/<service>/<instance>` with its addre
 
 Alone, the kill lands at a random point between keepalives, so it should take between two thirds of a TTL and a full one, and the worst case went past the TTL only by the time `docker kill` itself took. With the leader, a new leader gives every lease a full TTL again, so it takes an election plus a TTL. A dead instance stays visible for up to one TTL, or a TTL and an election if the leader died too, and the default TTL is 10 s.
 
-PortalGun talks to the registry over a small HTTP API that every node serves under `/v1`, so it doesn't need this repo as a Go dependency: register, keep alive, revoke, and a Consul-style blocking query that returns once the service's list changes after a given index. The same JSON contract file sits in both repos, and both test against it. In PortalGun's own measurements a new upstream got its first proxied request a median of 15 ms after it registered, and no request was lost in 43 runs (443,047 requests), including runs where the registry's leader was killed or every node was stopped for 30 s, because nothing on PortalGun's request path reads the registry. The weak spot is a registration made while the leader is dead: a median of 2.1 s and up to 8.1 s, where the election takes about 1.3 s, because the node's HTTP API keeps trying the dead leader for 2 s at a time. That's the first thing on the list below.
+PortalGun talks to the registry over a small HTTP API that every node serves under `/v1`, so it doesn't need this repo as a Go dependency: register, keep alive, revoke, and a Consul-style blocking query that returns once anything under the service changes after a given index. The same JSON contract file sits in both repos, and both test against it. In PortalGun's own measurements a new upstream got its first proxied request a median of 15 ms after it registered, and no request was lost in 43 runs (443,047 requests), including runs where the registry's leader was killed or every node was stopped for 30 s, because nothing on PortalGun's request path reads the registry. The weak spot is a registration made while the leader is dead: a median of 2.1 s and up to 8.1 s, where the election takes about 1.2 s, because the node's HTTP API keeps trying the dead leader for 2 s at a time. That's the first thing on the list below.
 
 ## How the pieces fit
 
@@ -177,7 +177,7 @@ browser ──> web (Next.js) ──> controller ──┬──> supervisor ×5
 PortalGun ──> /v1 HTTP API on every node ──> the cluster's own client ──> the leader
 ```
 
-Each node runs under a small supervisor that starts it as a child process, so the demo can send it a real SIGKILL or SIGSTOP without the Docker socket. The controller is the only thing the web app talks to. It polls every node, keeps the record, runs three demo clients (puts, ReadIndex reads and compare-and-swaps on three keys, about 20 operations a second) only while someone has the page open, and owns chaos. Every 10 seconds it holds the clients back, reads each key through the log and starts the next window from those values, so each window's history is checked on its own. A write whose outcome stays unknown marks its window unchecked rather than risking a false alarm. Visitors get one fault at a time, at most 15 s, healed automatically, with a cooldown and a limit per address, so the cluster can't be left broken. The admin token stays in an httpOnly cookie on the Next server and never reaches the browser.
+Each node runs under a small supervisor that starts it as a child process, so the demo can send it a real SIGKILL or SIGSTOP without the Docker socket. The controller is the only thing the web app talks to. It polls every node, keeps the record, runs three demo clients (puts, ReadIndex reads and compare-and-swaps on three keys, about 20 operations a second) only while someone has the page open, and owns chaos. Every 10 seconds it holds the clients back, reads each key through the log and starts the next window from those values, so each window's history is checked on its own. A write whose outcome stays unknown marks its window unchecked rather than risking a false alarm. Visitors get one fault at a time, at most 15 s, healed automatically, with a cooldown and a limit per address, so the cluster can't be left broken. The admin token sits in an httpOnly cookie that the page's scripts can't read, and only the Next server sends it on to the controller.
 
 On the server everything sits behind the shared reverse proxy, and nothing but the web app is reachable from outside. Each node gets a quarter of a CPU and 64 MB and uses 8-11 MB of it. Ticking every 10 ms cost an idle node 7-21% of a core, so production ticks every 50 ms (the timeouts stay at 1 s and 100 ms) and the controller polls once a second while nobody's watching. A backup container asks for a snapshot every day and keeps 14 days, and `deploy/restore-check.sh` rebuilds a throwaway cluster from the newest one and compares a hash of every key. `deploy/deploy.sh` backs up, fast-forwards, replaces the nodes one at a time and waits for all five to agree on a leader after each one, and rolls back the same way if they don't.
 
@@ -186,26 +186,26 @@ On the server everything sits behind the shared reverse proxy, and nothing but t
 You need Docker, and Go 1.26 and Node 24 with pnpm for working on the code.
 
 ```bash
-docker compose up -d --build          # five nodes on 127.0.0.1:3151-3155, the controller on :3159
-cd web && pnpm install && pnpm dev    # the dashboard on http://localhost:3150, admin token local-dev-admin
+docker compose up -d --build            # five nodes on 127.0.0.1:3151-3155, the controller on :3159
 go run ./cmd/ffctl put greeting hello
 go run ./cmd/ffctl get greeting
-go run ./cmd/ffctl status             # ffctl alone lists the other commands
+go run ./cmd/ffctl status               # ffctl alone lists the other commands
+(cd web && pnpm install && pnpm dev)    # in its own terminal: the dashboard on :3150, token local-dev-admin
 ```
 
 The simulator and the lab:
 
 ```bash
-go run ./cmd/sim -seeds 1000                  # a batch of seeded runs
-go run ./cmd/sim -seed 2888 -trace            # one seed again, event by event
-go run ./cmd/sim -bug figure8 -first          # the first seed that catches a planted bug
-go run ./cmd/lab -build -seed 5 -duration 3m  # five nodes in Docker, real faults, a checked history
-go run ./cmd/lab failover -build -trials 10   # failover against election timeouts
-go run ./cmd/lab registry -trials 10          # how long a dead instance stays visible
+go run ./cmd/sim -seeds 1000                       # a batch of seeded runs
+go run ./cmd/sim -bug figure8 -first               # the first seed that catches a planted bug
+go run ./cmd/sim -bug figure8 -seed 1628 -trace    # that seed again, event by event
+go run ./cmd/lab -build -seed 5 -duration 3m       # five nodes in Docker, real faults, a checked history
+go run ./cmd/lab failover -build -trials 10        # failover against election timeouts
+go run ./cmd/lab registry -trials 10               # how long a dead instance stays visible
 go run ./cmd/lab bench -build -experiment e1b,e2,e3,e4,e5   # the rest of the numbers, about two hours
 ```
 
-The lab uses the same ports as the dev stack, so stop that first. Results go to `bench/results/`, and the results page is built from those files. Tests are `go test ./...`, with the race detector in a Linux container, `FF_LAB=1 go test ./internal/lab/` for the lab as a test, and `pnpm test` in `web/`. CI runs a fixed set of seeds, every canary, the race tests, golangci-lint, buf, ESLint and a check that no tracked file holds a comment.
+`lab bench` takes `-repeat 3` for interleaved rounds and `-only` for single curves, which is how the repeated curves above were run. The lab uses the same ports as the dev stack, so stop that first. Results go to `bench/results/`, and the results page is built from those files. Tests are `go test ./...`, with the race detector in a Linux container, `FF_LAB=1 go test ./internal/lab/` for the lab as a test, and `pnpm test` in `web/`. CI runs a fixed set of seeds, every canary, the race tests, golangci-lint, buf, ESLint and a check that no tracked file holds a comment.
 
 ## API at a glance
 
@@ -240,14 +240,15 @@ The HTTP registry API, on every node started with `-http`:
 | `internal/server`, `internal/transport`, `cmd/node` | the runtime: the event loop, the disk writer, the gRPC services and the peer streams |
 | `internal/sim`, `cmd/sim` | the simulator, its invariants and the planted-bug canaries |
 | `internal/check`, `internal/planted` | the Porcupine model and history format, and the planted-bug switches |
-| `internal/lab`, `internal/bench`, `cmd/lab`, `bench/` | the Docker lab with its nemesis, the experiments, the etcd counterpart, and every result |
-| `client/`, `cmd/ffctl`, `internal/httpapi` | the Go client with the registry, the CLI, and the HTTP registry API |
-| `cmd/supervisor`, `cmd/controller`, `web/` | the demo: the supervisor, the controller and the dashboard |
-| `deploy/` | production deploy, backups and the restore check |
+| `internal/lab`, `internal/bench`, `internal/rig`, `cmd/lab`, `bench/` | the Docker lab with its nemesis, the experiments, what the two share, the etcd counterpart, and every result |
+| `client/`, `internal/route`, `cmd/ffctl`, `internal/httpapi` | the Go client with the registry, the leader router, the CLI, and the HTTP registry API |
+| `internal/supervisor`, `internal/controller`, `cmd/supervisor`, `cmd/controller`, `web/` | the demo: the supervisor, the controller with its chaos limits and windowed checks, and the dashboard |
+| `internal/backup`, `deploy/` | the backup format, production deploy, backups and the restore check |
+| `internal/tools/nocomments` | strips comments from the generated gRPC code and checks that no tracked file holds one |
 
 ## What isn't done
 
-- **More than one machine.** Every number here comes from five nodes on one host. Real distance between nodes, and clocks that really drift, are things I've only simulated.
+- **More than one machine.** Every number here comes from nodes that share one host. Real distance between nodes, and clocks that really drift, are things I've only simulated.
 - **Joint consensus**, so membership changes one server at a time. And the other half of what I had in mind, secrets management in the way Vault does it, isn't started.
 - **TLS between nodes.** The admin service has no authentication and is reachable from the private networks the nodes sit on, which include PortalGun's containers. They're all mine, and that's the whole defence for now.
 - **Repairing a corrupted log.** A node that finds one refuses to start and has to be removed and added back empty.
