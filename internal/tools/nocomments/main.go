@@ -161,13 +161,12 @@ func pngComments(path string, src []byte) ([]int, error) {
 			return nil, fmt.Errorf("%s: chunk %d (%q) holds %d bytes instead of %d", path, n, kind, size, want)
 		}
 		i += 12 + int(size)
-		if kind != "IEND" {
-			continue
+		if kind == "IEND" {
+			if i < len(src) {
+				return nil, fmt.Errorf("%s: %d bytes after IEND", path, len(src)-i)
+			}
+			return nil, nil
 		}
-		if i < len(src) {
-			return nil, fmt.Errorf("%s: %d bytes after IEND", path, len(src)-i)
-		}
-		return nil, nil
 	}
 	return nil, fmt.Errorf("%s: the file ends without IEND", path)
 }
