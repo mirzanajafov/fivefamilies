@@ -18,6 +18,14 @@ func write(t *testing.T, path, src string) string {
 	return path
 }
 
+func png(kinds ...string) string {
+	src := "\x89PNG\r\n\x1a\n"
+	for _, kind := range kinds {
+		src += "\x00\x00\x00\x03" + kind + "why" + "crc!"
+	}
+	return src
+}
+
 func TestCommentsAreFoundInEveryKindOfFileTheRepoHolds(t *testing.T) {
 	t.Chdir(t.TempDir())
 	cases := map[string]struct {
@@ -46,6 +54,8 @@ func TestCommentsAreFoundInEveryKindOfFileTheRepoHolds(t *testing.T) {
 		"l.json":                            {"{\"a\": \"// not a comment\"}\n", nil},
 		"m.svg":                             {"<svg><!-- why --><path/></svg>\n", []int{1}},
 		"README.md":                         {"text\n[//]: # (why)\n<!-- why -->\n", []int{2, 3}},
+		"n.png":                             {png("IHDR", "tEXt", "IDAT", "iTXt", "zTXt", "IEND"), []int{2, 4, 5}},
+		"o.png":                             {png("IHDR", "IDAT", "IEND"), nil},
 		"go.sum":                            {"example.com v1.0.0 h1:x\n", nil},
 		"./bench/results/profile/a/cpu.txt": {"# not a comment in profile output\n", nil},
 	}
@@ -69,6 +79,13 @@ func TestAFileWithNoCommentRuleFailsTheCheck(t *testing.T) {
 		if n := check([]string{clean, write(t, name, "-- why\n")}); n != 1 {
 			t.Errorf("%s: counted %d problems, want 1", name, n)
 		}
+	}
+}
+
+func TestAFileNamedPNGThatIsNotOneFailsTheCheck(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if n := check([]string{write(t, "a.png", "-- why\n")}); n != 1 {
+		t.Fatalf("counted %d problems, want 1", n)
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,6 +26,8 @@ var (
 	cssString       = regexp.MustCompile(`"[^"]*"|'[^']*'`)
 	hashTypes       = []string{".yml", ".yaml", ".gitignore", ".dockerignore", ".gitattributes", ".prettierignore"}
 	slashTypes      = []string{".ts", ".tsx", ".mjs", ".proto", ".json", ".mod"}
+	pngSignature    = []byte("\x89PNG\r\n\x1a\n")
+	pngTextChunks   = []string{"tEXt", "zTXt", "iTXt"}
 )
 
 type finder func(path string, src []byte) ([]int, error)
@@ -97,6 +100,8 @@ func finderFor(path string) (finder, error) {
 		return byLine(markupComment.MatchString), nil
 	case ext == ".md":
 		return byLine(markdownComment.MatchString), nil
+	case ext == ".png":
+		return pngComments, nil
 	case ext == ".sum", ext == ".txt" && strings.HasPrefix(filepath.ToSlash(filepath.Clean(path)), "bench/results/profile/"):
 		return skip, nil
 	}
@@ -131,6 +136,20 @@ func byLine(isComment func(string) bool) finder {
 		}
 		return lines, nil
 	}
+}
+
+func pngComments(_ string, src []byte) ([]int, error) {
+	if !bytes.HasPrefix(src, pngSignature) {
+		return nil, errors.New("not a PNG")
+	}
+	var chunks []int
+	for i, n := len(pngSignature), 1; i+8 <= len(src); n++ {
+		if slices.Contains(pngTextChunks, string(src[i+4:i+8])) {
+			chunks = append(chunks, n)
+		}
+		i += 12 + int(binary.BigEndian.Uint32(src[i:]))
+	}
+	return chunks, nil
 }
 
 func shellComments(path string, src []byte) ([]int, error) {
