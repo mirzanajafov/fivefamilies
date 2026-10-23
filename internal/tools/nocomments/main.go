@@ -27,7 +27,7 @@ var (
 	hashTypes       = []string{".yml", ".yaml", ".gitignore", ".dockerignore", ".gitattributes", ".prettierignore"}
 	slashTypes      = []string{".ts", ".tsx", ".mjs", ".proto", ".json", ".mod"}
 	pngSignature    = []byte("\x89PNG\r\n\x1a\n")
-	pngTextChunks   = []string{"tEXt", "zTXt", "iTXt"}
+	pngImageChunks  = []string{"IHDR", "PLTE", "IDAT", "IEND"}
 )
 
 type finder func(path string, src []byte) ([]int, error)
@@ -138,18 +138,29 @@ func byLine(isComment func(string) bool) finder {
 	}
 }
 
-func pngComments(_ string, src []byte) ([]int, error) {
+func pngComments(path string, src []byte) ([]int, error) {
 	if !bytes.HasPrefix(src, pngSignature) {
-		return nil, errors.New("not a PNG")
+		return nil, fmt.Errorf("%s: not a PNG", path)
 	}
-	var chunks []int
-	for i, n := len(pngSignature), 1; i+8 <= len(src); n++ {
-		if slices.Contains(pngTextChunks, string(src[i+4:i+8])) {
-			chunks = append(chunks, n)
+	for i, n := len(pngSignature), 1; ; n++ {
+		if len(src)-i < 12 {
+			return nil, fmt.Errorf("%s: chunk %d is cut off before the image end", path, n)
 		}
-		i += 12 + int(binary.BigEndian.Uint32(src[i:]))
+		size, kind := binary.BigEndian.Uint32(src[i:]), string(src[i+4:i+8])
+		if uint64(size) > uint64(len(src)-i-12) {
+			return nil, fmt.Errorf("%s: chunk %d (%s) runs past the end of the file", path, n, kind)
+		}
+		if !slices.Contains(pngImageChunks, kind) {
+			return nil, fmt.Errorf("%s: chunk %d is %s, and a PNG may hold only %v, since the others can carry text", path, n, kind, pngImageChunks)
+		}
+		i += 12 + int(size)
+		if kind == "IEND" {
+			if i < len(src) {
+				return nil, fmt.Errorf("%s: %d bytes after the image end", path, len(src)-i)
+			}
+			return nil, nil
+		}
 	}
-	return chunks, nil
 }
 
 func shellComments(path string, src []byte) ([]int, error) {

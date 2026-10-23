@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -54,8 +55,6 @@ func TestCommentsAreFoundInEveryKindOfFileTheRepoHolds(t *testing.T) {
 		"l.json":                            {"{\"a\": \"// not a comment\"}\n", nil},
 		"m.svg":                             {"<svg><!-- why --><path/></svg>\n", []int{1}},
 		"README.md":                         {"text\n[//]: # (why)\n<!-- why -->\n", []int{2, 3}},
-		"n.png":                             {png("IHDR", "tEXt", "IDAT", "iTXt", "zTXt", "IEND"), []int{2, 4, 5}},
-		"o.png":                             {png("IHDR", "IDAT", "IEND"), nil},
 		"go.sum":                            {"example.com v1.0.0 h1:x\n", nil},
 		"./bench/results/profile/a/cpu.txt": {"# not a comment in profile output\n", nil},
 	}
@@ -82,10 +81,29 @@ func TestAFileWithNoCommentRuleFailsTheCheck(t *testing.T) {
 	}
 }
 
-func TestAFileNamedPNGThatIsNotOneFailsTheCheck(t *testing.T) {
+func TestAPNGMayHoldOnlyImageData(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if n := check([]string{write(t, "a.png", "-- why\n")}); n != 1 {
-		t.Fatalf("counted %d problems, want 1", n)
+	if lines, err := comments(write(t, "image.png", png("IHDR", "PLTE", "IDAT", "IDAT", "IEND"))); lines != nil || err != nil {
+		t.Fatalf("an image with nothing else: %v, %v", lines, err)
+	}
+	refused := map[string]string{
+		"text.png":         png("IHDR", "tEXt", "IDAT", "IEND"),
+		"zipped.png":       png("IHDR", "IDAT", "zTXt", "IEND"),
+		"unicode.png":      png("IHDR", "iTXt", "IDAT", "IEND"),
+		"exif.png":         png("IHDR", "eXIf", "IDAT", "IEND"),
+		"trailing.png":     png("IHDR", "IDAT", "IEND") + "made with x",
+		"no-end.png":       png("IHDR", "IDAT"),
+		"past-end.png":     png("IHDR") + "\xff\xff\xff\xf4IDATwhycrc!",
+		"cut-off.png":      png("IHDR") + "\x00\x00",
+		"not-an-image.png": "-- why\n",
+	}
+	for name, src := range refused {
+		t.Run(name, func(t *testing.T) {
+			path := write(t, name, src)
+			if _, err := comments(path); err == nil || !strings.Contains(err.Error(), path) {
+				t.Errorf("got %v, want an error that names %s", err, path)
+			}
+		})
 	}
 }
 
