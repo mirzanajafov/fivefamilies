@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,6 +26,9 @@ var (
 	cssString       = regexp.MustCompile(`"[^"]*"|'[^']*'`)
 	hashTypes       = []string{".yml", ".yaml", ".gitignore", ".dockerignore", ".gitattributes", ".prettierignore"}
 	slashTypes      = []string{".ts", ".tsx", ".mjs", ".proto", ".json", ".mod"}
+	pngSignature    = []byte("\x89PNG\r\n\x1a\n")
+	pngImageChunks  = []string{"IHDR", "PLTE", "IDAT", "IEND"}
+	pngFixedSizes   = map[string]uint32{"IHDR": 13, "IEND": 0}
 )
 
 type finder func(path string, src []byte) ([]int, error)
@@ -97,6 +101,8 @@ func finderFor(path string) (finder, error) {
 		return byLine(markupComment.MatchString), nil
 	case ext == ".md":
 		return byLine(markdownComment.MatchString), nil
+	case ext == ".png":
+		return pngComments, nil
 	case ext == ".sum", ext == ".txt" && strings.HasPrefix(filepath.ToSlash(filepath.Clean(path)), "bench/results/profile/"):
 		return skip, nil
 	}
@@ -131,6 +137,38 @@ func byLine(isComment func(string) bool) finder {
 		}
 		return lines, nil
 	}
+}
+
+func pngComments(path string, src []byte) ([]int, error) {
+	if !bytes.HasPrefix(src, pngSignature) {
+		return nil, fmt.Errorf("%s: not a PNG", path)
+	}
+	for i, n := len(pngSignature), 1; i < len(src); n++ {
+		if len(src)-i < 12 {
+			return nil, fmt.Errorf("%s: chunk %d is cut off", path, n)
+		}
+		size, kind := binary.BigEndian.Uint32(src[i:]), string(src[i+4:i+8])
+		if uint64(size) > uint64(len(src)-i-12) {
+			return nil, fmt.Errorf("%s: chunk %d (%q) runs past the end of the file", path, n, kind)
+		}
+		if !slices.Contains(pngImageChunks, kind) {
+			return nil, fmt.Errorf("%s: chunk %d is %q, and a PNG may hold only %q, since the others can carry text", path, n, kind, pngImageChunks)
+		}
+		if (n == 1) != (kind == "IHDR") {
+			return nil, fmt.Errorf("%s: chunk %d is %q, but IHDR comes first and only there", path, n, kind)
+		}
+		if want, fixed := pngFixedSizes[kind]; fixed && size != want {
+			return nil, fmt.Errorf("%s: chunk %d (%q) holds %d bytes instead of %d", path, n, kind, size, want)
+		}
+		i += 12 + int(size)
+		if kind == "IEND" {
+			if i < len(src) {
+				return nil, fmt.Errorf("%s: %d bytes after IEND", path, len(src)-i)
+			}
+			return nil, nil
+		}
+	}
+	return nil, fmt.Errorf("%s: the file ends without IEND", path)
 }
 
 func shellComments(path string, src []byte) ([]int, error) {
