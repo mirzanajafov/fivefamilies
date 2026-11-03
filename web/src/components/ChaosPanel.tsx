@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { errorIn } from '@/lib/api'
 import { useNow } from '@/lib/clock'
 import type { Snapshot } from '@/lib/types'
+import { reportStep, type DemoStep } from '@/lib/visit'
 import { actionNames, family, faultActions, faultLabels, numeral, realness } from '@/lib/words'
 
 export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boolean }) {
@@ -21,12 +22,13 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
   const cooldown = !admin && snapshot.limits.next_allowed ? Math.max(0, Math.ceil((Date.parse(snapshot.limits.next_allowed) - now) / 1000)) : 0
   const blocked = busy || !!fault || cooldown > 0
 
-  async function post(path: string, body?: object) {
+  async function post(path: string, body?: object, step?: DemoStep) {
     setBusy(true)
     setRefusal(undefined)
     try {
       const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) })
       if (!res.ok) setRefusal({ text: errorIn(await res.json().catch(() => undefined)) ?? `refused (${res.status})`, during: faultKey })
+      else if (step) reportStep(step)
     } catch {
       setRefusal({ text: 'the dashboard could not reach the controller', during: faultKey })
     } finally {
@@ -87,7 +89,7 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
         <button
           type="button"
           disabled={blocked}
-          onClick={() => void post('/api/chaos', { action, node, seconds: Math.min(seconds, max) })}
+          onClick={() => void post('/api/chaos', { action, node, seconds: Math.min(seconds, max) }, 'broke-family')}
           className="rounded-lg bg-[var(--blood)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
         >
           {action === 'kill' ? 'Kill' : action === 'pause' ? 'Freeze' : action === 'isolate' ? 'Cut off' : 'Slow down'} {family(node)}
@@ -95,7 +97,7 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
         <button
           type="button"
           disabled={blocked || !snapshot.leader}
-          onClick={() => void post('/api/chaos', { action: 'step-down' })}
+          onClick={() => void post('/api/chaos', { action: 'step-down' }, 'asked-don')}
           className="rounded-lg border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-40"
         >
           Ask the Don to step down
