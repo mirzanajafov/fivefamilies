@@ -28,7 +28,7 @@ export function ChaosPanel({ snapshot, admin }: { snapshot: Snapshot; admin: boo
     try {
       const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) })
       if (!res.ok) setRefusal({ text: errorIn(await res.json().catch(() => undefined)) ?? `refused (${res.status})`, during: faultKey })
-      else if (step && !admin) reportStep(step)
+      else if (step) reportStep(step)
     } catch {
       setRefusal({ text: 'the dashboard could not reach the controller', during: faultKey })
     } finally {
