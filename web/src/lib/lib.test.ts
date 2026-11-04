@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
-import { describe as suite, expect, it } from 'vitest'
+import { afterEach, describe as suite, expect, it, vi } from 'vitest'
 import { errorIn } from './api'
 import { ago, ms, rate, wholeRate } from './format'
 import { adminIn } from './session'
 import { snapshotIn } from './snapshot'
+import { reportStep } from './visit'
 import { describe, family, outcome, role } from './words'
 import type { Fault, NodeView } from './types'
 
@@ -101,5 +102,23 @@ suite('api', () => {
     expect(errorIn(undefined)).toBeUndefined()
     expect(adminIn({ admin: true })).toBe(true)
     expect(adminIn({ admin: 'true' })).toBe(false)
+  })
+})
+
+suite('visit', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+  it('hands each step to the visit script as a najafov:action event on the document', () => {
+    vi.stubGlobal('document', new EventTarget())
+    const steps: unknown[] = []
+    document.addEventListener('najafov:action', (event) => {
+      steps.push(event instanceof CustomEvent ? event.detail : event)
+    })
+
+    reportStep('broke-family')
+    reportStep('asked-don')
+
+    expect(steps).toEqual(['broke-family', 'asked-don'])
   })
 })
