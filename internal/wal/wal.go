@@ -37,6 +37,8 @@ var (
 	errBadRecord = errors.New("wal: bad record")
 )
 
+const DefaultSegmentBytes = 8 << 20
+
 type Options struct {
 	SegmentBytes int64
 	Salt         func() uint64
@@ -195,7 +197,7 @@ func (r *replay) snapshot(index, term uint64, reset bool) error {
 
 func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 	if opts.SegmentBytes <= 0 {
-		opts.SegmentBytes = 64 << 20
+		opts.SegmentBytes = DefaultSegmentBytes
 	}
 	if opts.Salt == nil {
 		return nil, raft.Restore{}, Recovery{}, errors.New("wal: no salt source")

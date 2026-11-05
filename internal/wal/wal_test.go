@@ -547,6 +547,49 @@ func TestCompactRemovesOldSegmentsButKeepsTheTerm(t *testing.T) {
 	}
 }
 
+func logBytes(t *testing.T, fs *vfs.Mem) int64 {
+	t.Helper()
+	seqs, err := segments(fs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int64
+	for _, seq := range seqs {
+		data, err := fs.ReadFile(segmentName(seq))
+		if err != nil {
+			t.Fatal(err)
+		}
+		n += int64(len(data))
+	}
+	return n
+}
+
+func TestWithDefaultOptionsCompactionShrinksTheLogToAboutOneSegment(t *testing.T) {
+	fs := vfs.NewMem()
+	l, _, _ := open(t, fs, 0)
+	value := bytes.Repeat([]byte("v"), 1<<10)
+	var index uint64
+	for index*uint64(len(value)) < 3*DefaultSegmentBytes {
+		index++
+		mustWrite(t, l, raft.HardState{Term: 1, Commit: index - 1}, []raft.Entry{{Term: 1, Index: index, Data: value}}, false)
+	}
+	if l.Segments() <= 2 {
+		t.Fatalf("the log rotated %d times in %d MiB of entries", l.Segments()-1, index*uint64(len(value))>>20)
+	}
+	before := logBytes(t, fs)
+	if err := l.WriteBatch(Batch{HardState: raft.HardState{Term: 1, Commit: index}, Snapshot: snapAt(index, 1)}); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, l, raft.HardState{}, []raft.Entry{{Term: 1, Index: index + 1, Data: value}}, true)
+	since := logBytes(t, fs) - before
+	if _, err := l.Compact(index); err != nil {
+		t.Fatal(err)
+	}
+	if got := logBytes(t, fs); got > DefaultSegmentBytes+since {
+		t.Fatalf("%d bytes of log after compacting everything before the marker, want at most one segment and the %d bytes written since", got, since)
+	}
+}
+
 func TestASnapshotRecordWithoutTheHardStateIsRefused(t *testing.T) {
 	l, _, _ := open(t, vfs.NewMem(), 0)
 	if err := l.WriteBatch(Batch{Snapshot: snapAt(1, 1)}); err == nil {
@@ -749,7 +792,7 @@ func TestReplayNeedsLittleMemoryHoweverLargeTheSegments(t *testing.T) {
 		compact  bool
 	}{
 		{"one segment", 1 << 30, false},
-		{"8 MiB segments", 8 << 20, false},
+		{"default segments", DefaultSegmentBytes, false},
 		{"a compacted log that starts with a large segment", 48 << 20, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
