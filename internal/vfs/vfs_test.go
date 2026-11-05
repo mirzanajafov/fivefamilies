@@ -232,6 +232,17 @@ func TestOS(t *testing.T) {
 	if got, _ := fs.ReadFile("old"); string(got) != "hello" {
 		t.Fatalf("after truncate %q", got)
 	}
+	r, err := fs.Open("old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tail := make([]byte, 3)
+	if _, err := r.ReadAt(tail, 2); err != nil || r.Size() != 5 || string(tail) != "llo" {
+		t.Fatalf("read %q of %d bytes: %v", tail, r.Size(), err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if err := fs.Remove("old"); err != nil {
 		t.Fatal(err)
 	}

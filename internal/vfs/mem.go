@@ -1,6 +1,7 @@
 package vfs
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand/v2"
 	"sort"
@@ -70,6 +71,22 @@ func (m *Mem) ReadFile(name string) ([]byte, error) {
 		return nil, fmt.Errorf("vfs: %s does not exist", name)
 	}
 	return append([]byte(nil), f.data...), nil
+}
+
+type memReader struct {
+	*bytes.Reader
+}
+
+func (memReader) Close() error {
+	return nil
+}
+
+func (m *Mem) Open(name string) (Reader, error) {
+	data, err := m.ReadFile(name)
+	if err != nil {
+		return nil, err
+	}
+	return memReader{bytes.NewReader(data)}, nil
 }
 
 func (m *Mem) Create(name string) (File, error) {

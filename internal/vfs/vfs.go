@@ -17,9 +17,16 @@ type File interface {
 	Close() error
 }
 
+type Reader interface {
+	io.ReaderAt
+	io.Closer
+	Size() int64
+}
+
 type FS interface {
 	List() ([]string, error)
 	ReadFile(name string) ([]byte, error)
+	Open(name string) (Reader, error)
 	Create(name string) (File, error)
 	OpenAppend(name string) (File, error)
 	Truncate(name string, size int64) error
@@ -53,6 +60,27 @@ func (o OS) List() ([]string, error) {
 
 func (o OS) ReadFile(name string) ([]byte, error) {
 	return os.ReadFile(o.path(name))
+}
+
+type osReader struct {
+	*os.File
+	size int64
+}
+
+func (r osReader) Size() int64 {
+	return r.size
+}
+
+func (o OS) Open(name string) (Reader, error) {
+	f, err := os.Open(o.path(name))
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return nil, errors.Join(err, f.Close())
+	}
+	return osReader{File: f, size: info.Size()}, nil
 }
 
 func (o OS) Create(name string) (File, error) {

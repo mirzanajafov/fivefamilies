@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"runtime"
+	"runtime/metrics"
 	"slices"
 	"testing"
 
@@ -709,5 +711,101 @@ func TestCrashesWithSnapshotsAndCompaction(t *testing.T) {
 		if !ok {
 			t.Fatalf("seed %d: restored snapshot %+v, %d entries, hs %+v: not the synced state plus a prefix of what was in flight", seed, st.Snapshot, len(st.Entries), st.HardState)
 		}
+	}
+}
+
+func peakLiveHeapDuring(f func()) uint64 {
+	sample := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
+	live := func() uint64 {
+		runtime.GC()
+		metrics.Read(sample)
+		return sample[0].Value.Uint64()
+	}
+	base := live()
+	stop, peak := make(chan struct{}), make(chan uint64)
+	go func() {
+		top := base
+		for {
+			select {
+			case <-stop:
+				peak <- top
+				return
+			default:
+				top = max(top, live())
+			}
+		}
+	}()
+	f()
+	close(stop)
+	return <-peak - base
+}
+
+func TestReplayNeedsLittleMemoryHoweverLargeTheSegments(t *testing.T) {
+	const valueBytes, perBatch, perMarker = 64 << 20, 64, 4096
+	value := bytes.Repeat([]byte("v"), 200)
+	for _, tc := range []struct {
+		name     string
+		segBytes int64
+		compact  bool
+	}{
+		{"one segment", 1 << 30, false},
+		{"8 MiB segments", 8 << 20, false},
+		{"a compacted log that starts with a large segment", 48 << 20, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := vfs.OS{Dir: t.TempDir()}
+			l, _, _ := open(t, fs, tc.segBytes)
+			var index, marker uint64
+			for index*uint64(len(value)) < valueBytes {
+				ents := make([]raft.Entry, perBatch)
+				for i := range ents {
+					index++
+					ents[i] = raft.Entry{Term: 1, Index: index, Data: value}
+				}
+				b := Batch{HardState: raft.HardState{Term: 1, Commit: index - perBatch}, Entries: ents}
+				if index%perMarker == 0 {
+					marker = index - perBatch
+					b.Snapshot = snapAt(marker, 1)
+				}
+				if err := l.WriteBatch(b); err != nil {
+					t.Fatal(err)
+				}
+				if b.Snapshot != nil && tc.compact {
+					if err := l.Sync(); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := l.Compact(marker); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if err := l.Sync(); err != nil {
+				t.Fatal(err)
+			}
+			if compacted := l.segs[0].seq > 1; compacted != tc.compact {
+				t.Fatalf("the log starts at segment %d", l.segs[0].seq)
+			}
+			if err := l.Close(); err != nil {
+				t.Fatal(err)
+			}
+			var st raft.Restore
+			var err error
+			peak := peakLiveHeapDuring(func() {
+				l, st, _, err = Open(fs, Options{SegmentBytes: tc.segBytes, Salt: saltSource(2)})
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := l.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if st.Snapshot == nil || st.Snapshot.Index != marker || len(st.Entries) != int(index-marker) || st.Entries[len(st.Entries)-1].Index != index {
+				t.Fatalf("restored snapshot %+v and %d entries, want the marker at %d and entries up to %d", st.Snapshot, len(st.Entries), marker, index)
+			}
+			t.Logf("opening the log kept %.1f MiB of heap live at its peak", float64(peak)/(1<<20))
+			if peak > 16<<20 {
+				t.Fatalf("opening the log kept %d MiB of heap live, want at most 16", peak>>20)
+			}
+		})
 	}
 }
