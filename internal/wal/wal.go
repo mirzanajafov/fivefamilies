@@ -16,12 +16,13 @@ import (
 )
 
 const (
-	headerSize     = 24
-	recordHeader   = 9
-	sectorSize     = 512
-	maxRecord      = 64 << 20
-	readBufferSize = 64 << 10
-	segmentSuffix  = ".wal"
+	DefaultSegmentBytes = 8 << 20
+	headerSize          = 24
+	recordHeader        = 9
+	sectorSize          = 512
+	maxRecord           = 64 << 20
+	readBufferSize      = 64 << 10
+	segmentSuffix       = ".wal"
 )
 
 const (
@@ -36,8 +37,6 @@ var (
 	ErrCorrupt   = errors.New("wal: corrupt log")
 	errBadRecord = errors.New("wal: bad record")
 )
-
-const DefaultSegmentBytes = 8 << 20
 
 type Options struct {
 	SegmentBytes int64
@@ -303,8 +302,8 @@ func (rd *reader) records(fs vfs.FS, seq uint64, mayBeTorn bool, each func(byte,
 	size = f.Size()
 	rd.buf.Reset(io.NewSectionReader(f, 0, size))
 	hdr := make([]byte, min(headerSize, size))
-	if _, err := io.ReadFull(rd.buf, hdr); err != nil {
-		return 0, 0, err
+	if _, readErr := io.ReadFull(rd.buf, hdr); readErr != nil {
+		return 0, 0, readErr
 	}
 	salt, ok := readHeader(hdr, seq)
 	if !ok {
@@ -315,20 +314,20 @@ func (rd *reader) records(fs vfs.FS, seq uint64, mayBeTorn bool, each func(byte,
 	}
 	rd.salt = salt
 	for off := int64(headerSize); off < size; {
-		n, typ, payload, err := rd.next(f, off, size)
-		if errors.Is(err, errBadRecord) {
+		n, typ, payload, nextErr := rd.next(f, off, size)
+		if errors.Is(nextErr, errBadRecord) {
 			if mayBeTorn {
-				if torn, err := tornAt(f, size, off); err != nil || torn {
-					return off, size, err
+				if torn, tornErr := tornAt(f, size, off); tornErr != nil || torn {
+					return off, size, tornErr
 				}
 			}
 			return 0, 0, corrupt("segment %s has a bad record at offset %d", name, off)
 		}
-		if err != nil {
-			return 0, 0, err
+		if nextErr != nil {
+			return 0, 0, nextErr
 		}
-		if err := each(typ, payload); err != nil {
-			return 0, 0, fmt.Errorf("segment %s: %w", name, err)
+		if eachErr := each(typ, payload); eachErr != nil {
+			return 0, 0, fmt.Errorf("segment %s: %w", name, eachErr)
 		}
 		off += n
 	}
