@@ -1,10 +1,12 @@
 package wal
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,11 +16,13 @@ import (
 )
 
 const (
-	headerSize    = 24
-	recordHeader  = 9
-	sectorSize    = 512
-	maxRecord     = 64 << 20
-	segmentSuffix = ".wal"
+	DefaultSegmentBytes = 8 << 20
+	headerSize          = 24
+	recordHeader        = 9
+	sectorSize          = 512
+	maxRecord           = 64 << 20
+	readBufferSize      = 64 << 10
+	segmentSuffix       = ".wal"
 )
 
 const (
@@ -28,9 +32,10 @@ const (
 )
 
 var (
-	magic      = [8]byte{'F', 'F', 'W', 'A', 'L', 0, 0, 1}
-	castagnoli = crc32.MakeTable(crc32.Castagnoli)
-	ErrCorrupt = errors.New("wal: corrupt log")
+	magic        = [8]byte{'F', 'F', 'W', 'A', 'L', 0, 0, 1}
+	castagnoli   = crc32.MakeTable(crc32.Castagnoli)
+	ErrCorrupt   = errors.New("wal: corrupt log")
+	errBadRecord = errors.New("wal: bad record")
 )
 
 type Options struct {
@@ -107,63 +112,81 @@ func corrupt(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrCorrupt, fmt.Sprintf(format, args...))
 }
 
-type record struct {
-	seg     int
-	typ     byte
-	payload []byte
-}
-
 type replay struct {
-	hs        raft.HardState
-	snap      *raft.Snapshot
-	ents      []raft.Entry
-	off       uint64
-	strict    bool
-	markerSeq uint64
+	hs          raft.HardState
+	snap        *raft.Snapshot
+	ents        []raft.Entry
+	off         uint64
+	last        uint64
+	keepFrom    uint64
+	skipMarkers int
+	strict      bool
+	markerSeq   uint64
 }
 
-func (r *replay) last() uint64 {
-	return r.off + uint64(len(r.ents))
+func (r *replay) firstKept() uint64 {
+	return max(r.off+1, r.keepFrom)
+}
+
+func (r *replay) record(seg *segment, typ byte, payload []byte) error {
+	switch typ {
+	case recState:
+		var err error
+		r.hs, err = decodeState(payload)
+		return err
+	case recSnapshot:
+		index, term, reset, err := decodeSnapshot(payload)
+		switch {
+		case err != nil:
+			return err
+		case r.skipMarkers > 0:
+			r.skipMarkers--
+			return nil
+		}
+		r.markerSeq = seg.seq
+		return r.snapshot(index, term, reset)
+	case recEntry:
+		e, err := decodeEntry(payload)
+		if err != nil {
+			return err
+		}
+		seg.maxIndex = max(seg.maxIndex, e.Index)
+		return r.entry(e)
+	}
+	return corrupt("unknown record type %d", typ)
 }
 
 func (r *replay) entry(e raft.Entry) error {
-	last := r.last()
-	if !r.strict {
-		if e.Index <= r.off || e.Index > last+1 {
-			r.ents, r.off = nil, e.Index-1
-		} else if e.Index <= last {
-			r.ents = r.ents[:e.Index-r.off-1]
-		}
-		r.ents = append(r.ents, e)
-		return nil
-	}
 	switch {
-	case e.Index <= r.off:
+	case !r.strict && (e.Index <= r.off || e.Index > r.last+1):
+		r.ents, r.off = nil, e.Index-1
+	case r.strict && e.Index <= r.off:
 		return corrupt("entry %d at or before the snapshot at %d", e.Index, r.off)
-	case e.Index > last+1:
-		return corrupt("entry %d follows entry %d", e.Index, last)
-	case e.Index <= last:
-		r.ents = r.ents[:e.Index-r.off-1]
+	case r.strict && e.Index > r.last+1:
+		return corrupt("entry %d follows entry %d", e.Index, r.last)
 	}
-	r.ents = append(r.ents, e)
+	if first := r.firstKept(); e.Index >= first {
+		r.ents = append(r.ents[:e.Index-first], e)
+	} else {
+		r.ents = r.ents[:0]
+	}
+	r.last = e.Index
 	return nil
 }
 
 func (r *replay) snapshot(index, term uint64, reset bool) error {
+	first := r.firstKept()
 	switch {
-	case reset:
-		r.ents = nil
-	case !r.strict && (len(r.ents) == 0 || index > r.last()):
-		r.ents = nil
+	case reset, !r.strict && (r.last == r.off || index > r.last):
+		r.ents, r.last = nil, index
 	case !r.strict && index < r.off:
 		return corrupt("the log was compacted and entries %d..%d are missing", index+1, r.off)
-	case index < r.off || index > r.last():
-		return corrupt("compaction to %d outside the log %d..%d", index, r.off, r.last())
+	case index < r.off || index > r.last:
+		return corrupt("compaction to %d outside the log %d..%d", index, r.off, r.last)
+	case index > r.off && r.ents[index-first].Term != term:
+		return corrupt("compaction to %d in term %d, the log has term %d there", index, term, r.ents[index-first].Term)
 	default:
-		if index > r.off && r.ents[index-r.off-1].Term != term {
-			return corrupt("compaction to %d in term %d, the log has term %d there", index, term, r.ents[index-r.off-1].Term)
-		}
-		r.ents = r.ents[index-r.off:]
+		r.ents = slices.Delete(r.ents, 0, int(index+1-first))
 	}
 	r.off = index
 	r.snap = &raft.Snapshot{Index: index, Term: term}
@@ -173,7 +196,7 @@ func (r *replay) snapshot(index, term uint64, reset bool) error {
 
 func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 	if opts.SegmentBytes <= 0 {
-		opts.SegmentBytes = 64 << 20
+		opts.SegmentBytes = DefaultSegmentBytes
 	}
 	if opts.Salt == nil {
 		return nil, raft.Restore{}, Recovery{}, errors.New("wal: no salt source")
@@ -193,85 +216,39 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 	if len(seqs) > 0 {
 		next = seqs[0]
 	}
-	var records []record
-	for i := 0; i < len(seqs); i++ {
-		seq, name, last := seqs[i], segmentName(seqs[i]), i == len(seqs)-1
-		data, err := fs.ReadFile(name)
-		if err != nil {
-			return nil, raft.Restore{}, rec, err
+	rd := reader{buf: bufio.NewReaderSize(nil, readBufferSize)}
+	markers, lastMarker := 0, uint64(0)
+	seqs, rec.TornBytes, err = rd.scan(fs, seqs, func(typ byte, payload []byte) error {
+		if typ != recSnapshot {
+			return nil
 		}
-		salt, ok := readHeader(data, seq)
-		if !ok {
-			if !last || (len(data) >= headerSize && !zeros(data[:headerSize])) {
-				return nil, raft.Restore{}, rec, corrupt("segment %s has a bad header", name)
-			}
-			if err := fs.Remove(name); err != nil {
-				return nil, raft.Restore{}, rec, err
-			}
-			if err := fs.SyncDir(); err != nil {
-				return nil, raft.Restore{}, rec, err
-			}
-			rec.TornBytes += int64(len(data))
-			break
+		markers++
+		if index, _, _, err := decodeSnapshot(payload); err == nil {
+			lastMarker = index
 		}
-		off := headerSize
-		for off < len(data) {
-			n, typ, payload, ok := readRecord(data[off:], salt)
-			if !ok {
-				if !last || !tornAt(data, off) {
-					return nil, raft.Restore{}, rec, corrupt("segment %s has a bad record at offset %d", name, off)
-				}
-				rec.TornBytes += int64(len(data) - off)
-				if err := truncateTail(fs, name, int64(off)); err != nil {
-					return nil, raft.Restore{}, rec, err
-				}
-				data = data[:off]
-				break
-			}
-			records = append(records, record{seg: len(l.segs), typ: typ, payload: payload})
-			off += n
-		}
-		l.segs = append(l.segs, segment{seq: seq})
-		l.size, l.salt = int64(len(data)), salt
+		return nil
+	})
+	if err != nil {
+		return nil, raft.Restore{}, rec, err
 	}
 	compacted := next > 1
-	lastMarker := -1
-	for i, rc := range records {
-		if rc.typ == recSnapshot {
-			lastMarker = i
-		}
-	}
-	if compacted && lastMarker < 0 {
+	if compacted && markers == 0 {
 		return nil, raft.Restore{}, rec, corrupt("the log starts at segment %d and has no snapshot record", next)
 	}
 	r := replay{strict: !compacted}
-	for i, rc := range records {
-		var err error
-		switch rc.typ {
-		case recState:
-			r.hs, err = decodeState(rc.payload)
-		case recSnapshot:
-			index, term, reset, derr := decodeSnapshot(rc.payload)
-			switch {
-			case derr != nil:
-				err = derr
-			case compacted && i < lastMarker:
-			default:
-				err = r.snapshot(index, term, reset)
-				r.markerSeq = l.segs[rc.seg].seq
-			}
-		case recEntry:
-			var e raft.Entry
-			if e, err = decodeEntry(rc.payload); err == nil {
-				err = r.entry(e)
-				l.segs[rc.seg].maxIndex = max(l.segs[rc.seg].maxIndex, e.Index)
-			}
-		default:
-			err = corrupt("unknown record type %d", rc.typ)
-		}
+	if compacted {
+		r.skipMarkers, r.keepFrom = markers-1, lastMarker
+	}
+	for _, seq := range seqs {
+		l.segs = append(l.segs, segment{seq: seq})
+		seg := l.current()
+		end, _, err := rd.records(fs, seq, false, func(typ byte, payload []byte) error {
+			return r.record(seg, typ, payload)
+		})
 		if err != nil {
-			return nil, raft.Restore{}, rec, fmt.Errorf("segment %s: %w", segmentName(l.segs[rc.seg].seq), err)
+			return nil, raft.Restore{}, rec, err
 		}
+		l.size, l.salt = end, rd.salt
 	}
 	if len(l.segs) == 0 {
 		if err := l.create(next); err != nil {
@@ -286,31 +263,162 @@ func Open(fs vfs.FS, opts Options) (*Log, raft.Restore, Recovery, error) {
 	}
 	l.markerSeq, l.syncedSeq = r.markerSeq, r.markerSeq
 	hs := r.hs
-	hs.Commit = max(min(hs.Commit, r.last()), r.off)
+	hs.Commit = max(min(hs.Commit, r.last), r.off)
 	return l, raft.Restore{HardState: hs, Snapshot: r.snap, Entries: r.ents}, rec, nil
 }
 
-func tornAt(data []byte, off int) bool {
-	rest := data[off:]
-	if len(rest) < recordHeader {
-		return true
+type reader struct {
+	buf  *bufio.Reader
+	rec  []byte
+	salt uint64
+}
+
+func (rd *reader) scan(fs vfs.FS, seqs []uint64, each func(byte, []byte) error) ([]uint64, int64, error) {
+	for i, seq := range seqs {
+		end, size, err := rd.records(fs, seq, i == len(seqs)-1, each)
+		if err != nil {
+			return nil, 0, err
+		}
+		switch name := segmentName(seq); {
+		case end == 0:
+			if err := fs.Remove(name); err != nil {
+				return nil, 0, err
+			}
+			return seqs[:i], size, fs.SyncDir()
+		case end < size:
+			return seqs, size - end, truncateTail(fs, name, end)
+		}
 	}
-	n := uint64(binary.LittleEndian.Uint32(rest))
+	return seqs, 0, nil
+}
+
+func (rd *reader) records(fs vfs.FS, seq uint64, mayBeTorn bool, each func(byte, []byte) error) (end, size int64, err error) {
+	name := segmentName(seq)
+	f, err := fs.Open(name)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	size = f.Size()
+	rd.buf.Reset(io.NewSectionReader(f, 0, size))
+	hdr := make([]byte, min(headerSize, size))
+	if _, readErr := io.ReadFull(rd.buf, hdr); readErr != nil {
+		return 0, 0, readErr
+	}
+	salt, ok := readHeader(hdr, seq)
+	if !ok {
+		if !mayBeTorn || (len(hdr) == headerSize && !zeros(hdr)) {
+			return 0, 0, corrupt("segment %s has a bad header", name)
+		}
+		return 0, size, nil
+	}
+	rd.salt = salt
+	for off := int64(headerSize); off < size; {
+		n, typ, payload, nextErr := rd.next(f, off, size)
+		if errors.Is(nextErr, errBadRecord) {
+			if mayBeTorn {
+				if torn, tornErr := tornAt(f, size, off); tornErr != nil || torn {
+					return off, size, tornErr
+				}
+			}
+			return 0, 0, corrupt("segment %s has a bad record at offset %d", name, off)
+		}
+		if nextErr != nil {
+			return 0, 0, nextErr
+		}
+		if eachErr := each(typ, payload); eachErr != nil {
+			return 0, 0, fmt.Errorf("segment %s: %w", name, eachErr)
+		}
+		off += n
+	}
+	return size, size, nil
+}
+
+func (rd *reader) next(f io.ReaderAt, off, size int64) (int64, byte, []byte, error) {
+	if size-off < recordHeader {
+		return 0, 0, nil, errBadRecord
+	}
+	hdr, err := rd.buf.Peek(recordHeader)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	n := recordHeader + int64(binary.LittleEndian.Uint32(hdr))
+	switch {
+	case n > size-off || n > recordHeader+maxRecord:
+		return 0, 0, nil, errBadRecord
+	case n > readBufferSize:
+		return rd.nextLarge(f, off, n)
+	}
+	rd.rec = slices.Grow(rd.rec[:0], int(n))[:n]
+	if _, err := io.ReadFull(rd.buf, rd.rec); err != nil {
+		return 0, 0, nil, err
+	}
+	_, typ, payload, ok := readRecord(rd.rec, rd.salt)
+	if !ok {
+		return 0, 0, nil, errBadRecord
+	}
+	return n, typ, payload, nil
+}
+
+func (rd *reader) nextLarge(f io.ReaderAt, off, n int64) (int64, byte, []byte, error) {
+	hdr, err := rd.buf.Peek(recordHeader)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	want, typ := binary.LittleEndian.Uint32(hdr[4:]), hdr[8]
+	sum := checksum(rd.salt, typ, nil)
+	if _, err := rd.buf.Discard(recordHeader); err != nil {
+		return 0, 0, nil, err
+	}
+	for rest := n - recordHeader; rest > 0; {
+		chunk, err := rd.buf.Peek(int(min(rest, readBufferSize)))
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		sum = crc32.Update(sum, castagnoli, chunk)
+		if _, err := rd.buf.Discard(len(chunk)); err != nil {
+			return 0, 0, nil, err
+		}
+		rest -= int64(len(chunk))
+	}
+	if sum != want {
+		return 0, 0, nil, errBadRecord
+	}
+	rd.rec = slices.Grow(rd.rec[:0], int(n-recordHeader))[:n-recordHeader]
+	if _, err := f.ReadAt(rd.rec, off+recordHeader); err != nil {
+		return 0, 0, nil, err
+	}
+	return n, typ, rd.rec, nil
+}
+
+func tornAt(f io.ReaderAt, size, off int64) (bool, error) {
+	if size-off < recordHeader {
+		return true, nil
+	}
+	var length [4]byte
+	if _, err := f.ReadAt(length[:], off); err != nil {
+		return false, err
+	}
+	n := int64(binary.LittleEndian.Uint32(length[:]))
 	if n > maxRecord {
-		return false
+		return false, nil
 	}
-	if n > uint64(len(rest)-recordHeader) {
-		return true
+	end := off + recordHeader + n
+	if end > size {
+		return true, nil
 	}
-	end := off + recordHeader + int(n)
+	sector := make([]byte, sectorSize)
 	for from := off; from < end; {
-		to := min(from-from%sectorSize+sectorSize, len(data))
-		if zeros(data[from:to]) {
-			return true
+		to := min(from-from%sectorSize+sectorSize, size)
+		if _, err := f.ReadAt(sector[:to-from], from); err != nil {
+			return false, err
+		}
+		if zeros(sector[:to-from]) {
+			return true, nil
 		}
 		from = to
 	}
-	return false
+	return false, nil
 }
 
 func zeros(b []byte) bool {

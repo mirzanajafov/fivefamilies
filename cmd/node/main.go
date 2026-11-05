@@ -28,6 +28,7 @@ import (
 	"github.com/mirzanajafov/fivefamilies/internal/raft"
 	"github.com/mirzanajafov/fivefamilies/internal/server"
 	"github.com/mirzanajafov/fivefamilies/internal/transport"
+	"github.com/mirzanajafov/fivefamilies/internal/wal"
 )
 
 var plantable string
@@ -147,7 +148,7 @@ func parseFlags() nodeFlags {
 	flag.DurationVar(&f.lease, "lease", 0, "leader lease for lease reads (0 turns them off)")
 	flag.Uint64Var(&f.snapEvery, "snapshot-every", 10000, "applied entries between snapshots")
 	flag.Uint64Var(&f.retain, "retain", 5000, "entries kept behind a snapshot for slow followers")
-	flag.Int64Var(&f.segment, "segment-bytes", 64<<20, "log segment size")
+	flag.Int64Var(&f.segment, "segment-bytes", wal.DefaultSegmentBytes, "log segment size")
 	flag.StringVar(&f.bugs, "bug", "", "planted bugs (only in builds made for testing)")
 	flag.StringVar(&f.fsync, "fsync", "group", "group (one fsync for everything queued), ready (one per write), entry (one per entry), or off (unsafe, test builds only)")
 	flag.BoolVar(&f.syncStorage, "sync-storage", false, "wait for the disk inside the event loop, for measuring what asynchronous storage buys")
