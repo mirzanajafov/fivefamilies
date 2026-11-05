@@ -233,6 +233,56 @@ func TestAnUnpersistedSectorInTheTailIsCut(t *testing.T) {
 	}
 }
 
+func TestATornTailPastTheReadBufferIsCutAfterTheLastWholeRecord(t *testing.T) {
+	value := bytes.Repeat([]byte("s"), 1000)
+	var synced []raft.Entry
+	for i := uint64(1); len(synced)*len(value) < 2*readBufferSize; i++ {
+		synced = append(synced, raft.Entry{Term: 1, Index: i, Data: value})
+	}
+	next := uint64(len(synced)) + 1
+	hs := raft.HardState{Term: 2, Vote: 3}
+	unsynced := append([]raft.Entry{{Term: 2, Index: next, Data: bytes.Repeat([]byte("l"), readBufferSize+1000)}}, entries(2, next+1, next+3)...)
+	fs := vfs.NewMem()
+	l, _, _ := open(t, fs, 0)
+	mustWrite(t, l, raft.HardState{Term: 1}, synced, true)
+	names, _ := fs.List()
+	before, _ := fs.ReadFile(names[0])
+	mustWrite(t, l, hs, unsynced, false)
+	full, _ := fs.ReadFile(names[0])
+	salt, _ := readHeader(full, 1)
+	ends := []int{len(before)}
+	for off := len(before); off < len(full); {
+		n, _, _, ok := readRecord(full[off:], salt)
+		if !ok {
+			t.Fatalf("no whole record at %d", off)
+		}
+		off += n
+		ends = append(ends, off)
+	}
+	candidates := prefixes(state{hs: raft.HardState{Term: 1}, ents: synced}, unsynced, hs)
+	for cut := len(before); cut <= len(full); cut++ {
+		if cut == ends[1]+sectorSize {
+			cut = ends[2] - sectorSize
+		}
+		torn := vfs.NewMem()
+		f, err := torn.Create(names[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(full[:cut]); err != nil {
+			t.Fatal(err)
+		}
+		_, st, rec, err := Open(torn, Options{Salt: saltSource(2)})
+		whole := 0
+		for whole+1 < len(ends) && ends[whole+1] <= cut {
+			whole++
+		}
+		if err != nil || rec.TornBytes != int64(cut-ends[whole]) || !matchesOne(st, candidates[whole:whole+1]) {
+			t.Fatalf("cut at %d: %v, cut %d bytes and restored %d entries, want %d bytes cut and %d entries", cut, err, rec.TornBytes, len(st.Entries), cut-ends[whole], len(candidates[whole].ents))
+		}
+	}
+}
+
 func TestAFlippedByteInAWholeRecordRefusesToOpen(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -337,6 +387,27 @@ func TestALastSegmentWithABadHeaderIsDropped(t *testing.T) {
 	_, st, _ = open(t, fs, 64)
 	if !sameEntries(st.Entries, entries(1, 1, 4)) {
 		t.Fatalf("after writing again: %v", st.Entries)
+	}
+}
+
+func TestAnEmptyLastSegmentIsRemoved(t *testing.T) {
+	fs := vfs.NewMem()
+	l, _, _ := open(t, fs, 64)
+	mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 1, 2), true)
+	mustWrite(t, l, raft.HardState{Term: 1}, entries(1, 3, 3), true)
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	empty := segmentName(uint64(l.Segments()) + 1)
+	if _, err := fs.Create(empty); err != nil {
+		t.Fatal(err)
+	}
+	_, st, rec := open(t, fs, 64)
+	if rec.TornBytes != 0 || !sameEntries(st.Entries, entries(1, 1, 3)) {
+		t.Fatalf("recovery %+v restored %d entries", rec, len(st.Entries))
+	}
+	if names, _ := fs.List(); slices.Contains(names, empty) {
+		t.Fatalf("%s is still there: %v", empty, names)
 	}
 }
 
