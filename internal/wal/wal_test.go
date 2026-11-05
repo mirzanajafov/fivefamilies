@@ -2,9 +2,12 @@ package wal
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/metrics"
 	"slices"
@@ -783,9 +786,50 @@ func peakLiveHeapDuring(f func()) uint64 {
 	return <-peak - base
 }
 
-func TestReplayNeedsLittleMemoryHoweverLargeTheSegments(t *testing.T) {
-	const valueBytes, perBatch, perMarker = 64 << 20, 64, 4096
+const replayHeapLimit = 16 << 20
+
+func writeLargeLog(t *testing.T, fs vfs.FS, segBytes int64, valueBytes uint64, compact bool) (uint64, uint64) {
+	t.Helper()
+	const perBatch, perMarker = 64, 4096
 	value := bytes.Repeat([]byte("v"), 200)
+	l, _, _ := open(t, fs, segBytes)
+	var index, marker uint64
+	for index*uint64(len(value)) < valueBytes {
+		ents := make([]raft.Entry, perBatch)
+		for i := range ents {
+			index++
+			ents[i] = raft.Entry{Term: 1, Index: index, Data: value}
+		}
+		b := Batch{HardState: raft.HardState{Term: 1, Commit: index - perBatch}, Entries: ents}
+		if index%perMarker == 0 {
+			marker = index - perBatch
+			b.Snapshot = snapAt(marker, 1)
+		}
+		if err := l.WriteBatch(b); err != nil {
+			t.Fatal(err)
+		}
+		if b.Snapshot != nil && compact {
+			if err := l.Sync(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := l.Compact(marker); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := l.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if compacted := l.segs[0].seq > 1; compacted != compact {
+		t.Fatalf("the log starts at segment %d", l.segs[0].seq)
+	}
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return index, marker
+}
+
+func TestReplayNeedsLittleMemoryHoweverLargeTheSegments(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		segBytes int64
@@ -797,42 +841,12 @@ func TestReplayNeedsLittleMemoryHoweverLargeTheSegments(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fs := vfs.OS{Dir: t.TempDir()}
-			l, _, _ := open(t, fs, tc.segBytes)
-			var index, marker uint64
-			for index*uint64(len(value)) < valueBytes {
-				ents := make([]raft.Entry, perBatch)
-				for i := range ents {
-					index++
-					ents[i] = raft.Entry{Term: 1, Index: index, Data: value}
-				}
-				b := Batch{HardState: raft.HardState{Term: 1, Commit: index - perBatch}, Entries: ents}
-				if index%perMarker == 0 {
-					marker = index - perBatch
-					b.Snapshot = snapAt(marker, 1)
-				}
-				if err := l.WriteBatch(b); err != nil {
-					t.Fatal(err)
-				}
-				if b.Snapshot != nil && tc.compact {
-					if err := l.Sync(); err != nil {
-						t.Fatal(err)
-					}
-					if _, err := l.Compact(marker); err != nil {
-						t.Fatal(err)
-					}
-				}
-			}
-			if err := l.Sync(); err != nil {
-				t.Fatal(err)
-			}
-			if compacted := l.segs[0].seq > 1; compacted != tc.compact {
-				t.Fatalf("the log starts at segment %d", l.segs[0].seq)
-			}
-			if err := l.Close(); err != nil {
-				t.Fatal(err)
-			}
-			var st raft.Restore
-			var err error
+			index, marker := writeLargeLog(t, fs, tc.segBytes, 64<<20, tc.compact)
+			var (
+				l   *Log
+				st  raft.Restore
+				err error
+			)
 			peak := peakLiveHeapDuring(func() {
 				l, st, _, err = Open(fs, Options{SegmentBytes: tc.segBytes, Salt: saltSource(2)})
 			})
@@ -846,9 +860,42 @@ func TestReplayNeedsLittleMemoryHoweverLargeTheSegments(t *testing.T) {
 				t.Fatalf("restored snapshot %+v and %d entries, want the marker at %d and entries up to %d", st.Snapshot, len(st.Entries), marker, index)
 			}
 			t.Logf("opening the log kept %.1f MiB of heap live at its peak", float64(peak)/(1<<20))
-			if peak > 16<<20 {
-				t.Fatalf("opening the log kept %d MiB of heap live, want at most 16", peak>>20)
+			if peak > replayHeapLimit {
+				t.Fatalf("opening the log kept %d MiB of heap live, want at most %d", peak>>20, replayHeapLimit>>20)
 			}
 		})
+	}
+}
+
+func TestACorruptLengthInALargeSegmentIsRefusedWithoutAllocatingTheRecord(t *testing.T) {
+	fs := vfs.OS{Dir: t.TempDir()}
+	writeLargeLog(t, fs, 1<<30, 32<<20, false)
+	path := filepath.Join(fs.Dir, segmentName(1))
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rest := binary.LittleEndian.AppendUint32(nil, uint32(info.Size()-headerSize-recordHeader))
+	if _, err := f.WriteAt(rest, headerSize); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	peak := peakLiveHeapDuring(func() {
+		_, _, _, err = Open(fs, Options{Salt: saltSource(2)})
+	})
+	if !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("%v, want ErrCorrupt", err)
+	}
+	if after, err := os.Stat(path); err != nil || after.Size() != info.Size() {
+		t.Fatalf("a refused log was cut: %v", err)
+	}
+	if peak > replayHeapLimit {
+		t.Fatalf("refusing a record that claims the rest of a %d MiB segment kept %d MiB of heap live, want at most %d", info.Size()>>20, peak>>20, replayHeapLimit>>20)
 	}
 }

@@ -315,7 +315,7 @@ func (rd *reader) records(fs vfs.FS, seq uint64, mayBeTorn bool, each func(byte,
 	}
 	rd.salt = salt
 	for off := int64(headerSize); off < size; {
-		n, typ, payload, err := rd.next(size - off)
+		n, typ, payload, err := rd.next(f, off, size)
 		if errors.Is(err, errBadRecord) {
 			if mayBeTorn {
 				if torn, err := tornAt(f, size, off); err != nil || torn {
@@ -335,17 +335,20 @@ func (rd *reader) records(fs vfs.FS, seq uint64, mayBeTorn bool, each func(byte,
 	return size, size, nil
 }
 
-func (rd *reader) next(rest int64) (int64, byte, []byte, error) {
-	n := int64(recordHeader)
-	if rest >= recordHeader {
-		hdr, err := rd.buf.Peek(recordHeader)
-		if err != nil {
-			return 0, 0, nil, err
-		}
-		n += int64(binary.LittleEndian.Uint32(hdr))
-	}
-	if n > rest || n > recordHeader+maxRecord {
+func (rd *reader) next(f io.ReaderAt, off, size int64) (int64, byte, []byte, error) {
+	if size-off < recordHeader {
 		return 0, 0, nil, errBadRecord
+	}
+	hdr, err := rd.buf.Peek(recordHeader)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	n := recordHeader + int64(binary.LittleEndian.Uint32(hdr))
+	switch {
+	case n > size-off || n > recordHeader+maxRecord:
+		return 0, 0, nil, errBadRecord
+	case n > readBufferSize:
+		return rd.nextLarge(f, off, n)
 	}
 	rd.rec = slices.Grow(rd.rec[:0], int(n))[:n]
 	if _, err := io.ReadFull(rd.buf, rd.rec); err != nil {
@@ -356,6 +359,37 @@ func (rd *reader) next(rest int64) (int64, byte, []byte, error) {
 		return 0, 0, nil, errBadRecord
 	}
 	return n, typ, payload, nil
+}
+
+func (rd *reader) nextLarge(f io.ReaderAt, off, n int64) (int64, byte, []byte, error) {
+	hdr, err := rd.buf.Peek(recordHeader)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	want, typ := binary.LittleEndian.Uint32(hdr[4:]), hdr[8]
+	sum := checksum(rd.salt, typ, nil)
+	if _, err := rd.buf.Discard(recordHeader); err != nil {
+		return 0, 0, nil, err
+	}
+	for rest := n - recordHeader; rest > 0; {
+		chunk, err := rd.buf.Peek(int(min(rest, readBufferSize)))
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		sum = crc32.Update(sum, castagnoli, chunk)
+		if _, err := rd.buf.Discard(len(chunk)); err != nil {
+			return 0, 0, nil, err
+		}
+		rest -= int64(len(chunk))
+	}
+	if sum != want {
+		return 0, 0, nil, errBadRecord
+	}
+	rd.rec = slices.Grow(rd.rec[:0], int(n-recordHeader))[:n-recordHeader]
+	if _, err := f.ReadAt(rd.rec, off+recordHeader); err != nil {
+		return 0, 0, nil, err
+	}
+	return n, typ, rd.rec, nil
 }
 
 func tornAt(f io.ReaderAt, size, off int64) (bool, error) {
